@@ -62,7 +62,6 @@
       "icons/icon.ico"
     ],
     "resources": {
-      "Assets.car": "Assets.car",
       "icons/128x128.png": "notification-icon.png"
     },
     "macOS": {
