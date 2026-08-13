@@ -8,7 +8,7 @@ There are two supported ways to get it:
 
 | Option | Cost | Intended for |
 | --- | --- | --- |
-| Official installer | Paid | People who want a maintainer-built, signed/tested download and the official update channel |
+| Official installer | Paid | People who want a maintainer-built/tested download and the official update channel; current Windows builds are unsigned beta artifacts |
 | [Build from source](building-from-source.md) | Free | People comfortable installing Bun, Rust, and Tauri's platform prerequisites |
 
 No Alfred purchase is needed to compile or run your own source build. Agent
@@ -71,8 +71,9 @@ need separate approval under System Settings → Privacy & Security.
 2. Run the installer and follow the prompts.
 3. Launch **Alfred** from the Start menu.
 
-Official releases should be Authenticode-signed. SmartScreen may warn on an
-unsigned self-build; continue only if you trust who compiled it.
+The current Windows installer is an **unsigned beta**. Windows will report an
+unknown publisher and may show a SmartScreen warning. Continue only if the file
+came from Alfred's official download channel and its published checksum matches.
 
 ### Linux
 

@@ -64,7 +64,7 @@ public Homebrew cask would expose the paid binary without purchase.
 
 | Plan | Title | Priority | Effort | Depends on | Status |
 |------|-------|----------|--------|------------|--------|
-| 004 | Sign and notarize public DMG/EXE installers | P0 | M | GitHub repository | TODO |
+| 004 | Sign and notarize public DMG/EXE installers | P0 | M | GitHub repository | IN PROGRESS (Windows signing waived) |
 | 005 | Publish Alfred via an architecture-aware Homebrew Cask | P1 | M | 004 + published DMGs | TODO |
 | 006 | Signed in-app updates for direct DMG/EXE installs | P1 | L | 004, 005 | TODO |
 

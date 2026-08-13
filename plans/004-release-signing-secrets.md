@@ -20,6 +20,16 @@
 - **Category**: dx
 - **Planned at**: unversioned snapshot 2026-08-11
 
+### Execution decision (2026-08-13)
+
+The operator explicitly waived Windows Authenticode signing because there is
+no signing budget. For this execution, an unsigned Windows installer is an
+accepted beta artifact provided every release surface labels it as unsigned
+and warns that Windows will report an unknown publisher. The macOS Developer ID
+signing, notarization, stapling, CI, and downloaded-artifact checks remain
+required. Completion must be recorded as `DONE (Windows signing waived)` so the
+exception is not mistaken for a signed Windows release.
+
 ## Why this matters
 
 The public release needs macOS DMGs that pass Gatekeeper without a bypass and
@@ -191,24 +201,27 @@ launch the NSIS EXE on a clean Windows 10/11 x64 machine.
 
 ## Done criteria
 
-- [ ] GitHub repository, `origin`, Actions permissions, and release workflow exist
-- [ ] All required Apple secret names exist in GitHub
+- [x] GitHub repository, `origin`, Actions permissions, and release workflow exist
+- [x] All required Apple secret names exist in GitHub
 - [ ] Both macOS DMGs are Developer ID signed, notarized, and stapled
-- [ ] Windows NSIS EXE and every other published Windows installer have valid
-  timestamped Authenticode signatures
-- [ ] A CI run produced a signed draft release with both DMGs and the EXE
+- [x] Windows Authenticode signing is explicitly waived; every Windows artifact
+  is labeled as an unsigned beta with an unknown-publisher warning
+- [ ] A CI run produced a signed draft release with both signed DMGs and the
+  unsigned beta EXE
 - [ ] Downloaded artifacts passed clean-machine launch checks
-- [ ] `plans/README.md` status row for 004 is `DONE`
+- [ ] `plans/README.md` status row for 004 is
+  `DONE (Windows signing waived)`
 
-If the operator explicitly chooses an unsigned Windows beta, record that in
-the release checklist and leave 004 `BLOCKED (Windows signing deferred)` rather
-than marking a public-signing plan complete.
+The execution decision above supersedes the original Windows-signing blocker
+for this run. It does not represent or advertise a warning-free Windows
+release.
 
 ## STOP conditions
 
 - GitHub repository/remote or Actions write permission is unavailable
 - Apple Developer Program membership is missing or expired
-- A suitable Windows signing method/certificate is unavailable for the public release
+- A suitable Windows signing method/certificate is unavailable and the operator
+  has not explicitly waived Windows signing
 - CI fails notarization or signing twice with the same error after validating configuration
 - Workflow secret names no longer match this plan
 - Anyone requests committing private keys, `.p12`, or `.pfx` files

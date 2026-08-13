@@ -14,7 +14,7 @@ Distribution boundary:
 
 | Channel | Artifact | How users update |
 | --- | --- | --- |
-| Paid official download | macOS `.dmg`, Windows `.exe` (NSIS), supported Linux packages | Re-download, or the official updater once wired |
+| Paid official download | Signed/notarized macOS `.dmg`, unsigned-beta Windows `.exe` (NSIS), supported Linux packages | Re-download, or the official updater once wired |
 | Public source repository | Source only | Pull/clone a newer version and rebuild |
 | Draft GitHub Release | Private staging for maintainers | Never user-facing; do not publish |
 
@@ -77,8 +77,10 @@ service/custom sign command, or a certificate imported into the Windows runner.
 For a certificate-store flow, configure `certificateThumbprint`, SHA-256 digest,
 and the provider's timestamp URL, then add the matching CI secrets.
 
-Unsigned NSIS/MSI artifacts are acceptable only for an explicitly labeled beta;
-plan 004 remains blocked until the warning-free public release is signed.
+For the 2026-08-13 release decision, Windows signing is explicitly waived due
+to budget. Every NSIS/MSI artifact must be labeled **unsigned beta** wherever it
+is offered, with an unknown-publisher/SmartScreen warning. Do not describe this
+as a warning-free Windows release.
 
 ### Tauri updater signatures (for DMG/EXE in-app updates)
 

@@ -15,9 +15,9 @@
 #     Pick the branch/ref to build from (usually main). Main stays free for
 #     day-to-day work; nothing builds or publishes on push.
 #
-# Signing: Apple / Windows / updater secrets are optional. Builds succeed
-# unsigned for draft testing; set the secrets documented in
-# docs/releasing.md before a public ship.
+# Signing: macOS Developer ID signing and notarization are required. Windows
+# Authenticode signing is explicitly waived for this release, so every Windows
+# artifact is an unsigned beta. Updater signatures remain deferred to plan 006.
 #
 # Repo settings required: Settings → Actions → General → Workflow permissions
 # → Read and write permissions (so the job can create/update the GitHub Release).
@@ -98,16 +98,22 @@ jobs:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          if [ -z "${APPLE_CERTIFICATE:-}" ]; then
-            echo "APPLE_CERTIFICATE not set — building unsigned macOS artifacts"
-            exit 0
-          fi
-          if [ -z "${KEYCHAIN_PASSWORD:-}" ]; then
-            echo "KEYCHAIN_PASSWORD secret is required when APPLE_CERTIFICATE is set"
+          missing=0
+          for required in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD KEYCHAIN_PASSWORD APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+            if [ -z "${!required:-}" ]; then
+              echo "$required secret is required for signed macOS releases"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
             exit 1
           fi
-          echo "$APPLE_CERTIFICATE" | base64 --decode > certificate.p12
+          trap 'rm -f certificate.p12' EXIT
+          printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > certificate.p12
           security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
           security default-keychain -s build.keychain
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
@@ -124,13 +130,12 @@ jobs:
             exit 1
           fi
           echo "APPLE_SIGNING_IDENTITY=$CERT_ID" >> "$GITHUB_ENV"
-          rm -f certificate.p12
 
       - name: Build and upload to GitHub Release
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # macOS code signing + notarization (optional until secrets exist)
+          # Required macOS code signing + notarization
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ env.APPLE_SIGNING_IDENTITY }}
@@ -149,7 +154,7 @@ jobs:
             Candidate official desktop installers for paid distribution:
 
             - **macOS:** `.dmg` for Apple Silicon and Intel
-            - **Windows:** `.exe` (NSIS) and `.msi`
+            - **Windows beta:** unsigned `.exe` (NSIS) and `.msi`; Windows will report an unknown publisher and may show a SmartScreen warning
             - **Linux:** `.AppImage`, `.deb`, and `.rpm`
 
             Alfred shells out to local agent CLIs (Claude Code, Cursor, Codex, OpenCode). Install and authenticate those on the machine before running workflows.

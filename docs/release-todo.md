@@ -1,9 +1,10 @@
 # Alfred v0.1.0 release TODO
 
 **Status:** Not ready to publish  
-**Primary deliverables:** signed and notarized macOS `.dmg` installers and a
-signed Windows NSIS `.exe` installer delivered through the paid official
-download channel. The public GitHub repository distributes source code only.
+**Primary deliverables:** signed and notarized macOS `.dmg` installers and an
+explicitly unsigned-beta Windows NSIS `.exe` installer delivered through the
+paid official download channel. The public GitHub repository distributes
+source code only.
 
 This is the launch gate. The detailed implementation notes remain in
 [plan 004](../plans/004-release-signing-secrets.md),
@@ -34,16 +35,16 @@ This is the launch gate. The detailed implementation notes remain in
 
 ### 1. Put the release source on GitHub
 
-The current workspace has no Git `HEAD` and no `origin` remote, so the release
-workflow cannot run yet.
+Verified on 2026-08-13: the repository has a `main` branch, an `origin` remote,
+GitHub Actions enabled, and default workflow permissions set to read/write.
 
-- [ ] Review the current staged, modified, and untracked files; exclude local
+- [x] Review the current staged, modified, and untracked files; exclude local
   scratch/generated files from the release commit.
 - [ ] Create the release commit on `main` and push it to the final GitHub
   repository.
-- [ ] Confirm the repository owner/name and add the `origin` remote.
-- [ ] In GitHub, set Actions workflow permissions to **Read and write**.
-- [ ] Confirm `.github/workflows/release.yml` is visible under **Actions →
+- [x] Confirm the repository owner/name and add the `origin` remote.
+- [x] In GitHub, set Actions workflow permissions to **Read and write**.
+- [x] Confirm `.github/workflows/release.yml` is visible under **Actions →
   release**.
 
 ### 2. Decide the v0.1.0 product scope
@@ -61,7 +62,7 @@ workflow cannot run yet.
 
 ### 3. Make the release workflow internally consistent
 
-- [ ] Replace the unsupported `includeUpdaterJson` action input. The current
+- [x] Replace the unsupported `includeUpdaterJson` action input. The current
   `tauri-apps/tauri-action@v1` input is `uploadUpdaterJson`.
 - [ ] Decide the update policy for v0.1.0:
   - If automatic updates ship, complete plan 006, configure the updater public
@@ -80,12 +81,12 @@ workflow cannot run yet.
 
 #### macOS DMG — required
 
-As checked on 2026-08-11, the local machine reports no valid code-signing
-identity, and the test DMG is unsigned.
+Verified on 2026-08-13: the local keychain contains a valid Developer ID
+Application identity and all six required secret names exist in GitHub.
 
-- [ ] Enroll in/confirm the paid Apple Developer Program.
-- [ ] Create a **Developer ID Application** certificate and export its `.p12`.
-- [ ] Add `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`,
+- [x] Enroll in/confirm the paid Apple Developer Program.
+- [x] Create a **Developer ID Application** certificate and export its `.p12`.
+- [x] Add `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`,
   `KEYCHAIN_PASSWORD`, `APPLE_ID`, `APPLE_PASSWORD`, and `APPLE_TEAM_ID` as
   GitHub Actions secrets (plan 004).
 - [ ] Confirm both ARM64 and Intel `.app` bundles are signed.
@@ -94,6 +95,14 @@ identity, and the test DMG is unsigned.
   `xcrun stapler validate`.
 
 #### Windows EXE — required for a warning-free public release
+
+**Decision (2026-08-13):** Windows Authenticode signing is waived because there
+is no signing budget. Any Windows installer is an explicitly unsigned beta and
+must be labeled as such wherever it is offered. Users should expect an
+unknown-publisher/SmartScreen warning. This release does not claim to be a
+warning-free Windows release.
+
+- [x] Accept an unsigned Windows beta and document the expected warning.
 
 - [ ] Obtain a trusted Windows code-signing certificate.
 - [ ] Configure the certificate thumbprint, SHA-256 digest, and timestamp URL
@@ -171,6 +180,6 @@ Do this with files downloaded from the draft release, not local build output.
 
 The release is complete only when the paid channel contains a tested,
 signed/notarized ARM64 DMG, a tested, signed/notarized Intel DMG, and a tested,
-signed Windows NSIS EXE; purchase and download links work; checksums are
-published; the GitHub staging draft remains private; and customer-facing notes
-describe prerequisites and known limitations accurately.
+explicitly unsigned-beta Windows NSIS EXE; purchase and download links work;
+checksums are published; the GitHub staging draft remains private; and
+customer-facing notes describe prerequisites and known limitations accurately.
