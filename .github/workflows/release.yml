@@ -41,9 +41,11 @@ jobs:
         include:
           - platform: macos-latest
             args: --target aarch64-apple-darwin
+            target: aarch64-apple-darwin
             bundles: app,dmg
           - platform: macos-latest
             args: --target x86_64-apple-darwin
+            target: x86_64-apple-darwin
             bundles: app,dmg
           - platform: ubuntu-22.04
             args: ""
@@ -164,3 +166,23 @@ jobs:
           prerelease: false
           uploadUpdaterJson: false
           args: ${{ matrix.args }} --bundles ${{ matrix.bundles }}
+
+      - name: Staple and replace macOS DMG
+        if: matrix.platform == 'macos-latest'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          shopt -s nullglob
+          dmgs=(src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg)
+          if [ "${#dmgs[@]}" -ne 1 ]; then
+            echo "Expected exactly one DMG, found ${#dmgs[@]}"
+            exit 1
+          fi
+
+          xcrun stapler staple "${dmgs[0]}"
+          xcrun stapler validate "${dmgs[0]}"
+
+          version=$(jq -r '.version' src-tauri/tauri.conf.json)
+          gh release upload "v${version}" "${dmgs[0]}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber
