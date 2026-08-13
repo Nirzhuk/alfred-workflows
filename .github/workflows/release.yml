@@ -199,7 +199,8 @@ jobs:
     name: Verify downloaded macOS installer (${{ matrix.arch }})
     needs: publish-tauri
     permissions:
-      contents: read
+      # GitHub only exposes draft releases to tokens with push-level access.
+      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -295,7 +296,8 @@ jobs:
     name: Verify downloaded unsigned Windows installer
     needs: publish-tauri
     permissions:
-      contents: read
+      # GitHub only exposes draft releases to tokens with push-level access.
+      contents: write
     runs-on: windows-latest
 
     steps:
