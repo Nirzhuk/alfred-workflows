@@ -9,8 +9,8 @@
 > src-tauri/src/triggers/mod.rs src-tauri/src/triggers/http.rs
 > src-tauri/src/runner/mod.rs src/features/workflow/types.ts
 > src/features/workflow/components/triggers-modal/triggers-modal.tsx`.
-> Planned hashes begin `4264fbdb`, `ff71bfd6`, `54e71041`, `a3d8f4cb`,
-> `382e1de8`, and `4045e28d`.
+> Baseline hashes at Git commit `36835c9` on 2026-08-13 begin `4264fbdb`,
+> `ff71bfd6`, `a628ee3f`, `d19cbc76`, `42d759c4`, and `ad478c1c`.
 
 ## Status
 
@@ -19,7 +19,7 @@
 - **Risk**: HIGH
 - **Depends on**: Plan 008
 - **Category**: architecture / data handling
-- **Planned at**: unversioned snapshot, 2026-08-11
+- **Planned at**: 2026-08-11; reconciled at `36835c9`, 2026-08-13
 
 ## Why this matters
 
@@ -82,9 +82,10 @@ the whole normalized event must remain below a documented byte limit.
 
 ## Git workflow
 
-There was no usable `HEAD` at plan time. Preserve prerequisite and unrelated
-changes, do not commit/push without user direction, and avoid provider-specific
-event code in the core framework change. Update the index only after all gates.
+Use the current repository history and branch conventions. Preserve prerequisite
+and unrelated changes, do not commit/push without user direction, and avoid
+provider-specific event code in the core framework change. Update the index only
+after all gates.
 
 ## Implementation steps
 
@@ -107,9 +108,13 @@ oversized/raw-secret fields are rejected or removed.
 Add additive tables such as:
 
 - `app_trigger_state(trigger_id, cursor, subscription_id, expires_at,
-  last_polled_at, last_success_at, last_error_code, updated_at)`;
+  last_polled_at, last_success_at, last_error_code, overrun_count, updated_at)`;
 - `app_event_receipts(trigger_id, external_event_id, received_at,
-  run_id, PRIMARY KEY(trigger_id, external_event_id))`.
+  disposition, run_id, reason_code,
+  PRIMARY KEY(trigger_id, external_event_id))`;
+- `app_event_queue(id, trigger_id, external_event_id, normalized_event_json,
+  enqueued_at, started_at, UNIQUE(trigger_id, external_event_id))` for accepted
+  events waiting on the workflow's existing single-active-run slot.
 
 Keep receipt retention bounded (for example 30 days or a per-trigger cap).
 Insert receipt and enqueue exactly once in a transaction or recoverable state
@@ -117,8 +122,15 @@ machine. Advance a polling cursor only after all accepted events are durably
 recorded. A crash between receipt and run creation must be repairable without
 double-running the workflow.
 
+Use explicit receipt dispositions such as `queued`, `enqueued`,
+`dropped_overrun`, and `rejected_invalid`. A run that later fails is not
+automatically re-enqueued from its receipt; an explicit user “run again” action
+is a separate product feature. Receipt pruning must not remove a pending queue
+item or the receipt needed to deduplicate it.
+
 **Verify**: migration tests plus unit tests for duplicate delivery, out-of-order
-events, crash recovery, cursor rollback, and receipt pruning.
+events, crash recovery, cursor rollback, one-shot failed runs, terminal receipt
+dispositions, and receipt pruning.
 
 ### Step 3: Implement a provider-neutral sync runtime
 
@@ -132,12 +144,20 @@ lifecycle and cancellation. Provider event adapters expose poll, connect
 - persist checkpoints and renewal deadlines;
 - pause on revoked/expired credentials and surface a stable status;
 - stop cleanly on app exit and reload on trigger edits;
-- limit concurrency so polling never starves workflow execution.
+- limit concurrency so polling never starves workflow execution;
+- drain `app_event_queue` when the existing per-workflow run slot is free rather
+  than calling `start_run` and losing an event while that workflow is active;
+- enforce a configurable per-trigger pending cap. Pull-based providers stop
+  accepting events and do not advance beyond the unaccepted cursor. For
+  non-replayable socket/push delivery, reject the newest event with a durable
+  `dropped_overrun` receipt and increment the visible overrun counter. Never
+  delete an older event that was already accepted.
 
 It must not promise background delivery when the process is not running.
 
 **Verify**: fake-clock/fake-provider tests cover poll intervals, backoff,
-renewal, disable/re-enable, connection expiry, and graceful shutdown.
+renewal, disable/re-enable, connection expiry, queue draining, pull backpressure,
+non-replayable overrun, restart recovery, and graceful shutdown.
 
 ### Step 4: Minimize event data before workflow enqueue
 
@@ -186,6 +206,9 @@ by default. Add a user-visible “last error code” with a provider-safe messag
 - [ ] Providers can register events without modifying core trigger UI/runtime.
 - [ ] Events are normalized, bounded, deduplicated, and recoverable.
 - [ ] Poll/socket/subscription lifecycle pauses and resumes safely.
+- [ ] The durable queue respects the existing one-active-run-per-workflow rule.
+- [ ] Event bursts are bounded without silently deleting accepted events.
+- [ ] Failed runs are one-shot and are never silently re-enqueued from receipts.
 - [ ] Only allow-listed event data reaches runs and prompts.
 - [ ] UI clearly distinguishes local-only delivery from cloud delivery.
 - [ ] Existing schedule/file/webhook behavior remains green.

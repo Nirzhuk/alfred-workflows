@@ -1,7 +1,7 @@
 # Releasing Alfred
 
 Before cutting a public release, complete the
-[v0.1.0 release TODO](release-todo.md). This document is the operator runbook;
+[v0.5.0 release TODO](release-todo.md). This document is the operator runbook;
 the TODO is the launch gate and artifact acceptance checklist.
 
 Alfred's source is public under GPL-3.0-or-later, but official maintainer-built

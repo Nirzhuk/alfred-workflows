@@ -1,3 +1,5 @@
+pub mod integrations;
+
 use crate::agents;
 use crate::db::{
     CreateMemoryInput, CreateWorkflowInput, Db, Memory, MemoryWithOrigin, Schedule,
@@ -8,7 +10,7 @@ use crate::runner::{self, RunSummary, RunTrigger};
 use crate::scheduler;
 use crate::skills::{self, SkillRef};
 use crate::triggers::{self, TriggerRuntime};
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Emitter, State};
 
 #[tauri::command]
 pub fn list_workflows(db: State<'_, Db>) -> Result<Vec<Workflow>, String> {
@@ -165,6 +167,7 @@ pub fn upsert_workflow_schedule(
     let schedule =
         scheduler::upsert_schedule(&db, workflow_id, cron, enabled).map_err(|e| e.to_string())?;
     crate::tray::refresh(&app);
+    let _ = app.emit("schedules://changed", ());
     Ok(schedule)
 }
 
@@ -177,6 +180,7 @@ pub fn delete_workflow_schedule(
     db.delete_schedule_for_workflow(&workflow_id)
         .map_err(|e| e.to_string())?;
     crate::tray::refresh(&app);
+    let _ = app.emit("schedules://changed", ());
     Ok(())
 }
 

@@ -29,7 +29,7 @@ V1 lets a workflow send a channel message or thread reply and react to an
    Slack app and supplies bot/app tokens through a backend-owned secret form.
    Socket Mode avoids a public inbound endpoint while Alfred is open.
 2. **Native user action mode**: Slack PKCE authorizes user scopes through a
-   custom URI/localhost redirect without a client secret. Messages act with the
+   localhost loopback redirect without a client secret. Messages act with the
    user's identity; bot scopes and `app_mention` events are unavailable.
 3. **Public Alfred bot app**: normal workspace bot installation, token
    rotation, and HTTP event delivery through Plan 011. This is the complete
@@ -115,19 +115,24 @@ cleared after submission; source, DB, logs, and run events contain no token.
 Before choosing the default Slack connection UX, record a product decision on
 whether messages sent as the signed-in user are acceptable. Current Slack PKCE
 supports public desktop/mobile clients and custom URI or localhost redirects,
-but desktop redirects cannot request bot scopes. Enabling PKCE is a one-way app
+but desktop redirects cannot request bot scopes. V1 deliberately chooses the
+Plan 008 loopback helper; a later custom-URI flow requires a separate Tauri
+deep-link/single-instance lifecycle design. Enabling PKCE is a one-way app
 setting without Slack support, and current PKCE refresh tokens have a 30-day
 expiry, so refresh health and proactive reconnect UX are required.
 
-If approved, implement state + S256 PKCE in Rust, exchange without
-`client_secret`, request only the user scopes needed by actions, and label the
-connection/actions “Send as you.” Do not enable `app_mention`, Socket Mode bot
-events, or claim bot identity for this connection. If user-token behavior is
-not acceptable, document the rejection and proceed from private mode to the
-relay-backed bot mode.
+If approved, use Plan 008's loopback OAuth helper for state, verifier, callback,
+and timeout handling; supply Slack's authorization configuration and keep token
+exchange/error mapping in the provider. Exchange without `client_secret`,
+request only the user scopes needed by actions, and label the connection/actions
+“Send as you.” Register refresh with Plan 008's shared service. Do not enable
+`app_mention`, Socket Mode bot events, or claim bot identity for this connection.
+If user-token behavior is not acceptable, document the rejection and proceed
+from private mode to the relay-backed bot mode.
 
-**Verify**: custom URI/localhost interception, state mismatch, token rotation,
-refresh-token expiry/reconnect, revoked scopes, and user-vs-bot capability tests.
+**Verify**: loopback interception/hijack attempts, state mismatch, token
+rotation, refresh-token expiry/reconnect, revoked scopes, and user-vs-bot
+capability tests.
 
 ### Step 4: Register Slack actions
 
@@ -141,10 +146,10 @@ cache containing IDs/names only. Validate Slack text/block limits. Start with
 plain mrkdwn text; do not accept arbitrary Block Kit JSON in v1. Return message
 timestamp/channel/permalink where available, not the token or raw response.
 
-Honor `Retry-After`, do one auth refresh/rotation recovery where supported, and
-map Slack errors to framework codes. Do not retry a non-idempotent send after an
-ambiguous network timeout unless Slack offers a safe idempotency mechanism for
-that method; report “delivery unknown.”
+Honor `Retry-After`, request at most one on-demand auth recovery through Plan
+008's shared refresh service, and map Slack errors to framework codes. Do not
+retry a non-idempotent send after an ambiguous network timeout unless Slack
+offers a safe idempotency mechanism for that method; report “delivery unknown.”
 
 **Verify**: mocked HTTP tests cover pagination, channel not found, missing
 scope, rate limit, unauthorized, timeout ambiguity, output normalization, and

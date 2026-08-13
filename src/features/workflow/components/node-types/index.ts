@@ -1,5 +1,6 @@
 import type { NodeTypes } from "@xyflow/react";
 import { AgentNode } from "../agent-node";
+import { AppActionNode } from "../app-action-node";
 import { ChooseOutputNode } from "../choose-output-node";
 import { MemoryNode } from "../memory-node";
 import { InputNode } from "../prompt-node";
@@ -20,6 +21,7 @@ export const nodeTypes: NodeTypes = {
   prompt: InputNode,
   input: InputNode,
   agent: AgentNode,
+  appAction: AppActionNode,
   customAgent: CustomAgentNode,
   chooseOutput: ChooseOutputNode,
   memory: MemoryNode,

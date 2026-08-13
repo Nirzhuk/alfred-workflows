@@ -2,7 +2,11 @@
 
 Living doc for what Alfred is, how it works, and how we build it. Prefer updating this when product decisions change.
 
-Related docs: [README.md](README.md), [docs/install.md](docs/install.md), [docs/releasing.md](docs/releasing.md), [plans/](plans/).
+Related docs: [README.md](README.md), [docs/install.md](docs/install.md),
+[docs/releasing.md](docs/releasing.md),
+[docs/connected-apps.md](docs/connected-apps.md),
+[docs/app-actions.md](docs/app-actions.md),
+[docs/design-system.md](docs/design-system.md), [plans/](plans/).
 
 ---
 
@@ -13,7 +17,7 @@ Related docs: [README.md](README.md), [docs/install.md](docs/install.md), [docs/
 | **Name** | Alfred |
 | **Repo / package** | `workflows-local-agents` |
 | **Bundle id** | `com.nirzhuk.alfred` |
-| **Version** | `0.1.0` (see `package.json` / `tauri.conf.json`) |
+| **Version** | `0.5.0` (see `package.json` / `tauri.conf.json`) |
 | **License** | GPL-3.0-or-later |
 | **Author** | nirzhuk |
 
@@ -47,6 +51,7 @@ Related docs: [README.md](README.md), [docs/install.md](docs/install.md), [docs/
 | Client state | Zustand |
 | Desktop shell | Tauri 2 (Rust) |
 | Persistence | SQLite via `rusqlite` (bundled) |
+| Connected-app credentials | Native OS credential store via `keyring` |
 | Package manager | Bun |
 | Plugins | dialog, notification, opener, window-state, single-instance |
 
@@ -66,6 +71,8 @@ Related docs: [README.md](README.md), [docs/install.md](docs/install.md), [docs/
 | **Trigger** | File watcher or loopback webhook; fires the same runner with a payload |
 | **Library** | Durable notes / artifacts / agent outputs; star to inject on next run |
 | **Skill** | `SKILL.md` package pinned on an agent step (`/skill-name …`) |
+| **Connected App** | Provider-neutral local connection metadata in SQLite; OAuth credentials remain in the OS credential store |
+| **App Action** | One descriptor-driven workflow node whose validation, credentials, and execution stay in Rust |
 
 Inputs can be blocked to protect their label, prompt, attachments, size, and
 canvas position from accidental edits. The blocked state is stored with the
@@ -88,7 +95,7 @@ workflow graph and can be reversed from the node, its context menu, or settings.
 - **Canvas** — React Flow editor, add-step panel, toolbar (cwd, run/save, etc.)
 - **Activity panel** — This run / Result / Library / Live log
 - **Schedules page** — All cron schedules across workflows
-- **Settings** — Theme (system / light / dark), OS notifications
+- **Settings** — Theme, OS notifications, and Connected Apps status/disconnect
 - **Modals** — rename, schedule, triggers, output, memories inspector, confirm delete
 - **Tray / menu bar** — presence while running / scheduled work matters
 
@@ -116,6 +123,7 @@ Primary entities (see `src-tauri/src/db/schema.sql`):
 - `schedules` — one cron row per workflow
 - `triggers` — file / webhook configs
 - `memories` / `memory_links` — library + cross-workflow links
+- `app_connections` — non-secret provider/account/scopes/health metadata; credentials are never stored in SQLite
 
 ---
 
@@ -126,6 +134,7 @@ src/                          # React app
   components/                 # shared UI (kebab folders)
   features/workflow/          # canvas, store, api, nodes, panels
   features/settings/          # settings, theme, notifications
+  features/integrations/      # Connected Apps and generic App Action UI/state
 src-tauri/src/
   agents/                     # CLI adapters
   runner/                     # execute graphs
@@ -134,6 +143,7 @@ src-tauri/src/
   triggers/                   # file + webhook
   skills/                     # SKILL.md discovery
   commands/                   # Tauri invoke handlers
+  integrations/               # provider catalog, OAuth, keychain, refresh, action registry
 docs/                         # install, releasing
 plans/                        # product / licensing / release handoffs
 scripts/guard-desktop-tauri.mjs
@@ -158,7 +168,30 @@ scripts/guard-desktop-tauri.mjs
 
 ### Style / UX (working defaults)
 
-- Prefer existing CSS variables and patterns in `App.css` over new design systems
+- `docs/design-system.md` is the visual source of truth; shared decisions use
+  semantic CSS custom properties in `App.css`, not feature-local literals
+- Alfred bundles Geist for interface text, Fraunces for display accents, and
+  Geist Mono for technical content; the desktop UI has no runtime font
+  dependency
+- Application-owned UI uses identical tokens on macOS, Windows, and Linux;
+  platform branches are limited to OS chrome, shortcuts, permissions, and
+  native system surfaces
+- The root `data-platform` attribute is the CSS platform boundary. Components
+  must not implement their own user-agent checks
+- The type scale is 11/12/14/16/20/24px and weights are limited to
+  400/500/600/700; fractional font weights are not allowed
+- Shared spacing follows the documented four-pixel grid; controls, cards,
+  dialogs, icons, motion, elevation, and layering use their semantic token scales
+- Sidebar item text is always 14px/400, icons are 18px, and section labels are
+  16px/600 across workflow and Settings navigation
+- Navigation is flat by default: selection uses a subtle surface background,
+  never a weight shift, border, or shadow
+- Interactive components preserve dimensions across default, hover, pressed,
+  selected, focus-visible, disabled, error, and loading states
+- Keyboard focus, accessible names, AA contrast, and reduced-motion behavior
+  are required in light and dark themes
+- Title-bar content reserves macOS traffic-light space but uses the standard
+  content inset on Windows, Linux, unknown platforms, and in fullscreen
 - Keep activity panels compact (e.g. Library list max-height) when lists can grow large
 - Menus: shared `src/components/menu/` (dropdowns portaled when needed)
 

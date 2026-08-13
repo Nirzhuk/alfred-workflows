@@ -295,6 +295,30 @@ export function defaultGitHostNodeData(
   };
 }
 
+/** Provider-neutral connected-app action. All fields are non-secret; Rust
+ * resolves `connectionId` to a credential at execution time. */
+export type AppActionNodeData = {
+  type: "appAction";
+  label: string;
+  providerId: string;
+  actionId: string;
+  connectionId: string;
+  input: Record<string, unknown>;
+};
+
+export function defaultAppActionNodeData(
+  label = "App action",
+): AppActionNodeData {
+  return {
+    type: "appAction",
+    label,
+    providerId: "",
+    actionId: "",
+    connectionId: "",
+    input: {},
+  };
+}
+
 export type WorkflowNodeData =
   | PromptNodeData
   | AgentNodeData
@@ -308,7 +332,8 @@ export type WorkflowNodeData =
   | HttpNodeData
   | NotifyNodeData
   | WriteFileNodeData
-  | GitHostNodeData;
+  | GitHostNodeData
+  | AppActionNodeData;
 
 export type WorkflowNode = Node<WorkflowNodeData>;
 export type WorkflowEdge = Edge;
@@ -555,6 +580,12 @@ function hasKind<K extends string>(
   return "kind" in data && (data as { kind?: string }).kind === kind;
 }
 
+export function isAppActionNodeData(
+  data: WorkflowNodeData,
+): data is AppActionNodeData {
+  return "type" in data && data.type === "appAction";
+}
+
 export function isAgentNodeData(data: WorkflowNodeData): data is AgentNodeData {
   return !("kind" in data) && "provider" in data;
 }
@@ -673,6 +704,8 @@ export function titleForNodeType(type: string | undefined): string {
       return "Write file";
     case "gitHost":
       return "GitHub";
+    case "appAction":
+      return "App action";
     default:
       return "Step";
   }

@@ -108,6 +108,26 @@ CREATE TABLE IF NOT EXISTS memory_links (
   UNIQUE (workflow_id, memory_id)
 );
 
+-- Connected-app metadata only. OAuth credentials live in the OS credential
+-- store and are addressed by the opaque `credential_ref`.
+CREATE TABLE IF NOT EXISTS app_connections (
+  id TEXT PRIMARY KEY NOT NULL,
+  provider_id TEXT NOT NULL,
+  display_name TEXT,
+  external_account_id TEXT,
+  external_tenant_id TEXT,
+  connection_mode TEXT NOT NULL,
+  identity_key TEXT NOT NULL,
+  scopes_json TEXT NOT NULL DEFAULT '[]',
+  status TEXT NOT NULL DEFAULT 'connected' CHECK (status IN ('connected', 'expired', 'error', 'revoked')),
+  expires_at TEXT,
+  last_checked_at TEXT,
+  last_error_code TEXT,
+  credential_ref TEXT NOT NULL UNIQUE,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_runs_workflow_id ON runs(workflow_id);
 CREATE INDEX IF NOT EXISTS idx_run_steps_run_id ON run_steps(run_id);
 CREATE INDEX IF NOT EXISTS idx_schedules_workflow_id ON schedules(workflow_id);
@@ -118,3 +138,6 @@ CREATE INDEX IF NOT EXISTS idx_memories_workflow_id ON memories(workflow_id);
 CREATE INDEX IF NOT EXISTS idx_memories_workflow_pinned ON memories(workflow_id, pinned);
 CREATE INDEX IF NOT EXISTS idx_memory_links_workflow_id ON memory_links(workflow_id);
 CREATE INDEX IF NOT EXISTS idx_memory_links_memory_id ON memory_links(memory_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_app_connections_identity
+  ON app_connections(provider_id, connection_mode, identity_key);
+CREATE INDEX IF NOT EXISTS idx_app_connections_provider_id ON app_connections(provider_id);

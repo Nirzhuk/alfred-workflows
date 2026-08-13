@@ -73,6 +73,18 @@ fn map_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Trigger> {
 }
 
 impl Db {
+    pub fn list_all_triggers(&self) -> Result<Vec<Trigger>, DbError> {
+        self.with_conn(|conn| {
+            let mut stmt = conn.prepare(&format!(
+                "SELECT {COLUMNS} FROM triggers ORDER BY created_at ASC"
+            ))?;
+            let rows = stmt
+                .query_map([], map_row)?
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(rows)
+        })
+    }
+
     pub fn list_triggers(&self, workflow_id: &str) -> Result<Vec<Trigger>, DbError> {
         self.with_conn(|conn| {
             let mut stmt = conn.prepare(&format!(

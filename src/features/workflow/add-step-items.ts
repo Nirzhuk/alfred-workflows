@@ -1,6 +1,7 @@
 import type { AgentProviderId, WorkflowNodeData } from "./types";
 import {
   defaultCustomAgentNodeData,
+  defaultAppActionNodeData,
   defaultFileInjectNodeData,
   defaultGitHostNodeData,
   defaultGitStatusNodeData,
@@ -24,7 +25,7 @@ export type AddStepItem =
       data: WorkflowNodeData;
     };
 
-export type AddStepGroupId = "context" | "agent" | "sink";
+export type AddStepGroupId = "context" | "agent" | "apps" | "sink";
 
 export type AddStepGroup = {
   id: AddStepGroupId;
@@ -91,6 +92,18 @@ export const ADD_STEP_GROUPS: AddStepGroup[] = [
         label: "Notify",
         type: "notify",
         data: defaultNotifyNodeData(),
+      },
+    ],
+  },
+  {
+    id: "apps",
+    label: "Apps",
+    items: [
+      {
+        kind: "step",
+        label: "App action",
+        type: "appAction",
+        data: defaultAppActionNodeData(),
       },
     ],
   },

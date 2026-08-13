@@ -6,6 +6,7 @@ import {
   requestPermission,
 } from "@tauri-apps/plugin-notification";
 import { create } from "zustand";
+import { detectDesktopPlatform } from "../../platform";
 
 const ENABLED_KEY = "alfred:notifications-enabled";
 const SOUND_KEY = "alfred:notification-sound";
@@ -80,7 +81,7 @@ function persistNotificationSound(sound: NotificationSound) {
 }
 
 export function isMacPlatform(): boolean {
-  return /Mac|Macintosh/i.test(navigator.userAgent);
+  return detectDesktopPlatform() === "macos";
 }
 
 async function readPermission(): Promise<NotificationPermissionStatus> {

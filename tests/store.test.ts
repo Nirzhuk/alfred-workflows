@@ -10,6 +10,10 @@ import type {
 
 beforeEach(() => {
   useToastStore.setState({ toasts: [] });
+  Object.defineProperty(globalThis, "document", {
+    configurable: true,
+    value: { hidden: false, hasFocus: () => true },
+  });
 });
 
 function inputNode(blocked: boolean): WorkflowNode {
@@ -178,6 +182,33 @@ describe("concurrent workflow runs", () => {
     expect(state.activeNodeId).toBe("first-node");
     expect(state.workflowRunStates.second.activeNodeId).toBe("second-node");
   });
+
+  test("releases completed detail for background workflows that are not open", () => {
+    useWorkflowStore.setState({ openWorkflowIds: ["first"] });
+    const store = useWorkflowStore.getState();
+    store.handleRunEvent(runEvent("second", "run-second", "started"));
+    store.handleRunEvent({
+      ...runEvent("second", "run-second", "completed"),
+      output: "large background result",
+    });
+
+    expect(useWorkflowStore.getState().workflowRunStates.second).toBeUndefined();
+    expect(useWorkflowStore.getState().activeWorkflowId).toBe("first");
+  });
+
+  test("releases completed detail when a non-active workflow tab closes", async () => {
+    useWorkflowStore.setState({ openWorkflowIds: ["first", "second"] });
+    const store = useWorkflowStore.getState();
+    store.handleRunEvent(runEvent("second", "run-second", "started"));
+    store.handleRunEvent(runEvent("second", "run-second", "completed"));
+    expect(useWorkflowStore.getState().workflowRunStates.second).toBeDefined();
+
+    await useWorkflowStore.getState().closeWorkflowTab("second");
+
+    const state = useWorkflowStore.getState();
+    expect(state.openWorkflowIds).toEqual(["first"]);
+    expect(state.workflowRunStates.second).toBeUndefined();
+  });
 });
 
 describe("agent activity run logs", () => {
@@ -333,6 +364,28 @@ describe("agent activity run logs", () => {
     expect(logs.at(-1)?.activity?.id).toBe("activity-1004");
   });
 
+  test("bounds the aggregate console text retained in memory", () => {
+    const store = useWorkflowStore.getState();
+    store.handleRunEvent(
+      runEvent("activity-workflow", runId, "started"),
+    );
+    for (let index = 0; index < 40; index += 1) {
+      store.handleRunEvent(
+        activityEvent(runId, nodeId, {
+          id: `large-${index}`,
+          kind: "command",
+          state: "completed",
+          label: `Command ${index}`,
+          detail: `detail-${index}-`.padEnd(40_000, "x"),
+        }),
+      );
+    }
+
+    const logs = useWorkflowStore.getState().runLogs;
+    expect(logs.length).toBeLessThan(40);
+    expect(logs.at(-1)?.activity?.id).toBe("large-39");
+  });
+
   test("preserves normal step and run completion behavior", () => {
     const store = useWorkflowStore.getState();
     store.handleRunEvent(
@@ -366,6 +419,7 @@ describe("agent activity run logs", () => {
     expect(state.stepOutputs[nodeId]).toBe("Step result");
     expect(state.stepOutputs.__final__).toBe("Final result");
     expect(state.runLogs.at(-1)?.kind).toBe("completed");
+    expect(state.runLogs.at(-1)?.output).toBeUndefined();
     expect(
       state.runLogs.some((line) => line.activity?.id === "response-1"),
     ).toBe(true);

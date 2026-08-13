@@ -6,6 +6,7 @@ import {
   MenuItem,
 } from "../../../../components/menu";
 import { Modal, ModalHeader } from "../../../../components/modal";
+import { AppActionSettings } from "../../../integrations/app-action-settings";
 import * as api from "../../api";
 import {
   modelsForProvider,
@@ -19,6 +20,7 @@ import {
 } from "../../attachments";
 import {
   agentSkillNames,
+  isAppActionNodeData,
   isAgentNodeData,
   isCustomAgentNodeData,
   isFileInjectNodeData,
@@ -161,6 +163,13 @@ export function NodeSettingsModal({ nodeId, onClose }: Props) {
 
         {isCustomAgentNodeData(node.data) ? (
           <CustomAgentSettings
+            data={node.data}
+            onUpdate={(patch) => updateNodeData(node.id, patch)}
+          />
+        ) : null}
+
+        {isAppActionNodeData(node.data) ? (
+          <AppActionSettings
             data={node.data}
             onUpdate={(patch) => updateNodeData(node.id, patch)}
           />

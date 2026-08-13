@@ -1,4 +1,4 @@
-# Alfred v0.1.0 release TODO
+# Alfred v0.5.0 release TODO
 
 **Status:** Not ready to publish  
 **Primary deliverables:** signed and notarized macOS `.dmg` installers and an
@@ -18,7 +18,7 @@ This is the launch gate. The detailed implementation notes remain in
 - [x] The manual GitHub Actions release workflow has macOS ARM64, macOS Intel,
   Windows, and Linux jobs.
 - [x] `package.json`, `src-tauri/Cargo.toml`, and
-  `src-tauri/tauri.conf.json` all use version `0.1.0`.
+  `src-tauri/tauri.conf.json` all use version `0.5.0`.
 - [x] Product name, bundle identifier, icons, GPL-3.0-or-later license, install guide, and
   release operator guide exist.
 - [x] Source-build, contribution, security, conduct, and branding policies are
@@ -52,14 +52,14 @@ GitHub Actions enabled, and default workflow permissions set to read/write.
 - [x] Confirm `.github/workflows/release.yml` is visible under **Actions →
   release**.
 
-### 2. Decide the v0.1.0 product scope
+### 2. Decide the v0.5.0 product scope
 
 - [x] Distribution decision: official maintainer-built binaries are paid;
   source is GPL-3.0-or-later and may be compiled without an Alfred purchase.
 - [ ] Reconcile freemium/license plans `001`–`003` with free source builds
   before executing them. GPL licensing does not itself enforce payment and
   users may modify the source, including entitlement code.
-- [ ] Freeze the features included in v0.1.0; connected apps (`008`–`017`),
+- [ ] Freeze the features included in v0.5.0; connected apps (`008`–`017`),
   authenticated updates, and other planned work should not silently expand the
   first release.
 - [ ] Confirm the final app name `Alfred`, bundle ID
@@ -69,7 +69,7 @@ GitHub Actions enabled, and default workflow permissions set to read/write.
 
 - [x] Replace the unsupported `includeUpdaterJson` action input. The current
   `tauri-apps/tauri-action@v1` input is `uploadUpdaterJson`.
-- [ ] Decide the update policy for v0.1.0:
+- [ ] Decide the update policy for v0.5.0:
   - If automatic updates ship, complete plan 006, configure the updater public
     key and endpoint, generate signed updater artifacts, and keep
     `uploadUpdaterJson: true`.
@@ -121,7 +121,7 @@ an explicit beta decision because SmartScreen will warn users.
 
 ### 5. Produce and inspect the draft release
 
-- [x] Confirm `0.1.0` is still the intended version and keep it identical in
+- [x] Confirm `0.5.0` is still the intended version and keep it identical in
   all three version files.
 - [x] Run **Actions → release → Run workflow** from the frozen release commit.
 - [x] Require these assets in the draft release:

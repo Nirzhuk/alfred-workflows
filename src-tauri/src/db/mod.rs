@@ -1,3 +1,4 @@
+mod app_connections;
 mod memories;
 mod migrate;
 mod schedules;
@@ -60,6 +61,17 @@ impl Db {
             .lock()
             .map_err(|_| DbError::Other("database lock poisoned".into()))?;
         f(&conn)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn open_in_memory() -> Result<Self, DbError> {
+        let conn = Connection::open_in_memory()?;
+        conn.execute_batch("PRAGMA foreign_keys = ON;")?;
+        conn.execute_batch(include_str!("schema.sql"))?;
+        migrate::apply_migrations(&conn)?;
+        Ok(Self {
+            conn: Mutex::new(conn),
+        })
     }
 }
 

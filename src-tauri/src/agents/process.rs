@@ -1,7 +1,7 @@
 //! Shared helpers for spawning local agent CLIs.
 
 use directories::BaseDirs;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -10,6 +10,70 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use super::active::RunControl;
+
+const OUTPUT_CHANNEL_CAPACITY: usize = 256;
+const MAX_STDOUT_CAPTURE_BYTES: usize = 16 * 1024 * 1024;
+const MAX_STDERR_CAPTURE_BYTES: usize = 1024 * 1024;
+const CAPTURE_TRUNCATED_MARKER: &str = "[... earlier process output omitted ...]\n";
+
+struct BoundedCapture {
+    text: String,
+    max_bytes: usize,
+    truncated: bool,
+}
+
+impl BoundedCapture {
+    fn new(max_bytes: usize) -> Self {
+        Self {
+            text: String::new(),
+            max_bytes,
+            truncated: false,
+        }
+    }
+
+    fn push_line(&mut self, line: &str) {
+        if !self.text.is_empty() {
+            self.text.push('\n');
+        }
+        self.text.push_str(line);
+
+        if self.text.len() <= self.max_bytes {
+            return;
+        }
+
+        self.truncated = true;
+        // Drop a chunk instead of a few bytes on every line once full. Keeping
+        // the tail preserves terminal JSON/result records from streaming CLIs.
+        let target_bytes = self.max_bytes.saturating_mul(3) / 4;
+        let mut start = self.text.len().saturating_sub(target_bytes);
+        while start < self.text.len() && !self.text.is_char_boundary(start) {
+            start += 1;
+        }
+        if let Some(newline) = self.text[start..].find('\n') {
+            start += newline + 1;
+        }
+        self.text.drain(..start);
+    }
+
+    fn finish(mut self) -> String {
+        if !self.truncated {
+            return self.text;
+        }
+
+        let available = self
+            .max_bytes
+            .saturating_sub(CAPTURE_TRUNCATED_MARKER.len());
+        if self.text.len() > available {
+            let mut start = self.text.len() - available;
+            while start < self.text.len() && !self.text.is_char_boundary(start) {
+                start += 1;
+            }
+            self.text.drain(..start);
+        }
+        self.text.insert_str(0, CAPTURE_TRUNCATED_MARKER);
+        self.text
+    }
+}
 
 pub struct CmdOutput {
     pub stdout: String,
@@ -121,11 +185,47 @@ pub fn run_cmd(
     control: Option<&RunControl>,
     on_line: Option<&dyn Fn(&str)>,
 ) -> Result<CmdOutput, String> {
+    run_cmd_inner(bin, args, cwd, timeout, control, on_line, None)
+}
+
+/// Variant used by custom agents that accept their prompt over stdin.
+pub fn run_cmd_with_stdin(
+    bin: &Path,
+    args: &[String],
+    cwd: Option<&Path>,
+    timeout: Duration,
+    control: Option<&RunControl>,
+    on_line: Option<&dyn Fn(&str)>,
+    stdin_payload: &str,
+) -> Result<CmdOutput, String> {
+    run_cmd_inner(
+        bin,
+        args,
+        cwd,
+        timeout,
+        control,
+        on_line,
+        Some(stdin_payload),
+    )
+}
+
+fn run_cmd_inner(
+    bin: &Path,
+    args: &[String],
+    cwd: Option<&Path>,
+    timeout: Duration,
+    control: Option<&RunControl>,
+    on_line: Option<&dyn Fn(&str)>,
+    stdin_payload: Option<&str>,
+) -> Result<CmdOutput, String> {
     let mut command = Command::new(bin);
     command
         .args(args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    if stdin_payload.is_some() {
+        command.stdin(Stdio::piped());
+    }
 
     if let Some(dir) = cwd {
         command.current_dir(dir);
@@ -137,6 +237,7 @@ pub fn run_cmd(
         .spawn()
         .map_err(|e| format!("failed to spawn {}: {e}", bin.display()))?;
 
+    let mut stdin = child.stdin.take();
     let stdout = child
         .stdout
         .take()
@@ -158,12 +259,14 @@ pub fn run_cmd(
         .map(|c| Arc::clone(&c.cancel))
         .unwrap_or_else(|| Arc::new(AtomicBool::new(false)));
 
-    let stdout_buf = Arc::new(Mutex::new(String::new()));
-    let stderr_buf = Arc::new(Mutex::new(String::new()));
+    let stdout_buf = Arc::new(Mutex::new(BoundedCapture::new(MAX_STDOUT_CAPTURE_BYTES)));
+    let stderr_buf = Arc::new(Mutex::new(BoundedCapture::new(MAX_STDERR_CAPTURE_BYTES)));
     let stdout_acc = Arc::clone(&stdout_buf);
     let stderr_acc = Arc::clone(&stderr_buf);
 
-    let (tx, rx) = std::sync::mpsc::channel::<String>();
+    // Backpressure prevents a noisy child from duplicating an arbitrary amount
+    // of unread output in Alfred's heap.
+    let (tx, rx) = std::sync::mpsc::sync_channel::<String>(OUTPUT_CHANNEL_CAPACITY);
     let tx_out = tx.clone();
     let tx_err = tx.clone();
     drop(tx);
@@ -172,10 +275,7 @@ pub fn run_cmd(
         let reader = BufReader::new(stdout);
         for line in reader.lines().flatten() {
             if let Ok(mut buf) = stdout_acc.lock() {
-                if !buf.is_empty() {
-                    buf.push('\n');
-                }
-                buf.push_str(&line);
+                buf.push_line(&line);
             }
             let _ = tx_out.send(line);
         }
@@ -185,21 +285,36 @@ pub fn run_cmd(
         let reader = BufReader::new(stderr);
         for line in reader.lines().flatten() {
             if let Ok(mut buf) = stderr_acc.lock() {
-                if !buf.is_empty() {
-                    buf.push('\n');
-                }
-                buf.push_str(&line);
+                buf.push_line(&line);
             }
             let _ = tx_err.send(line);
         }
     });
 
     let start = Instant::now();
+    // Start draining stdout/stderr before writing a potentially large prompt.
+    // Otherwise a child that emits output while reading stdin can fill its
+    // stdout pipe while this thread is blocked filling the stdin pipe.
+    let stdin_error = stdin_payload.and_then(|payload| match stdin.as_mut() {
+        Some(handle) => handle
+            .write_all(payload.as_bytes())
+            .err()
+            .map(|error| format!("failed to write prompt to stdin: {error}")),
+        None => Some(format!("missing stdin for {}", bin.display())),
+    });
+    drop(stdin);
+    if stdin_error.is_some() {
+        kill_child(control, &local_slot);
+    }
+
     let mut cancelled = false;
     let mut timed_out = false;
 
     loop {
-        while let Ok(line) = rx.try_recv() {
+        for _ in 0..OUTPUT_CHANNEL_CAPACITY {
+            let Ok(line) = rx.try_recv() else {
+                break;
+            };
             if let Some(cb) = on_line {
                 cb(&line);
             }
@@ -225,6 +340,15 @@ pub fn run_cmd(
         thread::sleep(Duration::from_millis(40));
     }
 
+    // A bounded sender may be waiting for capacity. Continue consuming while
+    // the pipe readers finish so joining them cannot deadlock.
+    while !t_out.is_finished() || !t_err.is_finished() {
+        if let Ok(line) = rx.recv_timeout(Duration::from_millis(40)) {
+            if let Some(cb) = on_line {
+                cb(&line);
+            }
+        }
+    }
     while let Ok(line) = rx.try_recv() {
         if let Some(cb) = on_line {
             cb(&line);
@@ -236,6 +360,9 @@ pub fn run_cmd(
 
     let status_ok = wait_child(control, &local_slot);
 
+    if let Some(error) = stdin_error {
+        return Err(error);
+    }
     if cancelled {
         return Err("cancelled".into());
     }
@@ -247,8 +374,8 @@ pub fn run_cmd(
         ));
     }
 
-    let stdout = stdout_buf.lock().map(|s| s.clone()).unwrap_or_default();
-    let stderr = stderr_buf.lock().map(|s| s.clone()).unwrap_or_default();
+    let stdout = take_capture(stdout_buf);
+    let stderr = take_capture(stderr_buf);
 
     Ok(CmdOutput {
         stdout,
@@ -256,6 +383,19 @@ pub fn run_cmd(
         success: status_ok,
         duration_ms: start.elapsed().as_millis(),
     })
+}
+
+fn take_capture(capture: Arc<Mutex<BoundedCapture>>) -> String {
+    match Arc::try_unwrap(capture) {
+        Ok(mutex) => match mutex.into_inner() {
+            Ok(capture) => capture.finish(),
+            Err(poisoned) => poisoned.into_inner().finish(),
+        },
+        Err(capture) => capture
+            .lock()
+            .map(|value| value.text.clone())
+            .unwrap_or_default(),
+    }
 }
 
 fn kill_child(control: Option<&RunControl>, local_slot: &Arc<Mutex<Option<std::process::Child>>>) {
@@ -349,5 +489,37 @@ mod tests {
             .recv_timeout(Duration::from_secs(1))
             .expect("waiter should acquire released lock");
         waiter.join().expect("waiter thread");
+    }
+
+    #[test]
+    fn bounded_capture_keeps_recent_output_within_its_budget() {
+        let mut capture = BoundedCapture::new(96);
+        for index in 0..20 {
+            capture.push_line(&format!("event-{index:02}-abcdefghij"));
+        }
+
+        let output = capture.finish();
+        assert!(output.len() <= 96);
+        assert!(output.starts_with(CAPTURE_TRUNCATED_MARKER));
+        assert!(output.contains("event-19"));
+        assert!(!output.contains("event-00"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn shared_process_path_writes_stdin_and_captures_output() {
+        let output = run_cmd_with_stdin(
+            Path::new("/bin/sh"),
+            &["-c".into(), "cat".into()],
+            None,
+            Duration::from_secs(2),
+            None,
+            None,
+            "hello from stdin\n",
+        )
+        .expect("stdin command should run");
+
+        assert!(output.success);
+        assert_eq!(output.stdout.trim(), "hello from stdin");
     }
 }

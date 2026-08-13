@@ -8,6 +8,37 @@ use serde::Serialize;
 use std::sync::Mutex;
 use tauri::{path::BaseDirectory, AppHandle, Emitter, Manager, Runtime, State};
 
+const MAX_NOTIFICATION_OPEN_BODY_BYTES: usize = 256 * 1024;
+const NOTIFICATION_BODY_TRUNCATED_SUFFIX: &str =
+    "\n\n[… output truncated in notification; the complete run remains stored by Alfred]";
+
+fn bounded_notification_body(mut body: String) -> String {
+    if body.len() <= MAX_NOTIFICATION_OPEN_BODY_BYTES {
+        return body;
+    }
+
+    let budget =
+        MAX_NOTIFICATION_OPEN_BODY_BYTES.saturating_sub(NOTIFICATION_BODY_TRUNCATED_SUFFIX.len());
+    let mut end = budget.min(body.len());
+    while end > 0 && !body.is_char_boundary(end) {
+        end -= 1;
+    }
+    body.truncate(end);
+    body.push_str(NOTIFICATION_BODY_TRUNCATED_SUFFIX);
+    body
+}
+
+fn run_notification_copy(workflow_name: &str, ok: bool) -> (String, &'static str) {
+    if ok {
+        (format!("{workflow_name} finished"), "Click to view output.")
+    } else {
+        (
+            format!("{workflow_name} failed"),
+            "Click to view error details.",
+        )
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 enum NotificationSound {
     #[default]
@@ -189,7 +220,7 @@ fn install_development_notification_identity<R: Runtime>(app: &AppHandle<R>) -> 
   <key>CFBundleIdentifier</key><string>{identifier}</string>
   <key>CFBundleName</key><string>Alfred</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>0.1.0</string>
+  <key>CFBundleShortVersionString</key><string>0.5.0</string>
   <key>CFBundleVersion</key><string>1</string>
   <key>LSBackgroundOnly</key><true/>
   <key>LSUIElement</key><true/>
@@ -249,30 +280,14 @@ pub fn notify_run_finished<R: Runtime>(
     body: String,
 ) {
     let app = app.clone();
-    let summary = if ok {
-        "Automation finished".to_string()
-    } else {
-        "Automation failed".to_string()
-    };
-    let preview = if body.trim().is_empty() {
-        format!(
-            "{workflow_name}: {}",
-            if ok { "Run completed" } else { "Run failed" }
-        )
-    } else {
-        let trimmed = body.trim();
-        let preview: String = trimmed.chars().take(160).collect();
-        if trimmed.chars().count() > 160 {
-            format!("{workflow_name}: {preview}…")
-        } else {
-            format!("{workflow_name}: {preview}")
-        }
-    };
+    let (summary, message) = run_notification_copy(&workflow_name, ok);
 
+    // Notification action handlers may wait for minutes or hours. Retain a
+    // bounded body in each waiting thread rather than an arbitrary model result.
     let open_payload = OpenRunOutputPayload {
         workflow_id,
         title,
-        body,
+        body: bounded_notification_body(body),
         ok,
     };
 
@@ -280,9 +295,9 @@ pub fn notify_run_finished<R: Runtime>(
         let mut notification = notify_rust::Notification::new();
         notification
             .summary(&summary)
-            .body(&preview)
+            .body(message)
             // Lets Linux/XDG treat a banner click as the default action.
-            .action("default", "Open");
+            .action("default", "View output");
         configure_notification(&app, &mut notification);
 
         let Ok(handle) = notification.show() else {
@@ -343,7 +358,10 @@ pub fn notify_message_cmd(app: AppHandle, title: String, body: String) -> Result
 
 #[cfg(test)]
 mod tests {
-    use super::NotificationSound;
+    use super::{
+        bounded_notification_body, run_notification_copy, NotificationSound,
+        MAX_NOTIFICATION_OPEN_BODY_BYTES,
+    };
 
     #[test]
     fn parses_supported_sound_ids() {
@@ -368,5 +386,27 @@ mod tests {
             Some(NotificationSound::None)
         );
         assert_eq!(NotificationSound::parse("unknown"), None);
+    }
+
+    #[test]
+    fn bounds_output_retained_by_notification_action_threads() {
+        let body = "é".repeat(MAX_NOTIFICATION_OPEN_BODY_BYTES);
+        let bounded = bounded_notification_body(body);
+
+        assert!(bounded.len() <= MAX_NOTIFICATION_OPEN_BODY_BYTES);
+        assert!(bounded.contains("output truncated in notification"));
+        assert!(bounded.is_char_boundary(bounded.len()));
+    }
+
+    #[test]
+    fn run_notification_prompts_the_user_to_open_the_result() {
+        assert_eq!(
+            run_notification_copy("Potato", true),
+            ("Potato finished".to_string(), "Click to view output.")
+        );
+        assert_eq!(
+            run_notification_copy("Potato", false),
+            ("Potato failed".to_string(), "Click to view error details.")
+        );
     }
 }

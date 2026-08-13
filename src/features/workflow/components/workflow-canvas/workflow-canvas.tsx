@@ -5,6 +5,10 @@ import "@xyflow/react/dist/style.css";
 import { AppTitlebar } from "../app-title-bar";
 import { ConfirmDialog } from "../../../../components/confirm-dialog";
 import { SettingsPage } from "../../../settings/components/settings-page";
+import {
+  SettingsSidebar,
+  type SettingsSectionId,
+} from "../../../settings/components/settings-sidebar";
 import { SchedulesPage } from "../schedules-page";
 import { SidebarBottomBar } from "../sidebar-bottom-bar";
 import { SidebarNav, type SidebarView } from "../sidebar-nav";
@@ -36,6 +40,26 @@ function FolderGlyph() {
         stroke="currentColor"
         strokeWidth="1.3"
         strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function FolderAddGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M3 6.5h6l2 2H21v8.75A1.75 1.75 0 0 1 19.25 19H4.75A1.75 1.75 0 0 1 3 17.25V6.5Z"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M15 11.5v5M12.5 14h5"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
       />
     </svg>
   );
@@ -182,7 +206,10 @@ export function WorkflowCanvas() {
   } | null>(null);
   const [memoriesOpen, setMemoriesOpen] = useState(false);
   const [memoriesFocusId, setMemoriesFocusId] = useState<string | null>(null);
+  const [runPanelMounted, setRunPanelMounted] = useState(runPanelOpen);
   const [view, setView] = useState<SidebarView>("canvas");
+  const [settingsSection, setSettingsSection] =
+    useState<SettingsSectionId>("general");
   const [schedulesTick, setSchedulesTick] = useState(0);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     try {
@@ -201,6 +228,17 @@ export function WorkflowCanvas() {
       /* ignore */
     }
   };
+
+  useEffect(() => {
+    if (runPanelOpen) {
+      setRunPanelMounted(true);
+      return;
+    }
+    // Keep the DOM only for the existing close transition, then release up to
+    // 1,000 console rows, memory cards, and the compositor layer.
+    const timeout = window.setTimeout(() => setRunPanelMounted(false), 200);
+    return () => window.clearTimeout(timeout);
+  }, [runPanelOpen]);
 
   const chooseWorkingDirectory = async (workflowId: string) => {
     const picked = await open({
@@ -321,7 +359,7 @@ export function WorkflowCanvas() {
     };
     const checkUpdates = () => {
       window.alert(
-        "Alfred 0.1.0\n\nAutomatic updates aren’t set up yet. You’ll get a notice here once they are.",
+        "Alfred 0.5.0\n\nAutomatic updates aren’t set up yet. You’ll get a notice here once they are.",
       );
     };
     const openWorkflow = (event: Event) => {
@@ -460,91 +498,93 @@ export function WorkflowCanvas() {
       >
         <div className="sidebar-rail">
           <aside className="sidebar" aria-hidden={sidebarCollapsed}>
-            <div className="sidebar-scroll">
-              <SidebarNav view={view} onChange={setView} />
-
-              <div className="sidebar-header">
-                <h2>Workflows</h2>
-                <div className="sidebar-header-actions">
-                  <button
-                    type="button"
-                    className="ghost sidebar-header-icon sidebar-folder-add"
-                    title="New folder"
-                    aria-label="New folder"
-                    onClick={() => setFolderModal({ mode: "create" })}
-                  >
-                    <FolderGlyph />
-                    <span aria-hidden>+</span>
-                  </button>
-                  <button
-                    type="button"
-                    className="ghost sidebar-header-icon"
-                    title="New workflow"
-                    aria-label="New workflow"
-                    onClick={() => {
-                      setView("canvas");
-                      void createWorkflow();
-                    }}
-                  >
-                    +
-                  </button>
-                </div>
-              </div>
-              <WorkflowList
-                workflows={workflows}
-                folders={workflowFolders}
-                activeWorkflowId={activeWorkflowId}
-                activeLiveNodes={nodes}
-                schedules={workflowSchedules}
-                runningProviderByWorkflowId={runningProviderByWorkflowId}
-                onSelect={(id) => {
-                  setView("canvas");
-                  void selectWorkflow(id);
-                }}
-                onOpenMenu={({ id, name, x, y }) => {
-                  setWorkflowMenu({ id, name, x, y });
-                }}
-                onOpenFolderMenu={({ id, name, x, y }) => {
-                  setFolderMenu({ id, name, x, y });
-                }}
-                onMoveToFolder={(workflowId, folderId, beforeWorkflowId) =>
-                  void moveWorkflowToFolder(
-                    workflowId,
-                    folderId,
-                    beforeWorkflowId,
-                  )
-                }
+            {view === "settings" ? (
+              <SettingsSidebar
+                activeSection={settingsSection}
+                onChange={setSettingsSection}
+                onBack={() => setView("canvas")}
               />
-            </div>
+            ) : (
+              <div className="sidebar-scroll">
+                <SidebarNav
+                  view={view}
+                  activityOpen={runPanelOpen && view === "canvas"}
+                  activityEnabled={canOpenActivity}
+                  memoriesOpen={memoriesOpen}
+                  memoriesEnabled={Boolean(activeWorkflowId)}
+                  onChange={setView}
+                  onNewWorkflow={() => {
+                    setView("canvas");
+                    void createWorkflow();
+                  }}
+                  onToggleActivity={() => {
+                    setView("canvas");
+                    if (runPanelOpen) closeRunPanel();
+                    else openRunPanel();
+                  }}
+                  onOpenMemories={() => {
+                    setView("canvas");
+                    setMemoriesFocusId(null);
+                    setMemoriesOpen(true);
+                  }}
+                  onOpenConnectedApps={() => {
+                    setSettingsSection("connected-apps");
+                    setView("settings");
+                  }}
+                  onOpenSettings={() => {
+                    setSettingsSection("general");
+                    setView("settings");
+                  }}
+                />
 
-            <SidebarBottomBar
-              activityOpen={runPanelOpen && view === "canvas"}
-              settingsOpen={view === "settings"}
-              onToggleActivity={() => {
-                setView("canvas");
-                if (runPanelOpen) closeRunPanel();
-                else openRunPanel();
-              }}
-              onOpenMemories={
-                activeWorkflowId
-                  ? () => {
-                      setView("canvas");
-                      setMemoriesFocusId(null);
-                      setMemoriesOpen(true);
-                    }
-                  : undefined
-              }
-              onOpenSettings={() => {
-                setView((current) =>
-                  current === "settings" ? "canvas" : "settings",
-                );
-              }}
-            />
+                <div className="sidebar-header">
+                  <h2>Workflows</h2>
+                  <div className="sidebar-header-actions">
+                    <button
+                      type="button"
+                      className="ghost sidebar-header-icon sidebar-folder-add"
+                      title="New folder"
+                      aria-label="New folder"
+                      onClick={() => setFolderModal({ mode: "create" })}
+                    >
+                      <FolderAddGlyph />
+                    </button>
+                  </div>
+                </div>
+                <WorkflowList
+                  workflows={workflows}
+                  folders={workflowFolders}
+                  activeWorkflowId={activeWorkflowId}
+                  activeLiveNodes={nodes}
+                  schedules={workflowSchedules}
+                  runningProviderByWorkflowId={runningProviderByWorkflowId}
+                  onSelect={(id) => {
+                    setView("canvas");
+                    void selectWorkflow(id);
+                  }}
+                  onOpenMenu={({ id, name, x, y }) => {
+                    setWorkflowMenu({ id, name, x, y });
+                  }}
+                  onOpenFolderMenu={({ id, name, x, y }) => {
+                    setFolderMenu({ id, name, x, y });
+                  }}
+                  onMoveToFolder={(workflowId, folderId, beforeWorkflowId) =>
+                    void moveWorkflowToFolder(
+                      workflowId,
+                      folderId,
+                      beforeWorkflowId,
+                    )
+                  }
+                />
+              </div>
+            )}
+
+            <SidebarBottomBar />
           </aside>
         </div>
 
         {view === "settings" ? (
-          <SettingsPage onClose={() => setView("canvas")} />
+          <SettingsPage activeSection={settingsSection} />
         ) : view === "schedules" ? (
           <SchedulesPage
             key={schedulesTick}
@@ -698,7 +738,7 @@ export function WorkflowCanvas() {
               </div>
             </section>
 
-            <RunActivityPanel />
+            {runPanelMounted ? <RunActivityPanel /> : null}
           </>
         )}
       </div>

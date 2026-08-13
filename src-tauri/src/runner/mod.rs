@@ -4,16 +4,20 @@
 //! the active node.
 
 use crate::agents::active::{self, RunControl};
-use crate::agents::process::{find_bin, prefer_stdout, run_cmd};
+use crate::agents::process::{find_bin, prefer_stdout, run_cmd, run_cmd_with_stdin};
 use crate::agents::{
     adapter_for, auth_required, AgentActivity, AgentActivityKind, AgentActivityState,
     AgentAuthRequired, AgentError, AgentProvider, AgentRequest, AgentRunHooks,
 };
 use crate::db::Db;
+use crate::integrations::actions::{
+    ActionCancellation, ActionDescriptor, ActionErrorCode, ActionRequest, ActionResult,
+};
+use crate::integrations::IntegrationsState;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::fs;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tauri::{AppHandle, Emitter, Manager};
@@ -1143,6 +1147,78 @@ pub fn execute_run(
                     }
                 }
             }
+            "appAction" => {
+                let provider_id = data.get("providerId").and_then(Value::as_str).unwrap_or("");
+                let action_id = data.get("actionId").and_then(Value::as_str).unwrap_or("");
+                let connection_id = data
+                    .get("connectionId")
+                    .and_then(Value::as_str)
+                    .unwrap_or("");
+                match app.try_state::<IntegrationsState>() {
+                    None => Err("Connected Apps service is unavailable".into()),
+                    Some(integrations) => match integrations
+                        .actions
+                        .descriptor(provider_id, action_id)
+                        .ok_or_else(|| "This app action is not available.".to_string())
+                    {
+                        Err(error) => Err(error),
+                        Ok(descriptor) => {
+                            let cwd = working_directory.as_deref().unwrap_or("");
+                            match prepare_action_request(
+                                &data,
+                                &descriptor,
+                                &context_prompt,
+                                &last_output,
+                                cwd,
+                            ) {
+                                Err(error) => Err(error),
+                                Ok(request) => {
+                                    let result = tauri::async_runtime::block_on(
+                                        integrations.execute_action(
+                                            db,
+                                            request,
+                                            ActionCancellation::new(control.cancel.clone()),
+                                        ),
+                                    );
+                                    match result {
+                                    Ok(result) => {
+                                        let text = action_result_text(&result);
+                                        context_prompt = if context_prompt.is_empty() {
+                                            text.clone()
+                                        } else {
+                                            format!(
+                                                "{context_prompt}\n\n## App action result\n\n{text}"
+                                            )
+                                        };
+                                        last_output = text.clone();
+                                        let metadata = serde_json::json!({
+                                            "appAction": {
+                                                "providerId": provider_id,
+                                                "actionId": action_id,
+                                                "connectionId": connection_id,
+                                                "outputSchemaVersion": descriptor.output_schema_version,
+                                                "summary": result.summary,
+                                                "artifacts": result.artifacts,
+                                                "providerRequestId": result.provider_request_id,
+                                            }
+                                        });
+                                        Ok((text, None, None, Some(metadata)))
+                                    }
+                                    Err(error) if error.code == ActionErrorCode::Cancelled => {
+                                        Err("__cancelled__".into())
+                                    }
+                                    Err(error) => Err(format!(
+                                        "App action `{action_id}` failed for provider `{provider_id}` and connection `{connection_id}` ({}): {}",
+                                        error.code.as_str(),
+                                        error.message
+                                    )),
+                                }
+                                }
+                            }
+                        }
+                    },
+                }
+            }
             "http" => {
                 let method = data.get("method").and_then(|v| v.as_str()).unwrap_or("GET");
                 let url = data
@@ -1521,6 +1597,9 @@ fn topological_order(nodes: &[Value], edges: &[Value]) -> Vec<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::integrations::actions::{
+        ActionArtifact, ActionFieldDescriptor, ActionFieldKind, ActionOption,
+    };
     use serde_json::json;
 
     #[test]
@@ -1579,6 +1658,59 @@ mod tests {
         assert!(report.contains("src/&lt;report&gt;.ts"));
         assert!(report.find("Files changed").unwrap() < report.find("</body>").unwrap());
         assert!(!report.contains("### Files changed"));
+    }
+
+    #[test]
+    fn app_action_interpolates_only_declared_fields_and_feeds_later_steps() {
+        let descriptor = ActionDescriptor {
+            provider_id: "slack".into(),
+            action_id: "slack.send_message".into(),
+            label: "Send message".into(),
+            description: String::new(),
+            fields: vec![ActionFieldDescriptor {
+                key: "message".into(),
+                label: "Message".into(),
+                description: String::new(),
+                kind: ActionFieldKind::Textarea,
+                required: true,
+                default: None,
+                secret: false,
+                option_source: None,
+                options: Vec::<ActionOption>::new(),
+                supports_interpolation: true,
+            }],
+            required_scopes: vec![],
+            output_schema_version: 1,
+        };
+        let data = serde_json::json!({
+            "providerId": "slack",
+            "actionId": "slack.send_message",
+            "connectionId": "connection",
+            "input": {
+                "message": "Context={{context}} Output={{output}}",
+                "futureField": "{{output}} must stay untouched"
+            }
+        });
+        let request = prepare_action_request(&data, &descriptor, "ctx", "prior", "/tmp")
+            .expect("prepare request");
+        assert_eq!(request.input["message"], "Context=ctx Output=prior");
+        assert_eq!(
+            request.input["futureField"],
+            "{{output}} must stay untouched"
+        );
+
+        let result = ActionResult {
+            summary: "Created".into(),
+            output: serde_json::json!({"id": "message-1"}),
+            artifacts: Vec::<ActionArtifact>::new(),
+            provider_request_id: None,
+        };
+        let output = action_result_text(&result);
+        assert_eq!(
+            apply_template("Next: {{output}}", "", &output, ""),
+            "Next: {\n  \"id\": \"message-1\"\n}"
+        );
+        assert!(!output.contains("secret-token-fixture"));
     }
 }
 
@@ -1752,6 +1884,66 @@ fn apply_template(template: &str, context: &str, output: &str, cwd: &str) -> Str
         .replace("{{cwd}}", cwd)
 }
 
+fn prepare_action_request(
+    data: &Value,
+    descriptor: &ActionDescriptor,
+    context: &str,
+    output: &str,
+    cwd: &str,
+) -> Result<ActionRequest, String> {
+    let connection_id = data
+        .get("connectionId")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim();
+    let provider_id = data
+        .get("providerId")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim();
+    let action_id = data
+        .get("actionId")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim();
+    if connection_id.is_empty() || provider_id.is_empty() || action_id.is_empty() {
+        return Err("Choose an app action and connected account.".into());
+    }
+    let mut input = data
+        .get("input")
+        .and_then(Value::as_object)
+        .map(|object| {
+            object
+                .iter()
+                .map(|(key, value)| (key.clone(), value.clone()))
+                .collect::<BTreeMap<_, _>>()
+        })
+        .unwrap_or_default();
+    for field in &descriptor.fields {
+        if !field.supports_interpolation {
+            continue;
+        }
+        let Some(Value::String(value)) = input.get_mut(&field.key) else {
+            continue;
+        };
+        *value = apply_template(value, context, output, cwd);
+    }
+    Ok(ActionRequest {
+        connection_id: connection_id.into(),
+        provider_id: provider_id.into(),
+        action_id: action_id.into(),
+        input,
+    })
+}
+
+fn action_result_text(result: &ActionResult) -> String {
+    match &result.output {
+        Value::String(value) => value.clone(),
+        Value::Null => result.summary.clone(),
+        value => serde_json::to_string_pretty(value).unwrap_or_else(|_| result.summary.clone()),
+    }
+}
+
 fn resolve_path(path: &str, cwd: Option<&str>) -> String {
     let p = std::path::Path::new(path);
     if p.is_absolute() {
@@ -1912,16 +2104,24 @@ fn run_custom_agent(
         (args, None)
     };
 
-    // For stdin mode we need a small wrapper since run_cmd doesn't pipe stdin.
     if let Some(payload) = stdin_payload {
-        return run_custom_agent_stdin(
+        let output = run_cmd_with_stdin(
             &shell,
             &args,
             cwd_path.as_deref(),
-            &payload,
-            control,
+            Duration::from_secs(60 * 15),
+            Some(control),
             on_line,
-        );
+            &payload,
+        )?;
+        let raw = prefer_stdout(&output);
+        if raw.is_empty() {
+            return Err("custom agent returned empty output".into());
+        }
+        if !output.success {
+            return Err(format!("custom agent exited with an error:\n{raw}"));
+        }
+        return Ok(raw);
     }
 
     let output = run_cmd(
@@ -1938,154 +2138,6 @@ fn run_custom_agent(
         return Err("custom agent returned empty output".into());
     }
     if !output.success {
-        return Err(format!("custom agent exited with an error:\n{raw}"));
-    }
-    Ok(raw)
-}
-
-fn run_custom_agent_stdin(
-    shell: &std::path::Path,
-    args: &[String],
-    cwd: Option<&std::path::Path>,
-    prompt: &str,
-    control: &RunControl,
-    on_line: Option<&dyn Fn(&str)>,
-) -> Result<String, String> {
-    use std::io::{BufRead, BufReader, Write};
-    use std::process::Stdio;
-    use std::sync::atomic::Ordering;
-    use std::sync::{Arc, Mutex};
-    use std::thread;
-    use std::time::{Duration, Instant};
-
-    let mut command = std::process::Command::new(shell);
-    command
-        .args(args)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    if let Some(dir) = cwd {
-        command.current_dir(dir);
-    }
-
-    let mut child = command
-        .spawn()
-        .map_err(|e| format!("failed to spawn custom agent: {e}"))?;
-
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin
-            .write_all(prompt.as_bytes())
-            .map_err(|e| format!("failed to write prompt to stdin: {e}"))?;
-        // Drop stdin to close the pipe.
-    }
-
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| "missing stdout".to_string())?;
-    let stderr = child
-        .stderr
-        .take()
-        .ok_or_else(|| "missing stderr".to_string())?;
-
-    control.set_child(child);
-
-    let stdout_buf = Arc::new(Mutex::new(String::new()));
-    let stderr_buf = Arc::new(Mutex::new(String::new()));
-    let stdout_acc = Arc::clone(&stdout_buf);
-    let stderr_acc = Arc::clone(&stderr_buf);
-    let (tx, rx) = std::sync::mpsc::channel::<String>();
-    let tx_out = tx.clone();
-    let tx_err = tx;
-    let t_out = thread::spawn(move || {
-        for line in BufReader::new(stdout).lines().flatten() {
-            if let Ok(mut buf) = stdout_acc.lock() {
-                if !buf.is_empty() {
-                    buf.push('\n');
-                }
-                buf.push_str(&line);
-            }
-            let _ = tx_out.send(line);
-        }
-    });
-    let t_err = thread::spawn(move || {
-        for line in BufReader::new(stderr).lines().flatten() {
-            if let Ok(mut buf) = stderr_acc.lock() {
-                if !buf.is_empty() {
-                    buf.push('\n');
-                }
-                buf.push_str(&line);
-            }
-            let _ = tx_err.send(line);
-        }
-    });
-
-    let start = Instant::now();
-    let timeout = Duration::from_secs(60 * 15);
-    let mut cancelled = false;
-    let mut timed_out = false;
-    loop {
-        while let Ok(line) = rx.try_recv() {
-            if let Some(cb) = on_line {
-                cb(&line);
-            }
-        }
-        if control.cancel.load(Ordering::SeqCst) {
-            cancelled = true;
-            control.request_cancel();
-            break;
-        }
-        if start.elapsed() > timeout {
-            timed_out = true;
-            control.request_cancel();
-            break;
-        }
-        let done = if let Ok(mut slot) = control.child.lock() {
-            match slot.as_mut() {
-                Some(child) => matches!(child.try_wait(), Ok(Some(_)) | Err(_)),
-                None => true,
-            }
-        } else {
-            false
-        };
-        if done && t_out.is_finished() && t_err.is_finished() {
-            break;
-        }
-        thread::sleep(Duration::from_millis(40));
-    }
-    while let Ok(line) = rx.try_recv() {
-        if let Some(cb) = on_line {
-            cb(&line);
-        }
-    }
-    let _ = t_out.join();
-    let _ = t_err.join();
-    let status_ok = match control.take_child() {
-        Some(mut child) => child.wait().map(|s| s.success()).unwrap_or(false),
-        None => false,
-    };
-
-    if cancelled {
-        return Err("cancelled".into());
-    }
-    if timed_out {
-        return Err("custom agent timed out after 900s".into());
-    }
-
-    let stdout = stdout_buf.lock().map(|s| s.clone()).unwrap_or_default();
-    let stderr = stderr_buf.lock().map(|s| s.clone()).unwrap_or_default();
-    let raw = {
-        let s = stdout.trim();
-        if !s.is_empty() {
-            s.to_string()
-        } else {
-            stderr.trim().to_string()
-        }
-    };
-    if raw.is_empty() {
-        return Err("custom agent returned empty output".into());
-    }
-    if !status_ok {
         return Err(format!("custom agent exited with an error:\n{raw}"));
     }
     Ok(raw)

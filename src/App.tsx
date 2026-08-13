@@ -1,10 +1,14 @@
 import { listen } from "@tauri-apps/api/event";
 import { useEffect } from "react";
 import { ToastViewport } from "./components/toast";
-import {
-  installThemeListeners,
-} from "./features/settings/theme";
+import { syncQuickAccessPreference } from "./features/quick-access/preferences";
+import { installThemeListeners } from "./features/settings/theme";
 import type { OpenRunOutputPayload } from "./features/settings/notifications";
+import {
+  getShortcutHelpLines,
+  syncShortcutPreferences,
+  useShortcutPreferences,
+} from "./features/settings/shortcuts";
 import { WorkflowCanvas } from "./features/workflow/components/workflow-canvas";
 import {
   installRunEventBridge,
@@ -19,11 +23,14 @@ function App() {
   const createWorkflow = useWorkflowStore((s) => s.createWorkflow);
   const saveActiveWorkflow = useWorkflowStore((s) => s.saveActiveWorkflow);
   const runActiveWorkflow = useWorkflowStore((s) => s.runActiveWorkflow);
+  const shortcuts = useShortcutPreferences((s) => s.shortcuts);
 
   useEffect(() => {
     void loadWorkflows();
     void prepareNotifications();
     void installRunEventBridge();
+    void syncQuickAccessPreference();
+    void syncShortcutPreferences();
   }, [loadWorkflows]);
 
   useEffect(() => installThemeListeners(), []);
@@ -32,6 +39,9 @@ function App() {
     const unsubs: Array<() => void> = [];
     void listen("app://open-settings", () => {
       window.dispatchEvent(new Event("alfred:open-settings"));
+    }).then((u) => unsubs.push(u));
+    void listen("app://open-schedules", () => {
+      window.dispatchEvent(new Event("alfred:open-schedules"));
     }).then((u) => unsubs.push(u));
     void listen("app://check-updates", () => {
       window.dispatchEvent(new Event("alfred:check-updates"));
@@ -59,53 +69,53 @@ function App() {
   }, []);
 
   useEffect(() => {
-    void installAppMenu({
-      onOpenSettings: () => {
-        window.dispatchEvent(new Event("alfred:open-settings"));
+    void installAppMenu(
+      {
+        onOpenSettings: () => {
+          window.dispatchEvent(new Event("alfred:open-settings"));
+        },
+        onOpenSchedules: () => {
+          window.dispatchEvent(new Event("alfred:open-schedules"));
+        },
+        onNewWorkflow: () => void createWorkflow(),
+        onSaveWorkflow: () => void saveActiveWorkflow(),
+        onRenameWorkflow: () => {
+          window.dispatchEvent(new Event("alfred:rename-workflow"));
+        },
+        onRunWorkflow: () => void runActiveWorkflow(),
+        onDeleteWorkflow: () => {
+          window.dispatchEvent(new Event("alfred:delete-workflow"));
+        },
+        onScheduleWorkflow: () => {
+          window.dispatchEvent(new Event("alfred:open-schedule"));
+        },
+        onToggleSidebar: () => {
+          window.dispatchEvent(new Event("alfred:toggle-sidebar"));
+        },
+        onToggleActivity: () => {
+          window.dispatchEvent(new Event("alfred:toggle-activity"));
+        },
+        onFitCanvas: () => {
+          window.dispatchEvent(new Event("alfred:fit-canvas"));
+        },
+        onCheckUpdates: () => {
+          window.dispatchEvent(new Event("alfred:check-updates"));
+        },
+        onShowShortcuts: () => {
+          window.alert(
+            [
+              "Alfred keyboard shortcuts",
+              "",
+              ...getShortcutHelpLines(shortcuts),
+            ].join("\n"),
+          );
+        },
       },
-      onOpenSchedules: () => {
-        window.dispatchEvent(new Event("alfred:open-schedules"));
-      },
-      onNewWorkflow: () => void createWorkflow(),
-      onSaveWorkflow: () => void saveActiveWorkflow(),
-      onRenameWorkflow: () => {
-        window.dispatchEvent(new Event("alfred:rename-workflow"));
-      },
-      onRunWorkflow: () => void runActiveWorkflow(),
-      onDeleteWorkflow: () => {
-        window.dispatchEvent(new Event("alfred:delete-workflow"));
-      },
-      onScheduleWorkflow: () => {
-        window.dispatchEvent(new Event("alfred:open-schedule"));
-      },
-      onToggleSidebar: () => {
-        window.dispatchEvent(new Event("alfred:toggle-sidebar"));
-      },
-      onToggleActivity: () => {
-        window.dispatchEvent(new Event("alfred:toggle-activity"));
-      },
-      onFitCanvas: () => {
-        window.dispatchEvent(new Event("alfred:fit-canvas"));
-      },
-      onCheckUpdates: () => {
-        window.dispatchEvent(new Event("alfred:check-updates"));
-      },
-      onShowShortcuts: () => {
-        window.alert(
-          [
-            "Alfred keyboard shortcuts",
-            "",
-            "⌘N    New workflow",
-            "⌘S    Save workflow",
-            "⌘R    Run workflow",
-            "⌘,    Open settings",
-          ].join("\n"),
-        );
-      },
-    }).catch((err) => {
+      shortcuts,
+    ).catch((err) => {
       console.warn("Native menu unavailable", err);
     });
-  }, [createWorkflow, saveActiveWorkflow, runActiveWorkflow]);
+  }, [createWorkflow, saveActiveWorkflow, runActiveWorkflow, shortcuts]);
 
   useEffect(() => {
     const isEditable = (target: EventTarget | null) => {

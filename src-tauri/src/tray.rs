@@ -17,7 +17,7 @@ const TRAY_ID: &str = "alfred-tray";
 const MAX_ACTIVE_ROWS: usize = 5;
 const MAX_SCHEDULE_ROWS: usize = 5;
 
-fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
+pub(crate) fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.unminimize();
         let _ = window.show();
@@ -139,6 +139,13 @@ fn status_icon() -> tauri::Result<Image<'static>> {
 
 fn build_menu(app: &AppHandle, snap: &TraySnapshot) -> tauri::Result<Menu<Wry>> {
     let open = MenuItem::with_id(app, "tray-open", "Open Alfred", true, None::<&str>)?;
+    let quick_access = MenuItem::with_id(
+        app,
+        "tray-quick-access",
+        "Open Quick Access",
+        true,
+        None::<&str>,
+    )?;
     let settings = MenuItem::with_id(app, "tray-settings", "Settings", true, None::<&str>)?;
     let updates = MenuItem::with_id(
         app,
@@ -152,7 +159,7 @@ fn build_menu(app: &AppHandle, snap: &TraySnapshot) -> tauri::Result<Menu<Wry>> 
     let sep2 = PredefinedMenuItem::separator(app)?;
     let sep3 = PredefinedMenuItem::separator(app)?;
 
-    let mut items: Vec<&dyn IsMenuItem<Wry>> = vec![&open, &sep1];
+    let mut items: Vec<&dyn IsMenuItem<Wry>> = vec![&open, &quick_access, &sep1];
 
     // Keep owned items alive for the Menu::with_items call.
     let mut owned: Vec<MenuItem<Wry>> = Vec::new();
@@ -283,6 +290,11 @@ pub fn refresh(app: &AppHandle) {
 fn handle_menu_event(app: &AppHandle, id: &str) {
     match id {
         "tray-open" => show_main_window(app),
+        "tray-quick-access" => {
+            if let Err(error) = crate::quick_access::show_expanded(app) {
+                eprintln!("quick access could not be opened from tray: {error}");
+            }
+        }
         "tray-settings" => {
             show_main_window(app);
             let _ = app.emit("app://open-settings", ());

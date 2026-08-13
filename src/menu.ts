@@ -1,4 +1,5 @@
 import { Menu, MenuItem, PredefinedMenuItem, Submenu } from "@tauri-apps/api/menu";
+import type { ShortcutMap } from "./features/settings/shortcuts";
 
 export type MenuActions = {
   onOpenSettings: () => void;
@@ -17,7 +18,10 @@ export type MenuActions = {
 };
 
 /** Native macOS / Windows / Linux application menu. */
-export async function installAppMenu(actions: MenuActions): Promise<void> {
+export async function installAppMenu(
+  actions: MenuActions,
+  shortcuts: ShortcutMap,
+): Promise<void> {
   const about = await Submenu.new({
     text: "Alfred",
     items: [
@@ -26,7 +30,7 @@ export async function installAppMenu(actions: MenuActions): Promise<void> {
         item: {
           About: {
             name: "Alfred",
-            version: "0.1.0",
+            version: "0.5.0",
             copyright: "Local multi-agent workflow automations",
             comments:
               "Build automations across Claude Code, Cursor, Codex, and OpenCode.",
@@ -36,7 +40,7 @@ export async function installAppMenu(actions: MenuActions): Promise<void> {
       await MenuItem.new({
         id: "app-settings",
         text: "Settings…",
-        accelerator: "CmdOrCtrl+,",
+        accelerator: shortcuts.openSettings,
         action: () => actions.onOpenSettings(),
       }),
       await PredefinedMenuItem.new({ item: "Separator" }),
@@ -56,13 +60,13 @@ export async function installAppMenu(actions: MenuActions): Promise<void> {
       await MenuItem.new({
         id: "workflow-new",
         text: "New Workflow",
-        accelerator: "CmdOrCtrl+N",
+        accelerator: shortcuts.newWorkflow,
         action: () => actions.onNewWorkflow(),
       }),
       await MenuItem.new({
         id: "workflow-save",
         text: "Save",
-        accelerator: "CmdOrCtrl+S",
+        accelerator: shortcuts.saveWorkflow,
         action: () => actions.onSaveWorkflow(),
       }),
       await MenuItem.new({
@@ -73,14 +77,14 @@ export async function installAppMenu(actions: MenuActions): Promise<void> {
       await MenuItem.new({
         id: "workflow-delete",
         text: "Delete Workflow",
-        accelerator: "CmdOrCtrl+Backspace",
+        accelerator: shortcuts.deleteWorkflow,
         action: () => actions.onDeleteWorkflow(),
       }),
       await PredefinedMenuItem.new({ item: "Separator" }),
       await MenuItem.new({
         id: "workflow-run",
         text: "Run",
-        accelerator: "CmdOrCtrl+R",
+        accelerator: shortcuts.runWorkflow,
         action: () => actions.onRunWorkflow(),
       }),
       await PredefinedMenuItem.new({ item: "Separator" }),

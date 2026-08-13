@@ -19,11 +19,12 @@
 
 ## Product outcome
 
-Phase 1 connects Google in the system browser and lets workflows send mail.
-Phase 2 adds explicit search/read metadata and new-mail triggers only after
-scope classification, consent, privacy policy, and Google verification are
-ready. This avoids blocking a useful low-scope feature on a much heavier data
-access review.
+Phase 1 connects Google in the system browser and lets workflows send mail after
+the public app completes the verification required for the sensitive
+`gmail.send` scope. Phase 2 adds explicit search/read metadata and new-mail
+triggers only after restricted-scope classification, consent, privacy policy,
+verification, and any required security assessment are ready. This separates
+the lighter send review from the heavier read-data review.
 
 Official references: [OAuth for desktop apps](https://developers.google.com/identity/protocols/oauth2/native-app),
 [send message API](https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages/send),
@@ -79,21 +80,28 @@ Capability matrix:
   that actually support the required `messages.list`, metadata, and history
   query behavior. Document why each is needed and its Google classification.
 - Never request read scope simply because send is enabled.
+- Google installed-app OAuth does not support incremental authorization. A
+  Phase 2 upgrade must explicitly reauthorize the same validated account for
+  the complete approved union of scopes and atomically replace its grant, or
+  create a deliberately separate connection. Never silently broaden a grant.
 
-**Verify**: security/product owner signs off the scope table and verification
-plan; OAuth client contains no web-client secret embedded in desktop config.
+**Verify**: security/product owner signs off the Phase 1 and Phase 2 scope and
+verification gates; OAuth client contains no confidential web-client secret in
+desktop config.
 
 ### Step 2: Implement native OAuth and credential lifecycle
 
-Run the browser flow in Rust with state + PKCE and a loopback callback on
-`127.0.0.1` random port per current Google native-app guidance. Reject OOB/manual
-code flows. Validate state, one callback, timeout, and returned account identity.
-Store tokens in Plan 008's keychain envelope and metadata separately.
+Use Plan 008's loopback OAuth helper for state, S256 PKCE, callback, and timeout
+handling on `127.0.0.1` with a random port per current Google desktop guidance.
+Supply Google's authorization configuration from the provider. Reject OOB/manual
+code flows and validate the returned account identity before computing the
+canonical connection identity. Store tokens in Plan 008's keychain envelope and
+metadata separately.
 
-Implement refresh with rotation-safe overwrite, revoked grant handling,
-incremental authorization for Phase 2, explicit disconnect/revoke, and Google
-test-user/development mode errors. Update the exact Tauri opener allow-list for
-Google auth origins only.
+Register refresh with Plan 008's shared service for rotation-safe scheduled and
+on-demand recovery. Handle revoked grants, explicit Phase 2 full-scope
+reauthorization, disconnect/revoke, and Google test-user/development-mode errors.
+Update the exact Tauri opener allow-list for Google authorization origins only.
 
 **Verify**: tests cover state mismatch/replay, cancel/timeout, refresh rotation,
 revocation, scope upgrade, wrong account, and no token in command responses.
@@ -114,18 +122,19 @@ unknown delivery and do not blind-retry a send.
 oversize input, 401/403/429, and ambiguous timeout. Manually send only to a
 controlled test mailbox.
 
-### Step 4: Complete Google verification before public read features
+### Step 4: Complete Google verification before each public phase
 
 Prepare verified domains, homepage/privacy policy, scope justification, demo
-video, test instructions, and data-use/deletion description. Determine whether
-the selected scopes require sensitive/restricted verification or a security
-assessment. Keep Phase 2 behind a build-time/product capability gate until
-approval; do not ask users to bypass an unverified-app warning as the release
-strategy.
+video, test instructions, and data-use/deletion description. Complete the
+sensitive-scope verification required for public Phase 1 `gmail.send`. Separately
+determine and complete the restricted-scope verification and any security
+assessment required for Phase 2. Keep each phase behind a build-time/product
+capability gate until its approval; do not ask users to bypass an unverified-app
+warning as the release strategy.
 
-**Verify**: written approval/status and exact approved scopes are recorded in
-docs. If assessment cost/timeline is unacceptable, mark Phase 2 deferred and
-leave send-only production-safe.
+**Verify**: written approval/status and exact approved scopes are recorded for
+each phase. If the Phase 2 assessment cost/timeline is unacceptable, defer Phase
+2; ship send-only publicly only after its own verification gate passes.
 
 ### Step 5: Add explicit read/search actions
 
@@ -178,6 +187,7 @@ notification, watch renewal/expiry, offline queue expiry, and mailbox mismatch.
 
 - [ ] Send-only works with `gmail.send` and no read scope.
 - [ ] Native OAuth uses system browser/PKCE and keychain storage.
+- [ ] Public send-only release has completed the `gmail.send` verification gate.
 - [ ] Public read/events stay gated until Google scope approval is documented.
 - [ ] Read outputs/events are bounded and body-minimized.
 - [ ] Local history and relay Pub/Sub modes are honestly distinguished.
@@ -185,9 +195,10 @@ notification, watch renewal/expiry, offline queue expiry, and mailbox mismatch.
 
 ## STOP conditions
 
-- The implementation proposes deprecated OOB OAuth or a desktop client secret.
-- Google verification/security-assessment requirements are unknown for chosen
-  read scopes.
+- The implementation proposes deprecated OOB OAuth or a confidential web-client
+  secret in the desktop.
+- Google verification requirements are unknown for `gmail.send`, or verification/
+  security-assessment requirements are unknown for chosen read scopes.
 - Product expects bulk/marketing email or attachments in this transactional v1.
 - Pub/Sub is proposed without Plan 011 identity, queue, and operations ownership.
 
@@ -196,5 +207,6 @@ notification, watch renewal/expiry, offline queue expiry, and mailbox mismatch.
 - Renew Gmail watches daily and alert well before their expiry.
 - Recheck scope classification, verification status, quota, and OAuth policies
   whenever actions expand.
-- Keep Gmail and Google Drive scope grants incremental even if they share one
-  Google account connection.
+- Keep Gmail and Google Drive least-privilege boundaries explicit. Because
+  installed-app incremental authorization is unsupported, upgrades require an
+  explicit full-union reauthorization or deliberately separate connections.

@@ -102,6 +102,10 @@ function visibleRunFields(runState: WorkflowRunState) {
 
 const OPEN_TABS_KEY = "alfred:open-workflow-tabs";
 const MAX_RUN_LOG_LINES = 1_000;
+// JavaScript strings are commonly two bytes per code unit. This keeps console
+// text near 2 MiB per workflow before object overhead, even when every activity
+// detail is individually valid but collectively huge.
+const MAX_RUN_LOG_CHARS = 1_000_000;
 
 function runLogLine(event: RunEvent): RunLogLine {
   const activity =
@@ -121,8 +125,9 @@ function runLogLine(event: RunEvent): RunLogLine {
     nodeId: event.nodeId,
     nodeLabel: event.nodeLabel,
     message: event.message,
-    // Activity detail has one home: the nested, normalized activity contract.
-    output: activity ? undefined : event.output,
+    // Step output has one home: stepOutputs. Console rows only need the summary
+    // and normalized activity detail rendered by RunActivityPanel.
+    output: undefined,
     activity,
     status: event.status,
   };
@@ -148,9 +153,25 @@ function nextRunLogs(
     next = [...current, line];
   }
 
-  return next.length > MAX_RUN_LOG_LINES
+  const rowBounded = next.length > MAX_RUN_LOG_LINES
     ? next.slice(-MAX_RUN_LOG_LINES)
     : next;
+
+  let retainedChars = 0;
+  let firstRetained = rowBounded.length;
+  while (firstRetained > 0) {
+    const item = rowBounded[firstRetained - 1];
+    const itemChars =
+      item.message.length +
+      (item.nodeLabel?.length ?? 0) +
+      (item.activity?.label.length ?? 0) +
+      (item.activity?.detail?.length ?? 0);
+    if (retainedChars + itemChars > MAX_RUN_LOG_CHARS) break;
+    retainedChars += itemChars;
+    firstRetained -= 1;
+  }
+
+  return firstRetained === 0 ? rowBounded : rowBounded.slice(firstRetained);
 }
 
 function loadOpenTabs(): string[] {
@@ -663,7 +684,15 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
 
     const nextOpen = openWorkflowIds.filter((tabId) => tabId !== id);
     persistOpenTabs(nextOpen);
-    set({ openWorkflowIds: nextOpen });
+    set((state) => {
+      const runState = state.workflowRunStates[id];
+      if (runState?.activeRun?.status === "running") {
+        return { openWorkflowIds: nextOpen };
+      }
+      const workflowRunStates = { ...state.workflowRunStates };
+      delete workflowRunStates[id];
+      return { openWorkflowIds: nextOpen, workflowRunStates };
+    });
 
     if (activeWorkflowId !== id) return;
 
@@ -1438,11 +1467,15 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
       };
       const visible = state.activeWorkflowId === event.workflowId;
 
+      const workflowRunStates = { ...state.workflowRunStates };
+      const terminal = ["completed", "failed", "cancelled"].includes(event.kind);
+      const keepRunDetail =
+        visible || state.openWorkflowIds.includes(event.workflowId) || !terminal;
+      if (keepRunDetail) workflowRunStates[event.workflowId] = current;
+      else delete workflowRunStates[event.workflowId];
+
       return {
-        workflowRunStates: {
-          ...state.workflowRunStates,
-          [event.workflowId]: current,
-        },
+        workflowRunStates,
         ...(visible ? visibleRunFields(current) : {}),
         ...(visible && event.kind === "step_started" && event.nodeId
           ? { selectedNodeId: event.nodeId }

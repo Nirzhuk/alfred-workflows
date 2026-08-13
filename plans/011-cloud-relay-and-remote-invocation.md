@@ -17,7 +17,7 @@
 - **Risk**: CRITICAL
 - **Depends on**: Plan 008; Plan 010 before provider event delivery
 - **Category**: product direction / cloud architecture
-- **Planned at**: unversioned snapshot, 2026-08-11
+- **Planned at**: 2026-08-11; reconciled with repository history, 2026-08-13
 
 ## Why this matters
 
@@ -108,7 +108,9 @@ Add an ADR covering these explicit choices:
 6. tenancy keys: user, organization/tenant, device, provider installation;
 7. privacy policy/support/security ownership and monthly cost ceiling;
 8. availability behavior: queue until desktop reconnects, then expire visibly;
-9. protocol versioning and backward-compatible desktop update policy.
+9. protocol versioning and backward-compatible desktop update policy;
+10. code location and ownership: in-repo `relay/` service vs a separate
+    repository, which team owns it, and which CI publishes it.
 
 Create a data-flow diagram and threat model for OAuth code interception,
 device-pair hijack, webhook forgery, replay, tenant confusion, queue scraping,
@@ -189,7 +191,10 @@ Users explicitly mark workflows “Available to remote assistants.” Publish on
 an opaque workflow ID, display name, safe description, allowed input schema,
 and enabled state. The relay does not receive graph JSON. A remote start queues
 the validated input to a paired online device and returns `202` + run request
-ID; status is a coarse state machine with a sanitized failure code.
+ID; status is a coarse state machine with a sanitized failure code. The relay
+enforces the published input schema bounds at ingress (size, depth, field
+allow-list, and hard rejection of oversized payloads). The desktop revalidates
+as the authority; relay-side validation is also a load-shedding boundary.
 
 Require confirmation/policy for destructive workflows and cap remote
 concurrency. V1 does not return agent output; a later opt-in result schema can

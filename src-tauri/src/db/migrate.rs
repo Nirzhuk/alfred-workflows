@@ -71,6 +71,29 @@ pub fn apply_migrations(conn: &Connection) -> Result<(), DbError> {
         "CREATE INDEX IF NOT EXISTS idx_triggers_workflow_id ON triggers(workflow_id);
          CREATE INDEX IF NOT EXISTS idx_triggers_enabled ON triggers(enabled);",
     )?;
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS app_connections (
+           id TEXT PRIMARY KEY NOT NULL,
+           provider_id TEXT NOT NULL,
+           display_name TEXT,
+           external_account_id TEXT,
+           external_tenant_id TEXT,
+           connection_mode TEXT NOT NULL,
+           identity_key TEXT NOT NULL,
+           scopes_json TEXT NOT NULL DEFAULT '[]',
+           status TEXT NOT NULL DEFAULT 'connected' CHECK (status IN ('connected', 'expired', 'error', 'revoked')),
+           expires_at TEXT,
+           last_checked_at TEXT,
+           last_error_code TEXT,
+           credential_ref TEXT NOT NULL UNIQUE,
+           created_at TEXT NOT NULL,
+           updated_at TEXT NOT NULL
+         );
+         CREATE UNIQUE INDEX IF NOT EXISTS idx_app_connections_identity
+           ON app_connections(provider_id, connection_mode, identity_key);
+         CREATE INDEX IF NOT EXISTS idx_app_connections_provider_id
+           ON app_connections(provider_id);",
+    )?;
 
     Ok(())
 }
@@ -171,4 +194,48 @@ fn table_has_column(conn: &Connection, table: &str, column: &str) -> Result<bool
         }
     }
     Ok(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn columns(conn: &Connection, table: &str) -> Vec<String> {
+        let mut stmt = conn
+            .prepare(&format!("PRAGMA table_info({table})"))
+            .expect("prepare table info");
+        stmt.query_map([], |row| row.get(1))
+            .expect("query columns")
+            .collect::<Result<Vec<String>, _>>()
+            .expect("collect columns")
+    }
+
+    #[test]
+    fn initializes_app_connections_on_an_empty_database() {
+        let conn = Connection::open_in_memory().expect("open database");
+        conn.execute_batch(include_str!("schema.sql"))
+            .expect("initialize schema");
+        apply_migrations(&conn).expect("apply migrations");
+
+        let names = columns(&conn, "app_connections");
+        assert!(names.contains(&"provider_id".to_owned()));
+        assert!(names.contains(&"credential_ref".to_owned()));
+        assert!(!names.iter().any(|name| {
+            let name = name.to_ascii_lowercase();
+            name.contains("token") || name.contains("secret") || name.contains("authorization_code")
+        }));
+    }
+
+    #[test]
+    fn upgrades_an_existing_schema_without_connection_metadata() {
+        let conn = Connection::open_in_memory().expect("open database");
+        conn.execute_batch(include_str!("schema.sql"))
+            .expect("initialize legacy fixture");
+        conn.execute_batch("DROP TABLE app_connections;")
+            .expect("remove new table from fixture");
+
+        apply_migrations(&conn).expect("upgrade fixture");
+
+        assert!(columns(&conn, "app_connections").contains(&"identity_key".to_owned()));
+    }
 }

@@ -1,0 +1,52 @@
+# Design system
+
+For user-interface work, read and follow `docs/design-system.md`.
+
+## Required behavior
+
+- Use bundled Geist for interface text, Fraunces for display accents, and Geist
+  Mono for technical content through `--font-sans`, `--font-display`, and
+  `--font-mono`. Do not add remote font imports or a parallel typeface.
+- Reuse semantic CSS custom properties from `src/App.css`; do not duplicate a
+  shared visual decision with feature-local literals.
+- When a repeated visual rule does not have a token, add one to `:root` and
+  document it in `docs/design-system.md`.
+- Related surfaces must share typography, icon sizing, spacing, and interaction
+  states unless the product hierarchy explicitly requires a difference.
+- Keep navigation quiet and flat. Do not use borders, shadows, all caps, or
+  heavier text merely to show selection.
+- Use only the documented typography weights, spacing, radius, control height,
+  icon, elevation, motion, and layer tokens for shared UI.
+- Every interactive component must account for hover, pressed, focus-visible,
+  disabled, and applicable selected/error/loading states without layout shifts.
+- Preserve keyboard focus, accessible names, contrast, and reduced-motion
+  behavior in both themes.
+- Use the shared `SelectControl` for new or restyled select fields. Do not add
+  feature-local select chrome or native arrow styling; keep native select
+  semantics and use compact density only in dense desktop chrome.
+- Keep application-owned metrics identical across macOS, Windows, and Linux.
+  Use `src/platform.ts` or the root `data-platform` attribute only for true OS
+  boundaries such as title-bar safe areas, shortcut notation, and permissions.
+- Normalize form controls through the shared CSS patterns; do not depend on a
+  browser or OS default appearance for application-owned controls.
+
+## Sidebar invariant
+
+- Item text: `14px`, weight `400`.
+- Icons: `18px` square.
+- Section labels: `16px`, weight `600`.
+- Use the `--sidebar-*` tokens; never restate these values in sidebar component
+  selectors.
+- Selected items retain weight `400` and use only the shared surface background.
+
+## Prohibited drift
+
+- No fractional font weights such as 550, 620, 650, or 750.
+- No arbitrary z-index for application UI; use the `--layer-*` scale.
+- No new radius, spacing, font-size, icon-size, or motion literal when a semantic
+  token describes the role.
+- No color-only status or removal of `:focus-visible` styling.
+- No component-local user-agent detection or platform-specific visual scale.
+
+Verify meaningful visual changes in both themes and run tests, the frontend
+build, and `git diff --check` before handoff.

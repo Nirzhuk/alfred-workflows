@@ -60,6 +60,10 @@ PascalCase; folders and filenames use kebab-case.
 - Do not add production dependencies when a platform or standard-library
   capability is sufficient.
 - Update user docs when behavior, requirements, or supported platforms change.
+- Follow [the design system](docs/design-system.md) for UI work and extend its
+  semantic tokens instead of introducing parallel component scales. Use the
+  bundled Geist, Fraunces, and Geist Mono assets; do not add remote font
+  dependencies.
 - Do not commit generated output such as `dist/`, `src-tauri/target/`, local
   databases, logs, certificates, or `.env` files.
 

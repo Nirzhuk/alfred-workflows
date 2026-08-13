@@ -95,19 +95,23 @@ mapping tests.
 
 ### Step 2: Implement system-browser OAuth with PKCE
 
-Generate state, nonce, verifier/challenge, and callback listener in Rust. Bind
-the listener only to loopback, accept one callback, validate state/nonce, and
-expire the attempt quickly. Open the exact Microsoft authorization origin via
-the Tauri opener allow-list; never allow arbitrary URLs.
+Use Plan 008's loopback OAuth helper for state, S256 PKCE, callback, and timeout
+handling; supply Microsoft's authorization configuration from the provider.
+Open only the exact Microsoft authorization origin through the Tauri opener
+allow-list. Never allow arbitrary URLs.
 
-Exchange/refresh tokens in Rust and store through Plan 008. Handle user cancel,
-port collision, timeout, consent-required, admin-policy, MFA/Conditional Access,
+Exchange tokens in Rust and store through Plan 008. If requesting OpenID
+identity, retain the attempt nonce and validate the returned ID token's
+signature, issuer, audience, expiry, and nonce after code exchange—not at the
+loopback callback. Register refresh with Plan 008's shared service so scheduled
+and on-demand recovery cannot race token rotation. Handle user cancel, port
+collision, timeout, consent-required, admin-policy, MFA/Conditional Access,
 expired refresh, and account/tenant mismatch with stable errors. Reconnect may
-upgrade scopes without creating a duplicate connection.
+upgrade scopes only when Plan 008's canonical identity matches.
 
 **Verify**: OAuth unit tests plus manual personal and organization tenant tests;
-state mismatch, reused callback, malicious redirect, and cancelled browser do
-not create a connection.
+state mismatch, nonce mismatch, invalid ID-token claims, reused callback,
+malicious redirect, and cancelled browser do not create a connection.
 
 ### Step 3: Register Graph mail/calendar actions
 
@@ -126,9 +130,10 @@ and body size in Rust. Use Graph pagination; select only needed fields. Treat
 ambiguous send/create timeouts as “result unknown” unless a safe idempotency
 mechanism is used. Normalize outputs to IDs, web links, timestamps, and summary.
 
-**Verify**: mocked Graph tests cover pagination, 401 refresh, 403 consent/admin
-policy, 429 `Retry-After`, malformed mail/calendar input, DST/timezone, partial
-responses, ambiguous timeout, and secret/body redaction.
+**Verify**: mocked Graph tests cover pagination, one 401 recovery through the
+shared refresh service, 403 consent/admin policy, 429 `Retry-After`, malformed
+mail/calendar input, DST/timezone, partial responses, ambiguous timeout, and
+secret/body redaction.
 
 ### Step 4: Add local events with delta/checkpoints
 
