@@ -194,3 +194,148 @@ jobs:
           gh release upload "v${version}" "${dmgs[0]}" \
             --repo "$GITHUB_REPOSITORY" \
             --clobber
+
+  verify-macos-installers:
+    name: Verify downloaded macOS installer (${{ matrix.arch }})
+    needs: publish-tauri
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            arch: aarch64
+            expected_arch: arm64
+          - platform: macos-15-intel
+            arch: x64
+            expected_arch: x86_64
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - name: Checkout release source
+        uses: actions/checkout@v4
+
+      - name: Download exact draft DMG
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version=$(jq -r '.version' src-tauri/tauri.conf.json)
+          release_dir="$RUNNER_TEMP/release"
+          mkdir -p "$release_dir"
+          gh release download "v${version}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern "Alfred_${version}_${{ matrix.arch }}.dmg" \
+            --dir "$release_dir"
+          echo "DMG_PATH=$release_dir/Alfred_${version}_${{ matrix.arch }}.dmg" >> "$GITHUB_ENV"
+
+      - name: Verify, install, and launch twice
+        run: |
+          hdiutil verify "$DMG_PATH"
+          xcrun stapler validate "$DMG_PATH"
+
+          mount_point="$RUNNER_TEMP/alfred-mount"
+          mkdir -p "$mount_point"
+          hdiutil attach -readonly -nobrowse -mountpoint "$mount_point" "$DMG_PATH"
+
+          codesign --verify --deep --strict --verbose=2 "$mount_point/Alfred.app"
+          spctl --assess --type execute --verbose=4 "$mount_point/Alfred.app"
+
+          actual_arch=$(lipo -archs "$mount_point/Alfred.app/Contents/MacOS/workflows-local-agents")
+          if [ "$actual_arch" != "${{ matrix.expected_arch }}" ]; then
+            echo "Expected ${{ matrix.expected_arch }}, found $actual_arch"
+            exit 1
+          fi
+
+          ditto "$mount_point/Alfred.app" /Applications/Alfred.app
+          codesign --verify --deep --strict --verbose=2 /Applications/Alfred.app
+          spctl --assess --type execute --verbose=4 /Applications/Alfred.app
+
+          launch_and_quit() {
+            open -n /Applications/Alfred.app
+            for _ in {1..20}; do
+              if [ "$(osascript -e 'application id "com.nirzhuk.alfred" is running')" = "true" ]; then
+                osascript -e 'tell application id "com.nirzhuk.alfred" to quit'
+                return 0
+              fi
+              sleep 1
+            done
+            echo "Alfred did not launch within 20 seconds"
+            return 1
+          }
+
+          launch_and_quit
+          launch_and_quit
+
+      - name: Uninstall and detach test DMG
+        if: always()
+        run: |
+          osascript -e 'tell application id "com.nirzhuk.alfred" to quit' 2>/dev/null || true
+          rm -rf /Applications/Alfred.app
+          hdiutil detach "$RUNNER_TEMP/alfred-mount" 2>/dev/null || true
+
+  verify-windows-installer:
+    name: Verify downloaded unsigned Windows installer
+    needs: publish-tauri
+    permissions:
+      contents: read
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout release source
+        uses: actions/checkout@v4
+
+      - name: Download, install, and launch twice
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $version = (Get-Content src-tauri/tauri.conf.json | ConvertFrom-Json).version
+          $releaseDir = Join-Path $env:RUNNER_TEMP 'release'
+          New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
+          $installerName = "Alfred_${version}_x64-setup.exe"
+          gh release download "v${version}" `
+            --repo $env:GITHUB_REPOSITORY `
+            --pattern $installerName `
+            --dir $releaseDir
+
+          $installer = Join-Path $releaseDir $installerName
+          $signature = Get-AuthenticodeSignature $installer
+          if ($signature.Status -ne 'NotSigned') {
+            throw "Expected the waived Windows beta to be unsigned, found $($signature.Status)"
+          }
+
+          $install = Start-Process -FilePath $installer -ArgumentList '/S' -PassThru -Wait
+          if ($install.ExitCode -ne 0) {
+            throw "NSIS installer exited with $($install.ExitCode)"
+          }
+
+          $executable = Join-Path $env:LOCALAPPDATA 'Alfred\Alfred.exe'
+          if (-not (Test-Path $executable)) {
+            throw "Installed executable not found at $executable"
+          }
+
+          function Test-AlfredLaunch {
+            $process = Start-Process -FilePath $executable -PassThru
+            Start-Sleep -Seconds 5
+            if ($process.HasExited) {
+              throw "Alfred exited during launch with code $($process.ExitCode)"
+            }
+            Stop-Process -Id $process.Id -Force
+            $process.WaitForExit()
+          }
+
+          Test-AlfredLaunch
+          Test-AlfredLaunch
+
+          $uninstaller = Join-Path (Split-Path $executable) 'uninstall.exe'
+          if (-not (Test-Path $uninstaller)) {
+            throw "Uninstaller not found at $uninstaller"
+          }
+          $uninstall = Start-Process -FilePath $uninstaller -ArgumentList '/S' -PassThru -Wait
+          if ($uninstall.ExitCode -ne 0) {
+            throw "NSIS uninstaller exited with $($uninstall.ExitCode)"
+          }
+          if (Test-Path $executable) {
+            throw "Alfred.exe remains after uninstall"
+          }
