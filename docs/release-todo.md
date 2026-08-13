@@ -40,7 +40,7 @@ GitHub Actions enabled, and default workflow permissions set to read/write.
 
 - [x] Review the current staged, modified, and untracked files; exclude local
   scratch/generated files from the release commit.
-- [ ] Create the release commit on `main` and push it to the final GitHub
+- [x] Create the release commit on `main` and push it to the final GitHub
   repository.
 - [x] Confirm the repository owner/name and add the `origin` remote.
 - [x] In GitHub, set Actions workflow permissions to **Read and write**.
@@ -75,7 +75,7 @@ GitHub Actions enabled, and default workflow permissions set to read/write.
   authenticated paid update service is deferred.
 - [ ] Run the workflow once as an unsigned draft to prove all matrix jobs and
   artifact uploads work before adding signing complexity.
-- [ ] Pin/freeze the release ref and rerun the workflow from that exact commit.
+- [x] Pin/freeze the release ref and rerun the workflow from that exact commit.
 
 ### 4. Sign the public installers
 
