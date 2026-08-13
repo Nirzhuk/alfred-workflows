@@ -1,0 +1,82 @@
+name: Bug report
+description: Report reproducible incorrect behavior in Agentflow
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Remove private prompts, model output, credentials, and personal file paths before submitting. Report vulnerabilities through GitHub private vulnerability reporting instead.
+
+  - type: input
+    id: version
+    attributes:
+      label: Agentflow version or commit
+      description: For a source build, include the full commit SHA when possible.
+      placeholder: v0.1.0 or 0123456789abcdef...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: build
+    attributes:
+      label: Build source
+      options:
+        - Official paid download
+        - Unmodified source build
+        - Modified source build or fork
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: Operating system and architecture
+      placeholder: macOS 15 arm64, Windows 11 x64, Ubuntu 24.04 x64
+    validations:
+      required: true
+
+  - type: input
+    id: provider
+    attributes:
+      label: Agent CLI and version
+      description: If relevant, name the provider and paste only its version output.
+      placeholder: codex 1.2.3
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Describe the behavior and what you expected instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction steps
+      placeholder: |
+        1. Create ...
+        2. Click ...
+        3. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Sanitized diagnostics
+      description: Add logs or screenshots only after removing secrets, prompts, outputs, and personal paths.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Submission checks
+      options:
+        - label: I searched existing issues for this problem.
+          required: true
+        - label: I removed credentials, private content, and personal information.
+          required: true
+        - label: This is not a security vulnerability.
+          required: true

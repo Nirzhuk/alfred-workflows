@@ -1,0 +1,161 @@
+# Build Agentflow desktop installers into a private GitHub Release draft.
+#
+# Agentflow's official binaries are paid. The public repository distributes
+# source, not maintainer-signed installers. After verification, maintainers
+# copy accepted draft assets to the paid download service. NEVER publish the
+# draft GitHub Release.
+#
+# Primary artifacts for distribution:
+#   - macOS: .dmg (also used by the Homebrew cask)
+#   - Windows: .exe (NSIS) and .msi
+#   - Linux: .AppImage, .deb, .rpm
+#
+# Triggers:
+#   - Manual only: Actions → release → Run workflow (workflow_dispatch)
+#     Pick the branch/ref to build from (usually main). Main stays free for
+#     day-to-day work; nothing builds or publishes on push.
+#
+# Signing: Apple / Windows / updater secrets are optional. Builds succeed
+# unsigned for draft testing; set the secrets documented in
+# docs/releasing.md before a public ship.
+#
+# Repo settings required: Settings → Actions → General → Workflow permissions
+# → Read and write permissions (so the job can create/update the GitHub Release).
+
+name: release
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  publish-tauri:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            args: --target aarch64-apple-darwin
+            bundles: app,dmg
+          - platform: macos-latest
+            args: --target x86_64-apple-darwin
+            bundles: app,dmg
+          - platform: ubuntu-22.04
+            args: ""
+            bundles: deb,rpm,appimage
+          - platform: windows-latest
+            args: ""
+            bundles: nsis,msi
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            xdg-utils
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Setup Node (Tauri action helper)
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ./src-tauri -> target
+
+      - name: Install frontend dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Import Apple Developer certificate
+        if: matrix.platform == 'macos-latest'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          if [ -z "${APPLE_CERTIFICATE:-}" ]; then
+            echo "APPLE_CERTIFICATE not set — building unsigned macOS artifacts"
+            exit 0
+          fi
+          if [ -z "${KEYCHAIN_PASSWORD:-}" ]; then
+            echo "KEYCHAIN_PASSWORD secret is required when APPLE_CERTIFICATE is set"
+            exit 1
+          fi
+          echo "$APPLE_CERTIFICATE" | base64 --decode > certificate.p12
+          security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security set-keychain-settings -t 3600 -u build.keychain
+          security import certificate.p12 -k build.keychain \
+            -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign -T /usr/bin/security -T /usr/bin/productbuild
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" build.keychain
+          security find-identity -v -p codesigning build.keychain
+          CERT_INFO=$(security find-identity -v -p codesigning build.keychain | grep "Developer ID Application" | head -1)
+          CERT_ID=$(echo "$CERT_INFO" | awk -F'"' '{print $2}')
+          if [ -z "$CERT_ID" ]; then
+            echo "Could not find a Developer ID Application identity after import"
+            exit 1
+          fi
+          echo "APPLE_SIGNING_IDENTITY=$CERT_ID" >> "$GITHUB_ENV"
+          rm -f certificate.p12
+
+      - name: Build and upload to GitHub Release
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # macOS code signing + notarization (optional until secrets exist)
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ env.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Updater artifact signatures (optional until keys exist)
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: v__VERSION__
+          releaseName: Agentflow v__VERSION__
+          releaseBody: |
+            PRIVATE STAGING DRAFT — DO NOT PUBLISH TO THE PUBLIC REPOSITORY.
+
+            Candidate official desktop installers for paid distribution:
+
+            - **macOS:** `.dmg` for Apple Silicon and Intel
+            - **Windows:** `.exe` (NSIS) and `.msi`
+            - **Linux:** `.AppImage`, `.deb`, and `.rpm`
+
+            Agentflow shells out to local agent CLIs (Claude Code, Cursor, Codex, OpenCode). Install and authenticate those on the machine before running workflows.
+
+            Follow docs/releasing.md: test these exact assets, generate checksums, and upload accepted files to the paid download service. Never convert this draft into a public GitHub Release.
+          releaseDraft: true
+          prerelease: false
+          uploadUpdaterJson: false
+          args: ${{ matrix.args }} --bundles ${{ matrix.bundles }}

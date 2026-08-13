@@ -1,0 +1,494 @@
+import { open } from "@tauri-apps/plugin-dialog";
+import type {
+  CustomAgentNodeData,
+  FileInjectNodeData,
+  GitHostNodeData,
+  GitStatusNodeData,
+  HttpNodeData,
+  NotifyNodeData,
+  ShellNodeData,
+  TemplateNodeData,
+  WriteFileNodeData,
+} from "../../types";
+
+function LabelField({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (label: string) => void;
+}) {
+  return (
+    <label className="field">
+      <span>Label</span>
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    </label>
+  );
+}
+
+export function CustomAgentSettings({
+  data,
+  onUpdate,
+}: {
+  data: CustomAgentNodeData;
+  onUpdate: (patch: Partial<CustomAgentNodeData>) => void;
+}) {
+  return (
+    <>
+      <LabelField
+        value={data.label}
+        onChange={(label) => onUpdate({ label })}
+      />
+      <label className="field">
+        <span>Command</span>
+        <textarea
+          rows={4}
+          value={data.command}
+          placeholder='e.g. my-agent --print "{{prompt}}"'
+          onChange={(e) => onUpdate({ command: e.target.value })}
+        />
+      </label>
+      <label className="field">
+        <span>Pass prompt via</span>
+        <select
+          value={data.promptMode}
+          onChange={(e) =>
+            onUpdate({
+              promptMode: e.target.value as CustomAgentNodeData["promptMode"],
+            })
+          }
+        >
+          <option value="template">{"{{prompt}} in command"}</option>
+          <option value="stdin">stdin</option>
+        </select>
+      </label>
+      <p className="hint">
+        Runs like a built-in agent: workflow context becomes the prompt, output
+        is captured, and git file changes are tracked when a working directory
+        is set.
+        {data.promptMode === "template"
+          ? " Include {{prompt}} in the command (quote it if needed)."
+          : " The prompt is written to the process stdin."}
+      </p>
+    </>
+  );
+}
+
+export function TemplateSettings({
+  data,
+  onUpdate,
+}: {
+  data: TemplateNodeData;
+  onUpdate: (patch: Partial<TemplateNodeData>) => void;
+}) {
+  return (
+    <>
+      <LabelField
+        value={data.label}
+        onChange={(label) => onUpdate({ label })}
+      />
+      <p className="hint">
+        Placeholders: <code>{"{{context}}"}</code>, <code>{"{{output}}"}</code>,{" "}
+        <code>{"{{cwd}}"}</code>
+      </p>
+      <label className="field">
+        <span>Template</span>
+        <textarea
+          rows={8}
+          value={data.template}
+          onChange={(e) => onUpdate({ template: e.target.value })}
+        />
+      </label>
+      <label className="field">
+        <span>Mode</span>
+        <select
+          value={data.mode}
+          onChange={(e) =>
+            onUpdate({ mode: e.target.value as TemplateNodeData["mode"] })
+          }
+        >
+          <option value="append">Append to context</option>
+          <option value="replace">Replace context</option>
+        </select>
+      </label>
+    </>
+  );
+}
+
+export function FileInjectSettings({
+  data,
+  onUpdate,
+}: {
+  data: FileInjectNodeData;
+  onUpdate: (patch: Partial<FileInjectNodeData>) => void;
+}) {
+  const addPaths = async () => {
+    try {
+      const picked = await open({
+        multiple: true,
+        directory: false,
+        title: "Inject files into context",
+      });
+      if (!picked) return;
+      const list = Array.isArray(picked) ? picked : [picked];
+      const next = [...data.paths];
+      for (const path of list) {
+        if (path && !next.includes(path)) next.push(path);
+      }
+      onUpdate({ paths: next });
+    } catch (e) {
+      console.warn("File picker unavailable", e);
+    }
+  };
+
+  return (
+    <>
+      <LabelField
+        value={data.label}
+        onChange={(label) => onUpdate({ label })}
+      />
+      <div className="field">
+        <div className="wf-attach-field-header">
+          <span>Paths</span>
+          <button
+            type="button"
+            className="ghost wf-input-attach-btn"
+            onClick={() => void addPaths()}
+          >
+            + File
+          </button>
+        </div>
+        <p className="hint">File contents are appended to the run context.</p>
+        {data.paths.length === 0 ? (
+          <p className="muted">No paths selected.</p>
+        ) : (
+          <ul className="wf-path-list">
+            {data.paths.map((path) => (
+              <li key={path}>
+                <code>{path}</code>
+                <button
+                  type="button"
+                  className="ghost"
+                  onClick={() =>
+                    onUpdate({
+                      paths: data.paths.filter((p) => p !== path),
+                    })
+                  }
+                >
+                  Remove
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </>
+  );
+}
+
+export function GitStatusSettings({
+  data,
+  onUpdate,
+}: {
+  data: GitStatusNodeData;
+  onUpdate: (patch: Partial<GitStatusNodeData>) => void;
+}) {
+  return (
+    <>
+      <LabelField
+        value={data.label}
+        onChange={(label) => onUpdate({ label })}
+      />
+      <label className="field checkbox-field">
+        <input
+          type="checkbox"
+          checked={data.includeDiff}
+          onChange={(e) => onUpdate({ includeDiff: e.target.checked })}
+        />
+        <span>Include git diff</span>
+      </label>
+      <p className="hint">
+        Snapshots the workflow working directory’s git status into context
+        before later steps run.
+      </p>
+    </>
+  );
+}
+
+export function ShellSettings({
+  data,
+  onUpdate,
+}: {
+  data: ShellNodeData;
+  onUpdate: (patch: Partial<ShellNodeData>) => void;
+}) {
+  return (
+    <>
+      <LabelField
+        value={data.label}
+        onChange={(label) => onUpdate({ label })}
+      />
+      <label className="field">
+        <span>Command</span>
+        <textarea
+          rows={4}
+          value={data.command}
+          placeholder="e.g. bun test"
+          onChange={(e) => onUpdate({ command: e.target.value })}
+        />
+      </label>
+      <label className="field checkbox-field">
+        <input
+          type="checkbox"
+          checked={data.appendOutput}
+          onChange={(e) => onUpdate({ appendOutput: e.target.checked })}
+        />
+        <span>Append stdout/stderr to context</span>
+      </label>
+    </>
+  );
+}
+
+export function HttpSettings({
+  data,
+  onUpdate,
+}: {
+  data: HttpNodeData;
+  onUpdate: (patch: Partial<HttpNodeData>) => void;
+}) {
+  return (
+    <>
+      <LabelField
+        value={data.label}
+        onChange={(label) => onUpdate({ label })}
+      />
+      <div className="field-row">
+        <label className="field" style={{ width: "7rem" }}>
+          <span>Method</span>
+          <select
+            value={data.method}
+            onChange={(e) =>
+              onUpdate({ method: e.target.value as HttpNodeData["method"] })
+            }
+          >
+            {(["GET", "POST", "PUT", "PATCH", "DELETE"] as const).map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field" style={{ flex: 1 }}>
+          <span>URL</span>
+          <input
+            type="url"
+            value={data.url}
+            placeholder="https://…"
+            onChange={(e) => onUpdate({ url: e.target.value })}
+          />
+        </label>
+      </div>
+      <label className="field">
+        <span>Headers</span>
+        <textarea
+          rows={3}
+          value={data.headers}
+          placeholder={"Authorization: Bearer …\nContent-Type: application/json"}
+          onChange={(e) => onUpdate({ headers: e.target.value })}
+        />
+      </label>
+      <label className="field">
+        <span>Body</span>
+        <textarea
+          rows={5}
+          value={data.body}
+          placeholder="Templates: {{output}}, {{context}}"
+          onChange={(e) => onUpdate({ body: e.target.value })}
+        />
+      </label>
+      <p className="hint">Response body is appended to context.</p>
+    </>
+  );
+}
+
+export function NotifySettings({
+  data,
+  onUpdate,
+}: {
+  data: NotifyNodeData;
+  onUpdate: (patch: Partial<NotifyNodeData>) => void;
+}) {
+  return (
+    <>
+      <LabelField
+        value={data.label}
+        onChange={(label) => onUpdate({ label })}
+      />
+      <label className="field">
+        <span>Title</span>
+        <input
+          type="text"
+          value={data.title}
+          onChange={(e) => onUpdate({ title: e.target.value })}
+        />
+      </label>
+      <label className="field">
+        <span>Body</span>
+        <textarea
+          rows={4}
+          value={data.body}
+          onChange={(e) => onUpdate({ body: e.target.value })}
+        />
+      </label>
+      <label className="field checkbox-field">
+        <input
+          type="checkbox"
+          checked={data.desktop}
+          onChange={(e) => onUpdate({ desktop: e.target.checked })}
+        />
+        <span>Desktop notification</span>
+      </label>
+      <label className="field">
+        <span>Webhook URL (optional)</span>
+        <input
+          type="url"
+          value={data.webhookUrl}
+          placeholder="https://hooks.…"
+          onChange={(e) => onUpdate({ webhookUrl: e.target.value })}
+        />
+      </label>
+    </>
+  );
+}
+
+export function WriteFileSettings({
+  data,
+  onUpdate,
+}: {
+  data: WriteFileNodeData;
+  onUpdate: (patch: Partial<WriteFileNodeData>) => void;
+}) {
+  const pickPath = async () => {
+    try {
+      const picked = await open({
+        multiple: false,
+        directory: false,
+        title: "Write file destination",
+      });
+      if (typeof picked === "string") onUpdate({ path: picked });
+    } catch (e) {
+      console.warn("File picker unavailable", e);
+    }
+  };
+
+  return (
+    <>
+      <LabelField
+        value={data.label}
+        onChange={(label) => onUpdate({ label })}
+      />
+      <label className="field">
+        <span>Path</span>
+        <div className="field-row">
+          <input
+            type="text"
+            style={{ flex: 1 }}
+            value={data.path}
+            placeholder="relative/or/absolute/path.txt"
+            onChange={(e) => onUpdate({ path: e.target.value })}
+          />
+          <button type="button" className="ghost" onClick={() => void pickPath()}>
+            Browse…
+          </button>
+        </div>
+      </label>
+      <label className="field">
+        <span>Content</span>
+        <textarea
+          rows={6}
+          value={data.content}
+          onChange={(e) => onUpdate({ content: e.target.value })}
+        />
+      </label>
+      <p className="hint">
+        Templates: <code>{"{{output}}"}</code>, <code>{"{{context}}"}</code>,{" "}
+        <code>{"{{cwd}}"}</code>
+      </p>
+    </>
+  );
+}
+
+export function GitHostSettings({
+  data,
+  onUpdate,
+}: {
+  data: GitHostNodeData;
+  onUpdate: (patch: Partial<GitHostNodeData>) => void;
+}) {
+  return (
+    <>
+      <LabelField
+        value={data.label}
+        onChange={(label) => onUpdate({ label })}
+      />
+      <label className="field">
+        <span>Action</span>
+        <select
+          value={data.action}
+          onChange={(e) =>
+            onUpdate({ action: e.target.value as GitHostNodeData["action"] })
+          }
+        >
+          <option value="pr">Create pull request</option>
+          <option value="issue">Open issue</option>
+        </select>
+      </label>
+      <label className="field">
+        <span>Title</span>
+        <input
+          type="text"
+          value={data.title}
+          placeholder="Optional — gh may prompt / derive"
+          onChange={(e) => onUpdate({ title: e.target.value })}
+        />
+      </label>
+      <label className="field">
+        <span>Body</span>
+        <textarea
+          rows={6}
+          value={data.body}
+          onChange={(e) => onUpdate({ body: e.target.value })}
+        />
+      </label>
+      {data.action === "pr" ? (
+        <>
+          <label className="field">
+            <span>Base branch</span>
+            <input
+              type="text"
+              value={data.base}
+              placeholder="main (repo default if empty)"
+              onChange={(e) => onUpdate({ base: e.target.value })}
+            />
+          </label>
+          <label className="field checkbox-field">
+            <input
+              type="checkbox"
+              checked={data.draft}
+              onChange={(e) => onUpdate({ draft: e.target.checked })}
+            />
+            <span>Draft PR</span>
+          </label>
+        </>
+      ) : null}
+      <p className="hint">
+        Requires the GitHub CLI (<code>gh</code>) authenticated in this
+        environment.
+      </p>
+    </>
+  );
+}

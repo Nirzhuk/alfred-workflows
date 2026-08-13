@@ -1,0 +1,343 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  Background,
+  ConnectionLineType,
+  ConnectionMode,
+  Controls,
+  ReactFlow,
+  useReactFlow,
+  type DefaultEdgeOptions,
+  type NodeChange,
+  type OnSelectionChangeParams,
+} from "@xyflow/react";
+import { useThemeStore } from "../../../settings/theme";
+import { AddStepPanel } from "../add-step-panel";
+import { NodeSettingsModal } from "../node-settings-modal";
+import {
+  FlowContextMenu,
+  type FlowContextMenuState,
+} from "../flow-context-menu";
+import { nodeTypes } from "../node-types";
+import { useWorkflowStore } from "../../store";
+import {
+  defaultOutputNodeData,
+  isPromptNodeData,
+  titleForNodeType,
+  type AgentProviderId,
+  type WorkflowNode,
+  type WorkflowNodeData,
+} from "../../types";
+
+function newId() {
+  return crypto.randomUUID();
+}
+
+/** Cap zoom near 1× — scaling the viewport past this softens node text. */
+const MIN_ZOOM = 0.6;
+const MAX_ZOOM = 1;
+
+function preventsNodeDoubleClick(target: EventTarget | null): boolean {
+  return (
+    target instanceof Element &&
+    Boolean(target.closest("[data-prevent-node-double-click]"))
+  );
+}
+
+const defaultEdgeOptions: DefaultEdgeOptions = {
+  type: "default",
+  animated: false,
+  style: {
+    stroke: "var(--accent-edge)",
+    strokeWidth: 1.75,
+  },
+};
+
+type Props = {
+  displayNodes: WorkflowNode[];
+};
+
+export function FlowEditor({ displayNodes }: Props) {
+  const {
+    edges: storeEdges,
+    onNodesChange,
+    onEdgesChange,
+    onConnect,
+    addNode,
+    removeNode,
+    duplicateNode,
+    disconnectNode,
+    updateNodeData,
+    setSelectedNodeId,
+    providerModels,
+  } = useWorkflowStore();
+  const colorMode = useThemeStore((s) => s.resolved);
+
+  const { screenToFlowPosition, setViewport, getViewport, fitView } =
+    useReactFlow();
+  const [menu, setMenu] = useState<FlowContextMenuState | null>(null);
+  const [settingsNodeId, setSettingsNodeId] = useState<string | null>(null);
+
+  // Force bezier edges even if older graphs were saved as smoothstep.
+  const edges = useMemo(
+    () => storeEdges.map((edge) => ({ ...edge, type: "default" as const })),
+    [storeEdges],
+  );
+
+  /** Round pan offsets and clamp zoom so nodes stay sharp. */
+  const sharpenViewport = useCallback(() => {
+    const { x, y, zoom } = getViewport();
+    const clampedZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom));
+    const next = {
+      x: Math.round(x),
+      y: Math.round(y),
+      zoom: Math.round(clampedZoom * 100) / 100,
+    };
+    if (next.x !== x || next.y !== y || next.zoom !== zoom) {
+      void setViewport(next, { duration: 0 });
+    }
+  }, [getViewport, setViewport]);
+
+  const closeMenu = useCallback(() => setMenu(null), []);
+
+  const openNodeSettings = useCallback(
+    (nodeId: string) => {
+      setSelectedNodeId(nodeId);
+      setSettingsNodeId(nodeId);
+      closeMenu();
+    },
+    [setSelectedNodeId, closeMenu],
+  );
+
+  const onNodeDoubleClick = useCallback(
+    (event: React.MouseEvent, node: WorkflowNode) => {
+      // Only explicitly marked controls own their double-click sequence. The
+      // rest of the card, including the prompt area, still opens the editor.
+      if (preventsNodeDoubleClick(event.target)) return;
+      openNodeSettings(node.id);
+    },
+    [openNodeSettings],
+  );
+
+  useEffect(() => {
+    if (!menu) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") closeMenu();
+    };
+    const onPointer = () => closeMenu();
+    window.addEventListener("keydown", onKey);
+    // Close on next click anywhere (menu buttons stopPropagation).
+    window.addEventListener("pointerdown", onPointer);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("pointerdown", onPointer);
+    };
+  }, [menu, closeMenu]);
+
+  useEffect(() => {
+    const onFitCanvas = () => {
+      void fitView({
+        padding: 0.2,
+        minZoom: MIN_ZOOM,
+        maxZoom: MAX_ZOOM,
+        duration: 180,
+      });
+    };
+    window.addEventListener("agentflow:fit-canvas", onFitCanvas);
+    return () =>
+      window.removeEventListener("agentflow:fit-canvas", onFitCanvas);
+  }, [fitView]);
+
+  const onPaneContextMenu = useCallback(
+    (event: MouseEvent | React.MouseEvent) => {
+      event.preventDefault();
+      const screen = { x: event.clientX, y: event.clientY };
+      const flow = screenToFlowPosition(screen);
+      setMenu({ kind: "pane", screen, flow });
+    },
+    [screenToFlowPosition],
+  );
+
+  const onNodeContextMenu = useCallback(
+    (event: React.MouseEvent, node: WorkflowNode) => {
+      event.preventDefault();
+      event.stopPropagation();
+      setSelectedNodeId(node.id);
+      const label =
+        (typeof node.data?.label === "string" && node.data.label) ||
+        titleForNodeType(node.type);
+      setMenu({
+        kind: "node",
+        screen: { x: event.clientX, y: event.clientY },
+        nodeId: node.id,
+        label,
+        blockable: isPromptNodeData(node.data),
+        blocked: isPromptNodeData(node.data) && Boolean(node.data.blocked),
+      });
+    },
+    [setSelectedNodeId],
+  );
+
+  const onSelectionChange = useCallback(
+    ({ nodes: selected }: OnSelectionChangeParams) => {
+      setSelectedNodeId(selected[0]?.id ?? null);
+      closeMenu();
+    },
+    [setSelectedNodeId, closeMenu],
+  );
+
+  const onAddPrompt = useCallback(
+    (position: { x: number; y: number }) => {
+      addNode({
+        id: newId(),
+        type: "input",
+        position,
+        width: 280,
+        height: 280,
+        data: { label: "Input", prompt: "", attachments: [] },
+      });
+    },
+    [addNode],
+  );
+
+  const onAddAgent = useCallback(
+    (provider: AgentProviderId, position: { x: number; y: number }) => {
+      const catalog = providerModels.find((c) => c.provider === provider);
+      addNode({
+        id: newId(),
+        type: "agent",
+        position,
+        data: {
+          label: "Agent",
+          provider,
+          model: catalog?.defaultModel ?? null,
+          skillNames: [],
+        },
+      });
+    },
+    [addNode, providerModels],
+  );
+
+  const onAddChoose = useCallback(
+    (position: { x: number; y: number }) => {
+      addNode({
+        id: newId(),
+        type: "chooseOutput",
+        position,
+        data: defaultOutputNodeData("Output"),
+      });
+    },
+    [addNode],
+  );
+
+  const onAddMemory = useCallback(
+    (position: { x: number; y: number }) => {
+      addNode({
+        id: newId(),
+        type: "memory",
+        position,
+        data: { label: "Memories", memoryIds: [] },
+      });
+    },
+    [addNode],
+  );
+
+  const onAddStep = useCallback(
+    (
+      type: string,
+      data: WorkflowNodeData,
+      position: { x: number; y: number },
+    ) => {
+      addNode({
+        id: newId(),
+        type,
+        position,
+        data: structuredClone(data),
+      });
+    },
+    [addNode],
+  );
+
+  return (
+    <>
+      <ReactFlow
+        nodes={displayNodes}
+        edges={edges}
+        onNodesChange={(changes) =>
+          onNodesChange(changes as NodeChange<WorkflowNode>[])
+        }
+        onEdgesChange={onEdgesChange}
+        onConnect={onConnect}
+        onSelectionChange={onSelectionChange}
+        onPaneContextMenu={onPaneContextMenu}
+        onNodeContextMenu={onNodeContextMenu}
+        onNodeDoubleClick={onNodeDoubleClick}
+        onPaneClick={closeMenu}
+        onNodeClick={closeMenu}
+        onMoveStart={closeMenu}
+        onMoveEnd={sharpenViewport}
+        onInit={() => {
+          // fitView applies after init; sharpen once the viewport settles.
+          requestAnimationFrame(() => sharpenViewport());
+        }}
+        nodeTypes={nodeTypes}
+        colorMode={colorMode}
+        defaultEdgeOptions={defaultEdgeOptions}
+        connectionLineType={ConnectionLineType.Bezier}
+        connectionLineStyle={{
+          stroke: "var(--accent-edge-strong)",
+          strokeWidth: 1.75,
+        }}
+        connectionMode={ConnectionMode.Strict}
+        fitView
+        fitViewOptions={{ padding: 0.2, minZoom: MIN_ZOOM, maxZoom: MAX_ZOOM }}
+        minZoom={MIN_ZOOM}
+        maxZoom={MAX_ZOOM}
+        snapToGrid
+        snapGrid={[8, 8]}
+        elevateNodesOnSelect={false}
+        proOptions={{ hideAttribution: true }}
+      >
+        <Background gap={22} size={1} color="var(--canvas-dot)" />
+        <Controls position="top-left" />
+        <AddStepPanel
+          onAddPrompt={onAddPrompt}
+          onAddAgent={onAddAgent}
+          onAddChoose={onAddChoose}
+          onAddMemory={onAddMemory}
+          onAddStep={onAddStep}
+        />
+      </ReactFlow>
+
+      {menu ? (
+        <div
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <FlowContextMenu
+            menu={menu}
+            onClose={closeMenu}
+            onAddPrompt={onAddPrompt}
+            onAddAgent={onAddAgent}
+            onAddChoose={onAddChoose}
+            onAddMemory={onAddMemory}
+            onAddStep={onAddStep}
+            onDuplicateNode={duplicateNode}
+            onDisconnectNode={disconnectNode}
+            onRemoveNode={removeNode}
+            onEditNode={openNodeSettings}
+            onToggleNodeBlocked={(nodeId, blocked) =>
+              updateNodeData(nodeId, { blocked })
+            }
+          />
+        </div>
+      ) : null}
+
+      {settingsNodeId ? (
+        <NodeSettingsModal
+          nodeId={settingsNodeId}
+          onClose={() => setSettingsNodeId(null)}
+        />
+      ) : null}
+    </>
+  );
+}

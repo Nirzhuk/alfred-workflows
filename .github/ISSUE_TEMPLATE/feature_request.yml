@@ -1,0 +1,43 @@
+name: Feature request
+description: Propose a focused improvement to Agentflow
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user problem would this solve? Describe the need before the implementation.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Explain the smallest useful outcome and how a user would experience it.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Include current workarounds or simpler options.
+
+  - type: textarea
+    id: boundaries
+    attributes:
+      label: Privacy, security, and platform impact
+      description: Note new network access, credentials, filesystem access, processes, or OS-specific behavior.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Submission checks
+      options:
+        - label: I searched existing issues and plans for this request.
+          required: true
+        - label: This request keeps Agentflow a desktop application rather than a hosted website or mobile app.
+          required: true

@@ -1,0 +1,681 @@
+import { useEffect, useMemo, useState } from "react";
+import { Modal, ModalHeader } from "../../../../components/modal";
+import * as api from "../../api";
+import {
+  modelsForProvider,
+  type ProviderModels,
+} from "../../models";
+import { useWorkflowStore } from "../../store";
+import {
+  mergeAttachments,
+  pickFileAttachments,
+  pickFolderAttachments,
+} from "../../attachments";
+import {
+  agentSkillNames,
+  isAgentNodeData,
+  isCustomAgentNodeData,
+  isFileInjectNodeData,
+  isGitHostNodeData,
+  isGitStatusNodeData,
+  isHttpNodeData,
+  isMemoryNodeData,
+  isNotifyNodeData,
+  isOutputNodeData,
+  isPromptNodeData,
+  isShellNodeData,
+  isTemplateNodeData,
+  isWriteFileNodeData,
+  titleForNodeType,
+  type AgentProviderId,
+  type InputAttachment,
+  type OutputMemory,
+  type OutputNodeData,
+  type PromptNodeData,
+  type Skill,
+} from "../../types";
+import { InputAttachmentList } from "../input-attachment-list";
+import { SkillPicker } from "../skill-picker";
+import {
+  CustomAgentSettings,
+  FileInjectSettings,
+  GitHostSettings,
+  GitStatusSettings,
+  HttpSettings,
+  NotifySettings,
+  ShellSettings,
+  TemplateSettings,
+  WriteFileSettings,
+} from "./utility-settings";
+
+type Props = {
+  nodeId: string;
+  onClose: () => void;
+};
+
+export function NodeSettingsModal({ nodeId, onClose }: Props) {
+  const nodes = useWorkflowStore((s) => s.nodes);
+  const skills = useWorkflowStore((s) => s.skills);
+  const providerModels = useWorkflowStore((s) => s.providerModels);
+  const memories = useWorkflowStore((s) => s.memories);
+  const activeWorkflowId = useWorkflowStore((s) => s.activeWorkflowId);
+  const updateNodeData = useWorkflowStore((s) => s.updateNodeData);
+  const loadProviderModels = useWorkflowStore((s) => s.loadProviderModels);
+  const linkMemory = useWorkflowStore((s) => s.linkMemory);
+
+  const node = useMemo(
+    () => nodes.find((n) => n.id === nodeId) ?? null,
+    [nodes, nodeId],
+  );
+
+  const [linkable, setLinkable] = useState<OutputMemory[]>([]);
+  const [linkQuery, setLinkQuery] = useState("");
+
+  useEffect(() => {
+    if (!node) onClose();
+  }, [node, onClose]);
+
+  useEffect(() => {
+    if (!node || !isMemoryNodeData(node.data) || !activeWorkflowId) {
+      setLinkable([]);
+      return;
+    }
+    let cancelled = false;
+    void api.listLinkableMemories(activeWorkflowId).then((rows) => {
+      if (!cancelled) setLinkable(rows);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    node?.id,
+    node && isMemoryNodeData(node.data) ? node.data.memoryIds.join(",") : "",
+    activeWorkflowId,
+    memories.length,
+  ]);
+
+  if (!node) return null;
+
+  const heading = titleForNodeType(node.type);
+
+  return (
+    <Modal
+      size="settings"
+      onClose={onClose}
+      labelledBy="node-settings-title"
+    >
+      <ModalHeader
+        eyebrow="Node settings"
+        title={heading}
+        titleId="node-settings-title"
+        actions={
+          <button type="button" className="ghost" onClick={onClose}>
+            Done
+          </button>
+        }
+      />
+
+      <div className="node-settings-modal-body">
+        {isPromptNodeData(node.data) ? (
+          <InputSettings
+            label={node.data.label}
+            prompt={node.data.prompt}
+            blocked={Boolean(node.data.blocked)}
+            attachments={node.data.attachments ?? []}
+            onUpdate={(patch) => updateNodeData(node.id, patch)}
+          />
+        ) : null}
+
+        {isMemoryNodeData(node.data) ? (
+          <MemorySettings
+            label={node.data.label}
+            memoryIds={node.data.memoryIds ?? []}
+            memories={memories}
+            linkable={linkable}
+            linkQuery={linkQuery}
+            activeWorkflowId={activeWorkflowId}
+            onLinkQueryChange={setLinkQuery}
+            onUpdate={(patch) => updateNodeData(node.id, patch)}
+            onLinkMemory={linkMemory}
+          />
+        ) : null}
+
+        {isAgentNodeData(node.data) ? (
+          <AgentSettings
+            provider={node.data.provider}
+            model={node.data.model}
+            skillNames={agentSkillNames(node.data)}
+            skills={skills}
+            providerModels={providerModels}
+            onUpdate={(patch) => updateNodeData(node.id, patch)}
+            onRefreshModels={() => void loadProviderModels()}
+          />
+        ) : null}
+
+        {isCustomAgentNodeData(node.data) ? (
+          <CustomAgentSettings
+            data={node.data}
+            onUpdate={(patch) => updateNodeData(node.id, patch)}
+          />
+        ) : null}
+
+        {node.type === "chooseOutput" && isOutputNodeData(node.data) ? (
+          <OutputSettings
+            data={node.data}
+            onUpdate={(patch) => updateNodeData(node.id, patch)}
+          />
+        ) : null}
+
+        {isTemplateNodeData(node.data) ? (
+          <TemplateSettings
+            data={node.data}
+            onUpdate={(patch) => updateNodeData(node.id, patch)}
+          />
+        ) : null}
+
+        {isFileInjectNodeData(node.data) ? (
+          <FileInjectSettings
+            data={node.data}
+            onUpdate={(patch) => updateNodeData(node.id, patch)}
+          />
+        ) : null}
+
+        {isGitStatusNodeData(node.data) ? (
+          <GitStatusSettings
+            data={node.data}
+            onUpdate={(patch) => updateNodeData(node.id, patch)}
+          />
+        ) : null}
+
+        {isShellNodeData(node.data) ? (
+          <ShellSettings
+            data={node.data}
+            onUpdate={(patch) => updateNodeData(node.id, patch)}
+          />
+        ) : null}
+
+        {isHttpNodeData(node.data) ? (
+          <HttpSettings
+            data={node.data}
+            onUpdate={(patch) => updateNodeData(node.id, patch)}
+          />
+        ) : null}
+
+        {isNotifyNodeData(node.data) ? (
+          <NotifySettings
+            data={node.data}
+            onUpdate={(patch) => updateNodeData(node.id, patch)}
+          />
+        ) : null}
+
+        {isWriteFileNodeData(node.data) ? (
+          <WriteFileSettings
+            data={node.data}
+            onUpdate={(patch) => updateNodeData(node.id, patch)}
+          />
+        ) : null}
+
+        {isGitHostNodeData(node.data) ? (
+          <GitHostSettings
+            data={node.data}
+            onUpdate={(patch) => updateNodeData(node.id, patch)}
+          />
+        ) : null}
+      </div>
+    </Modal>
+  );
+}
+
+type InputSettingsProps = {
+  label: string;
+  prompt: string;
+  blocked: boolean;
+  attachments: InputAttachment[];
+  onUpdate: (patch: Partial<PromptNodeData>) => void;
+};
+
+function InputSettings({
+  label,
+  prompt,
+  blocked,
+  attachments,
+  onUpdate,
+}: InputSettingsProps) {
+  const addFiles = async () => {
+    try {
+      const picked = await pickFileAttachments();
+      if (picked.length === 0) return;
+      onUpdate({ attachments: mergeAttachments(attachments, picked) });
+    } catch (e) {
+      console.warn("File picker unavailable", e);
+    }
+  };
+
+  const addFolders = async () => {
+    try {
+      const picked = await pickFolderAttachments();
+      if (picked.length === 0) return;
+      onUpdate({ attachments: mergeAttachments(attachments, picked) });
+    } catch (e) {
+      console.warn("Folder picker unavailable", e);
+    }
+  };
+
+  const removeAttachment = (attachmentId: string) => {
+    onUpdate({
+      attachments: attachments.filter((a) => a.id !== attachmentId),
+    });
+  };
+
+  return (
+    <>
+      <div className={`wf-input-block-setting${blocked ? " is-blocked" : ""}`}>
+        <div className="wf-input-block-setting-copy">
+          <strong>{blocked ? "Editing is blocked" : "Block input editing"}</strong>
+          <span>
+            {blocked
+              ? "Unblock this Input before changing its prompt, label, attachments, or placement."
+              : "Protect this Input from accidental changes on the canvas or in settings."}
+          </span>
+        </div>
+        <button
+          type="button"
+          className={blocked ? "primary" : "ghost"}
+          onClick={() => onUpdate({ blocked: !blocked })}
+        >
+          {blocked ? "Unblock" : "Block"}
+        </button>
+      </div>
+      <label className="field">
+        <span>Label</span>
+        <input
+          type="text"
+          value={label}
+          disabled={blocked}
+          onChange={(e) => onUpdate({ label: e.target.value })}
+        />
+      </label>
+      <label className="field">
+        <span>Prompt</span>
+        <textarea
+          value={prompt}
+          rows={10}
+          placeholder="What should the agent do?"
+          disabled={blocked}
+          onChange={(e) => onUpdate({ prompt: e.target.value })}
+        />
+      </label>
+      <div className="field wf-attach-field">
+        <div className="wf-attach-field-header">
+          <span>Files &amp; folders</span>
+          <div className="wf-input-attach-actions">
+            <button
+              type="button"
+              className="ghost wf-input-attach-btn"
+              disabled={blocked}
+              onClick={() => void addFiles()}
+            >
+              + File
+            </button>
+            <button
+              type="button"
+              className="ghost wf-input-attach-btn"
+              disabled={blocked}
+              onClick={() => void addFolders()}
+            >
+              + Folder
+            </button>
+          </div>
+        </div>
+        <p className="hint">
+          Attached paths are included in the run context so the agent can use
+          them when building the task.
+        </p>
+        <InputAttachmentList
+          attachments={attachments}
+          onRemove={removeAttachment}
+          readOnly={blocked}
+          variant="modal"
+        />
+      </div>
+    </>
+  );
+}
+
+type OutputSettingsProps = {
+  data: OutputNodeData;
+  onUpdate: (patch: Partial<OutputNodeData>) => void;
+};
+
+function OutputSettings({ data, onUpdate }: OutputSettingsProps) {
+  return (
+    <>
+      <label className="field">
+        <span>Label</span>
+        <input
+          type="text"
+          value={data.label}
+          onChange={(e) => onUpdate({ label: e.target.value })}
+        />
+      </label>
+      <p className="hint">
+        Captures the upstream agent result. Choose whether to save it as a
+        memory, publish it as the run’s final output, format it as HTML, and
+        include changed files.
+      </p>
+      <label className="field checkbox-field">
+        <input
+          type="checkbox"
+          checked={data.htmlReport}
+          onChange={(e) => onUpdate({ htmlReport: e.target.checked })}
+        />
+        <span>Request an HTML report</span>
+      </label>
+      {data.htmlReport ? (
+        <p className="hint">
+          The nearest connected upstream agent will be asked for a complete,
+          self-contained HTML document.
+        </p>
+      ) : null}
+      <label className="field checkbox-field">
+        <input
+          type="checkbox"
+          checked={data.saveToMemory}
+          onChange={(e) => onUpdate({ saveToMemory: e.target.checked })}
+        />
+        <span>Save to memories</span>
+      </label>
+      {data.saveToMemory ? (
+        <>
+          <label className="field checkbox-field">
+            <input
+              type="checkbox"
+              checked={data.pinMemory}
+              onChange={(e) => onUpdate({ pinMemory: e.target.checked })}
+            />
+            <span>Pin memory for next runs</span>
+          </label>
+          <label className="field">
+            <span>Memory title</span>
+            <input
+              type="text"
+              placeholder={data.label || "Output"}
+              value={data.memoryTitle ?? ""}
+              onChange={(e) => onUpdate({ memoryTitle: e.target.value })}
+            />
+          </label>
+        </>
+      ) : null}
+      <label className="field checkbox-field">
+        <input
+          type="checkbox"
+          checked={data.asFinalResult}
+          onChange={(e) => onUpdate({ asFinalResult: e.target.checked })}
+        />
+        <span>Use as final run result</span>
+      </label>
+      <label className="field checkbox-field">
+        <input
+          type="checkbox"
+          checked={data.includeFilesChanged}
+          onChange={(e) => onUpdate({ includeFilesChanged: e.target.checked })}
+        />
+        <span>Include changed files in output</span>
+      </label>
+    </>
+  );
+}
+
+type MemorySettingsProps = {
+  label: string;
+  memoryIds: string[];
+  memories: OutputMemory[];
+  linkable: OutputMemory[];
+  linkQuery: string;
+  activeWorkflowId: string | null;
+  onLinkQueryChange: (value: string) => void;
+  onUpdate: (patch: { label?: string; memoryIds?: string[] }) => void;
+  onLinkMemory: (memoryId: string) => Promise<unknown>;
+};
+
+function MemorySettings({
+  label,
+  memoryIds,
+  memories,
+  linkable,
+  linkQuery,
+  activeWorkflowId,
+  onLinkQueryChange,
+  onUpdate,
+  onLinkMemory,
+}: MemorySettingsProps) {
+  const selectedIds = new Set(memoryIds);
+  const available = [
+    ...memories.filter((m) => m.origin !== "linkable"),
+    ...linkable.filter((m) => !selectedIds.has(m.id)),
+  ];
+  const q = linkQuery.trim().toLowerCase();
+  const filtered = available.filter((m) => {
+    if (!q) return true;
+    return (
+      m.title.toLowerCase().includes(q) ||
+      m.body.toLowerCase().includes(q) ||
+      (m.sourceWorkflowName ?? "").toLowerCase().includes(q)
+    );
+  });
+
+  const toggle = async (memory: OutputMemory) => {
+    const ids = [...memoryIds];
+    const index = ids.indexOf(memory.id);
+    if (index >= 0) {
+      ids.splice(index, 1);
+      onUpdate({ memoryIds: ids });
+      return;
+    }
+    if (
+      memory.workflowId !== activeWorkflowId &&
+      !memories.some((m) => m.id === memory.id)
+    ) {
+      await onLinkMemory(memory.id);
+    }
+    ids.push(memory.id);
+    onUpdate({ memoryIds: ids });
+  };
+
+  return (
+    <>
+      <label className="field">
+        <span>Label</span>
+        <input
+          type="text"
+          value={label}
+          onChange={(e) => onUpdate({ label: e.target.value })}
+        />
+      </label>
+      <p className="hint">
+        Selected memories are injected into the run context. Memories from
+        other workflows are linked into this workflow’s library.
+      </p>
+      <label className="field">
+        <span>Search</span>
+        <input
+          type="search"
+          value={linkQuery}
+          placeholder="Filter by title or workflow…"
+          onChange={(e) => onLinkQueryChange(e.target.value)}
+        />
+      </label>
+      <div className="memory-picker">
+        {filtered.length === 0 ? (
+          <p className="muted">No memories available to select.</p>
+        ) : (
+          filtered.map((memory) => {
+            const checked = selectedIds.has(memory.id);
+            const fromOther =
+              memory.workflowId !== activeWorkflowId ||
+              memory.origin === "linked" ||
+              memory.origin === "linkable";
+            return (
+              <label key={memory.id} className="memory-picker-row">
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => void toggle(memory)}
+                />
+                <span className="memory-picker-copy">
+                  <span className="memory-picker-title">{memory.title}</span>
+                  {fromOther && memory.sourceWorkflowName ? (
+                    <span className="memory-origin-badge">
+                      From {memory.sourceWorkflowName}
+                    </span>
+                  ) : (
+                    <span className="memory-picker-meta">This workflow</span>
+                  )}
+                </span>
+              </label>
+            );
+          })
+        )}
+      </div>
+    </>
+  );
+}
+
+type AgentSettingsProps = {
+  provider: AgentProviderId;
+  model: string | null | undefined;
+  skillNames: string[];
+  skills: Skill[];
+  providerModels: ProviderModels[];
+  onUpdate: (patch: {
+    model?: string | null;
+    skillNames?: string[];
+    skillName?: null;
+  }) => void;
+  onRefreshModels: () => void;
+};
+
+function AgentSettings({
+  provider,
+  model,
+  skillNames,
+  skills,
+  providerModels,
+  onUpdate,
+  onRefreshModels,
+}: AgentSettingsProps) {
+  const catalog = modelsForProvider(providerModels, provider);
+  const selectedModel = model || catalog.defaultModel;
+  const knownIds = new Set(catalog.models.map((m) => m.id));
+  const providerSkills = skills.filter((s) => s.providers.includes(provider));
+
+  const invocation =
+    skillNames.length > 0
+      ? `${skillNames.map((s) => `/${s}`).join(" ")} <prompt>`
+      : null;
+
+  return (
+    <>
+      <label className="field">
+        <span>Provider</span>
+        <strong>{provider}</strong>
+      </label>
+
+      <div className="field-row">
+        <label className="field" style={{ flex: 1 }}>
+          <span>Model</span>
+          <select
+            value={knownIds.has(selectedModel) ? selectedModel : "__custom__"}
+            onChange={(e) => {
+              const value = e.target.value;
+              if (value === "__custom__") {
+                onUpdate({ model: selectedModel });
+                return;
+              }
+              onUpdate({ model: value });
+            }}
+          >
+            {catalog.models.map((m) => (
+              <option key={m.id} value={m.id} title={m.description}>
+                {m.label}
+              </option>
+            ))}
+            {catalog.allowCustom ? (
+              <option value="__custom__">Custom…</option>
+            ) : null}
+          </select>
+        </label>
+        <button
+          type="button"
+          className="ghost"
+          title="Refresh models from the agent / Cursor IDE"
+          onClick={onRefreshModels}
+        >
+          Refresh
+        </button>
+      </div>
+
+      <p className="hint">
+        {catalog.source === "discovered"
+          ? `Loaded ${catalog.models.length} models${
+              provider === "cursor" ? " from Cursor" : " from agent"
+            }`
+          : catalog.error
+            ? `Using fallback — ${catalog.error}`
+            : "Using fallback model list"}
+      </p>
+
+      {catalog.allowCustom && !knownIds.has(selectedModel) ? (
+        <label className="field">
+          <span>Custom model id</span>
+          <input
+            type="text"
+            value={selectedModel}
+            placeholder={
+              provider === "opencode"
+                ? "provider/model"
+                : "model alias or id"
+            }
+            onChange={(e) => onUpdate({ model: e.target.value })}
+          />
+        </label>
+      ) : null}
+
+      {catalog.allowCustom && knownIds.has(selectedModel) ? (
+        <label className="field">
+          <span>Or type a custom model</span>
+          <input
+            type="text"
+            value=""
+            placeholder="Override with custom id…"
+            onChange={(e) => {
+              const value = e.target.value.trim();
+              if (value) onUpdate({ model: value });
+            }}
+          />
+        </label>
+      ) : null}
+
+      <p className="hint">
+        CLI will use <code>--model {selectedModel}</code>
+      </p>
+
+      <div className="field">
+        <span>Skills</span>
+        <SkillPicker
+          skills={providerSkills}
+          selectedNames={skillNames}
+          onChange={(names) => onUpdate({ skillNames: names, skillName: null })}
+        />
+      </div>
+
+      {invocation ? (
+        <p className="hint">
+          Run will invoke <code>{invocation}</code>
+        </p>
+      ) : (
+        <p className="hint">No skills — freeform prompt.</p>
+      )}
+    </>
+  );
+}

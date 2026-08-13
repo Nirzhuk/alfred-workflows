@@ -1,0 +1,679 @@
+import type { Edge, Node } from "@xyflow/react";
+
+export type AgentProviderId =
+  | "claude_code"
+  | "cursor"
+  | "codex"
+  | "opencode";
+
+export type SkillSource = "project" | "user";
+
+export type Skill = {
+  name: string;
+  description: string;
+  path: string;
+  source: SkillSource;
+  /** Agent-branded directory it came from; shared `.agents/skills` has none. */
+  sourceAgent?: AgentProviderId | null;
+  providers: AgentProviderId[];
+};
+
+/** File or folder attached to an Input node for richer prompts. */
+export type InputAttachment = {
+  id: string;
+  path: string;
+  kind: "file" | "folder";
+};
+
+/** Input node (legacy graphs may still use type `"prompt"`). */
+export type PromptNodeData = {
+  label: string;
+  prompt: string;
+  /** Prevent accidental edits to the input's content and canvas placement. */
+  blocked?: boolean;
+  /** Paths the agent should consider (files and/or folders). */
+  attachments?: InputAttachment[];
+};
+
+export type AgentNodeData = {
+  label: string;
+  provider: AgentProviderId;
+  /** CLI model id / alias, e.g. `sonnet`, `gpt-5`, `opencode/big-pickle` */
+  model?: string | null;
+  /** Skills to invoke, e.g. `["tdd","review"]` → `/tdd /review …` */
+  skillNames?: string[];
+  /** @deprecated Prefer `skillNames`. Still read when loading older graphs. */
+  skillName?: string | null;
+};
+
+/**
+ * Bring-your-own agent CLI. Runs `command` with the workflow prompt —
+ * either substituted via `{{prompt}}` or piped on stdin.
+ */
+export type CustomAgentNodeData = {
+  kind: "customAgent";
+  label: string;
+  /**
+   * Shell command. For `template` mode include `{{prompt}}` (quoted as needed).
+   * Example: `my-agent --print "{{prompt}}"`
+   */
+  command: string;
+  /** How the workflow prompt is passed to the command. */
+  promptMode: "template" | "stdin";
+};
+
+export function defaultCustomAgentNodeData(
+  label = "Custom agent",
+): CustomAgentNodeData {
+  return {
+    kind: "customAgent",
+    label,
+    command: "",
+    promptMode: "template",
+  };
+}
+
+/** Resolved skill list for an agent node (supports legacy `skillName`). */
+export function agentSkillNames(data: AgentNodeData): string[] {
+  if (Array.isArray(data.skillNames)) {
+    return data.skillNames.map((s) => s.trim()).filter(Boolean);
+  }
+  const legacy = data.skillName?.trim();
+  return legacy ? [legacy] : [];
+}
+
+/**
+ * Disposition sink after an agent: capture text/files into memory and/or
+ * publish as the run’s final result. Graph type id stays `chooseOutput`.
+ */
+export type OutputNodeData = {
+  label: string;
+  /** Persist this step’s body as a workflow memory. */
+  saveToMemory: boolean;
+  /** Pin that memory when saving. */
+  pinMemory: boolean;
+  /** Override memory title; empty → node label / "Output". */
+  memoryTitle?: string;
+  /** Prefer this body as the run's final output when the run completes. */
+  asFinalResult: boolean;
+  /** Ask the nearest upstream agent to return a complete HTML report. */
+  htmlReport: boolean;
+  /** Append upstream agent filesChanged into the saved body. */
+  includeFilesChanged: boolean;
+};
+
+/** @deprecated Use `OutputNodeData`. Kept for existing imports. */
+export type ChooseOutputNodeData = OutputNodeData;
+
+export function defaultOutputNodeData(label = "Output"): OutputNodeData {
+  return {
+    label,
+    saveToMemory: true,
+    pinMemory: false,
+    memoryTitle: "",
+    asFinalResult: true,
+    htmlReport: false,
+    includeFilesChanged: true,
+  };
+}
+
+/** Normalize legacy `selectedKey` graphs and fill disposition defaults. */
+export function normalizeOutputNodeData(
+  data: Record<string, unknown>,
+): OutputNodeData {
+  const label =
+    typeof data.label === "string" && data.label.trim()
+      ? data.label
+      : "Output";
+  return {
+    label,
+    saveToMemory:
+      typeof data.saveToMemory === "boolean" ? data.saveToMemory : true,
+    pinMemory: typeof data.pinMemory === "boolean" ? data.pinMemory : false,
+    memoryTitle:
+      typeof data.memoryTitle === "string" ? data.memoryTitle : "",
+    asFinalResult:
+      typeof data.asFinalResult === "boolean" ? data.asFinalResult : true,
+    htmlReport: typeof data.htmlReport === "boolean" ? data.htmlReport : false,
+    includeFilesChanged:
+      typeof data.includeFilesChanged === "boolean"
+        ? data.includeFilesChanged
+        : true,
+  };
+}
+
+/** Pulls selected (often cross-workflow) memories into run context. */
+export type MemoryNodeData = {
+  label: string;
+  memoryIds: string[];
+};
+
+/** Rewrite / append to context using `{{context}}`, `{{output}}`, `{{cwd}}`. */
+export type TemplateNodeData = {
+  kind: "template";
+  label: string;
+  template: string;
+  /** replace = overwrite context; append = add after existing context. */
+  mode: "replace" | "append";
+};
+
+export function defaultTemplateNodeData(label = "Template"): TemplateNodeData {
+  return {
+    kind: "template",
+    label,
+    template: "{{output}}",
+    mode: "append",
+  };
+}
+
+/** Inject file/folder contents into context without an agent. */
+export type FileInjectNodeData = {
+  kind: "fileInject";
+  label: string;
+  paths: string[];
+};
+
+export function defaultFileInjectNodeData(
+  label = "File inject",
+): FileInjectNodeData {
+  return { kind: "fileInject", label, paths: [] };
+}
+
+/** Snapshot git status (and optional diff) into context. */
+export type GitStatusNodeData = {
+  kind: "gitStatus";
+  label: string;
+  /** Include `git diff` (unstaged + staged) after the status listing. */
+  includeDiff: boolean;
+};
+
+export function defaultGitStatusNodeData(
+  label = "Git status",
+): GitStatusNodeData {
+  return { kind: "gitStatus", label, includeDiff: true };
+}
+
+/** Run a local shell command in the workflow working directory. */
+export type ShellNodeData = {
+  kind: "shell";
+  label: string;
+  command: string;
+  /** Append stdout/stderr into context_prompt after the run. */
+  appendOutput: boolean;
+};
+
+export function defaultShellNodeData(label = "Shell"): ShellNodeData {
+  return { kind: "shell", label, command: "", appendOutput: true };
+}
+
+/** HTTP request; response body is appended to context. */
+export type HttpNodeData = {
+  kind: "http";
+  label: string;
+  method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+  url: string;
+  /** Optional raw body (templates supported). */
+  body: string;
+  /** Optional headers as `Name: value` lines. */
+  headers: string;
+};
+
+export function defaultHttpNodeData(label = "HTTP"): HttpNodeData {
+  return {
+    kind: "http",
+    label,
+    method: "GET",
+    url: "",
+    body: "",
+    headers: "",
+  };
+}
+
+/** Desktop notification and/or outbound webhook. */
+export type NotifyNodeData = {
+  kind: "notify";
+  label: string;
+  title: string;
+  body: string;
+  desktop: boolean;
+  /** Optional webhook URL (POST JSON `{ title, body }`). */
+  webhookUrl: string;
+};
+
+export function defaultNotifyNodeData(label = "Notify"): NotifyNodeData {
+  return {
+    kind: "notify",
+    label,
+    title: "Agentflow",
+    body: "{{output}}",
+    desktop: true,
+    webhookUrl: "",
+  };
+}
+
+/** Persist text to a file on disk. */
+export type WriteFileNodeData = {
+  kind: "writeFile";
+  label: string;
+  /** Absolute path, or relative to the workflow working directory. */
+  path: string;
+  /** Content template (`{{output}}`, `{{context}}`, …). */
+  content: string;
+};
+
+export function defaultWriteFileNodeData(
+  label = "Write file",
+): WriteFileNodeData {
+  return { kind: "writeFile", label, path: "", content: "{{output}}" };
+}
+
+/** Create a GitHub PR or issue via the `gh` CLI. */
+export type GitHostNodeData = {
+  kind: "gitHost";
+  label: string;
+  action: "pr" | "issue";
+  title: string;
+  body: string;
+  /** PR only — base branch (empty = repo default). */
+  base: string;
+  /** PR only — create as draft. */
+  draft: boolean;
+};
+
+export function defaultGitHostNodeData(
+  label = "Create PR",
+  action: "pr" | "issue" = "pr",
+): GitHostNodeData {
+  return {
+    kind: "gitHost",
+    label,
+    action,
+    title: "",
+    body: "{{output}}",
+    base: "",
+    draft: false,
+  };
+}
+
+export type WorkflowNodeData =
+  | PromptNodeData
+  | AgentNodeData
+  | CustomAgentNodeData
+  | OutputNodeData
+  | MemoryNodeData
+  | TemplateNodeData
+  | FileInjectNodeData
+  | GitStatusNodeData
+  | ShellNodeData
+  | HttpNodeData
+  | NotifyNodeData
+  | WriteFileNodeData
+  | GitHostNodeData;
+
+export type WorkflowNode = Node<WorkflowNodeData>;
+export type WorkflowEdge = Edge;
+
+export type WorkflowGraph = {
+  nodes: WorkflowNode[];
+  edges: WorkflowEdge[];
+};
+
+export type Workflow = {
+  id: string;
+  name: string;
+  description: string;
+  /** Absolute path passed to agent CLIs as cwd. Empty = process default. */
+  workingDirectory?: string;
+  /** Sidebar organization folder. Null/empty means Unfiled. */
+  folderId?: string | null;
+  graph: WorkflowGraph;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type WorkflowFolder = {
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AgentProvider = {
+  id: AgentProviderId;
+  label: string;
+};
+
+export type RunSummary = {
+  id: string;
+  workflowId: string;
+  trigger: string;
+  status: string;
+  createdAt: string;
+};
+
+export type ActiveRunInfo = {
+  runId: string;
+  workflowId: string;
+  workflowName: string;
+};
+
+export type RunStepStatus = "pending" | "running" | "completed" | "failed";
+
+export type ChangedFileStatus = "created" | "modified" | "deleted" | "renamed";
+
+export type ChangedFile = {
+  /** Absolute path — resolved server-side against the workflow's cwd. */
+  path: string;
+  status: ChangedFileStatus;
+};
+
+/** Tokens, cost, and timing an agent CLI reported for a step (best effort — a
+ * CLI that doesn't report a figure just omits that field). */
+export type AgentStepStats = {
+  provider?: string;
+  model?: string;
+  durationMs?: number;
+  numTurns?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  reasoningTokens?: number;
+  cacheReadTokens?: number;
+  cacheCreationTokens?: number;
+  totalCostUsd?: number;
+  /** Files the workflow's git working tree gained/lost during this step. */
+  filesChanged?: ChangedFile[];
+};
+
+/** A provider-owned subscription window, or an explicitly labelled local estimate. */
+export type AgentUsageWindow = {
+  label: string;
+  usedPercent: number;
+  resetsAt?: number | null;
+  resetDescription?: string | null;
+};
+
+export type AgentUsageSnapshot = {
+  provider: AgentProviderId;
+  connected: boolean;
+  windows: AgentUsageWindow[];
+  source: string;
+  updatedAt: string;
+  error?: string | null;
+};
+
+export type AgentActivityKind =
+  | "status"
+  | "assistant"
+  | "tool"
+  | "command"
+  | "file"
+  | "error";
+
+export type AgentActivityState = "started" | "completed";
+
+/** Safe, provider-neutral activity suitable for the live run console. */
+export type AgentActivity = {
+  /** Stable across the started/completed lifecycle for one activity. */
+  id: string;
+  kind: AgentActivityKind;
+  state: AgentActivityState;
+  label: string;
+  detail?: string | null;
+};
+
+export type AgentAuthRequired = {
+  provider: AgentProviderId;
+  label: string;
+  loginCommand: string;
+};
+
+export type RunEvent = {
+  runId: string;
+  workflowId: string;
+  kind:
+    | "started"
+    | "step_started"
+    | "step_log"
+    | "step_completed"
+    | "step_failed"
+    | "completed"
+    | "failed"
+    | string;
+  nodeId?: string | null;
+  nodeType?: string | null;
+  nodeLabel?: string | null;
+  status?: string | null;
+  message: string;
+  output?: string | null;
+  activity?: AgentActivity | null;
+  authRequired?: AgentAuthRequired;
+  stats?: AgentStepStats | null;
+  at: string;
+};
+
+export type RunLogLine = {
+  id: string;
+  at: string;
+  kind: string;
+  nodeId?: string | null;
+  nodeLabel?: string | null;
+  message: string;
+  output?: string | null;
+  activity?: AgentActivity | null;
+  status?: string | null;
+};
+
+export type MemoryKind = "text" | "note" | "artifact";
+export type MemorySource = "run" | "manual" | "import";
+
+/** Durable workflow memory — SQLite-backed, optionally pinned into agent prompts. */
+export type MemoryOrigin = "owned" | "linked" | "linkable";
+
+export type OutputMemory = {
+  id: string;
+  workflowId: string;
+  runId?: string | null;
+  nodeId?: string | null;
+  kind: MemoryKind;
+  source: MemorySource;
+  title: string;
+  body: string;
+  artifactPath?: string | null;
+  pinned: boolean;
+  createdAt: string;
+  updatedAt: string;
+  /** `"owned"` for local memories; `"linked"` when imported from another workflow. */
+  origin?: MemoryOrigin;
+  /** Owning workflow name when `origin` is linked/linkable. */
+  sourceWorkflowName?: string | null;
+};
+
+export type Schedule = {
+  id: string;
+  workflowId: string;
+  /** 6-field cron: sec min hour day month dow */
+  cron: string;
+  enabled: boolean;
+  nextRunAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+/** Schedule row for the schedules page (includes workflow name). */
+export type ScheduleListItem = Schedule & {
+  workflowName: string;
+};
+
+export type TriggerSource = "file" | "webhook";
+
+/** A file trigger's `config`. `pattern` empty means any file. */
+export type FileTriggerConfig = {
+  path: string;
+  pattern?: string;
+  debounceMs?: number;
+};
+
+/** Event trigger — a workflow can have many, unlike schedules. */
+export type Trigger = {
+  id: string;
+  workflowId: string;
+  source: TriggerSource;
+  label: string;
+  config: FileTriggerConfig | Record<string, unknown>;
+  /** Bearer token for `webhook` triggers. */
+  secret: string | null;
+  enabled: boolean;
+  lastFiredAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type SchedulePreset = {
+  id: string;
+  label: string;
+  cron: string;
+};
+
+/** Presets use 6-field cron (with seconds) for the Rust `cron` crate. */
+export const SCHEDULE_PRESETS: SchedulePreset[] = [
+  { id: "hourly", label: "Every hour", cron: "0 0 * * * *" },
+  { id: "every_15m", label: "Every 15 minutes", cron: "0 */15 * * * *" },
+  { id: "daily_9", label: "Every day at 09:00", cron: "0 0 9 * * *" },
+  { id: "weekdays_9", label: "Weekdays at 09:00", cron: "0 0 9 * * 1-5" },
+  { id: "monday_9", label: "Mondays at 09:00", cron: "0 0 9 * * 1" },
+];
+
+export const emptyGraph = (): WorkflowGraph => ({
+  nodes: [],
+  edges: [],
+});
+
+function hasKind<K extends string>(
+  data: WorkflowNodeData,
+  kind: K,
+): data is WorkflowNodeData & { kind: K } {
+  return "kind" in data && (data as { kind?: string }).kind === kind;
+}
+
+export function isAgentNodeData(data: WorkflowNodeData): data is AgentNodeData {
+  return !("kind" in data) && "provider" in data;
+}
+
+export function isPromptNodeData(
+  data: WorkflowNodeData,
+): data is PromptNodeData {
+  return !("kind" in data) && "prompt" in data;
+}
+
+export function isMemoryNodeData(
+  data: WorkflowNodeData,
+): data is MemoryNodeData {
+  return !("kind" in data) && "memoryIds" in data;
+}
+
+export function isOutputNodeData(
+  data: WorkflowNodeData,
+): data is OutputNodeData {
+  if ("kind" in data) return false;
+  return (
+    "saveToMemory" in data ||
+    "asFinalResult" in data ||
+    "htmlReport" in data ||
+    ("selectedKey" in data &&
+      !("prompt" in data) &&
+      !("provider" in data) &&
+      !("memoryIds" in data))
+  );
+}
+
+/** @deprecated Use `isOutputNodeData`. */
+export function isChooseOutputNodeData(
+  data: WorkflowNodeData,
+): data is OutputNodeData {
+  return isOutputNodeData(data);
+}
+
+export function isTemplateNodeData(
+  data: WorkflowNodeData,
+): data is TemplateNodeData {
+  return hasKind(data, "template");
+}
+
+export function isFileInjectNodeData(
+  data: WorkflowNodeData,
+): data is FileInjectNodeData {
+  return hasKind(data, "fileInject");
+}
+
+export function isGitStatusNodeData(
+  data: WorkflowNodeData,
+): data is GitStatusNodeData {
+  return hasKind(data, "gitStatus");
+}
+
+export function isShellNodeData(data: WorkflowNodeData): data is ShellNodeData {
+  return hasKind(data, "shell");
+}
+
+export function isHttpNodeData(data: WorkflowNodeData): data is HttpNodeData {
+  return hasKind(data, "http");
+}
+
+export function isNotifyNodeData(
+  data: WorkflowNodeData,
+): data is NotifyNodeData {
+  return hasKind(data, "notify");
+}
+
+export function isWriteFileNodeData(
+  data: WorkflowNodeData,
+): data is WriteFileNodeData {
+  return hasKind(data, "writeFile");
+}
+
+export function isGitHostNodeData(
+  data: WorkflowNodeData,
+): data is GitHostNodeData {
+  return hasKind(data, "gitHost");
+}
+
+export function isCustomAgentNodeData(
+  data: WorkflowNodeData,
+): data is CustomAgentNodeData {
+  return hasKind(data, "customAgent");
+}
+
+/** Human title for settings / context menus. */
+export function titleForNodeType(type: string | undefined): string {
+  switch (type) {
+    case "prompt":
+    case "input":
+      return "Input";
+    case "memory":
+      return "Memories";
+    case "chooseOutput":
+      return "Output";
+    case "agent":
+      return "Agent";
+    case "customAgent":
+      return "Custom agent";
+    case "template":
+      return "Template";
+    case "fileInject":
+      return "File inject";
+    case "gitStatus":
+      return "Git status";
+    case "shell":
+      return "Shell";
+    case "http":
+      return "HTTP";
+    case "notify":
+      return "Notify";
+    case "writeFile":
+      return "Write file";
+    case "gitHost":
+      return "GitHub";
+    default:
+      return "Step";
+  }
+}
