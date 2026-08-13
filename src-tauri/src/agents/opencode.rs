@@ -34,7 +34,7 @@ impl AgentAdapter for OpencodeAdapter {
         let cwd = cwd_from_request(&request.working_directory);
 
         // Keep workflow-created sessions easy to identify in OpenCode history.
-        let marker = format!("agentflow-{}", Uuid::new_v4());
+        let marker = format!("alfred-{}", Uuid::new_v4());
 
         let args = vec![
             "run".into(),

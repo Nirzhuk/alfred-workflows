@@ -244,7 +244,7 @@ export function defaultNotifyNodeData(label = "Notify"): NotifyNodeData {
   return {
     kind: "notify",
     label,
-    title: "Agentflow",
+    title: "Alfred",
     body: "{{output}}",
     desktop: true,
     webhookUrl: "",

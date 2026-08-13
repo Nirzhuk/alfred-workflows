@@ -4,7 +4,7 @@ import { create } from "zustand";
 export type ThemePreference = "system" | "light" | "dark";
 export type ResolvedTheme = "light" | "dark";
 
-const THEME_KEY = "agentflow:theme";
+const THEME_KEY = "alfred:theme";
 
 type ThemeState = {
   preference: ThemePreference;

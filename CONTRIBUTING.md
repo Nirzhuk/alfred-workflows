@@ -1,6 +1,6 @@
-# Contributing to Agentflow
+# Contributing to Alfred
 
-Thanks for helping improve Agentflow. Bug reports, focused feature proposals,
+Thanks for helping improve Alfred. Bug reports, focused feature proposals,
 documentation fixes, tests, and code contributions are welcome.
 
 By submitting a contribution, you confirm that you have the right to submit it
@@ -28,7 +28,7 @@ bun install --frozen-lockfile
 bun run dev
 ```
 
-Agentflow is a desktop-only Tauri app. Do not add Android/iOS targets or treat
+Alfred is a desktop-only Tauri app. Do not add Android/iOS targets or treat
 the Vite frontend as an independently deployable website.
 
 ## Project structure

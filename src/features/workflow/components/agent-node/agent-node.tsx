@@ -4,9 +4,9 @@ import { useWorkflowStore } from "../../store";
 import { AgentMark, agentLabel } from "../agent-mark";
 import { NodeOutputPreview } from "../node-output-preview";
 
-type AgentFlowNode = Node<AgentNodeData, "agent">;
+type AlfredNode = Node<AgentNodeData, "agent">;
 
-export function AgentNode({ id, data }: NodeProps<AgentFlowNode>) {
+export function AgentNode({ id, data }: NodeProps<AlfredNode>) {
   const running = useWorkflowStore(
     (state) =>
       state.activeNodeId === id && state.stepStatuses[id] === "running",

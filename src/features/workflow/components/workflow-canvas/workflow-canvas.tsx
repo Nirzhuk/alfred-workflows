@@ -186,7 +186,7 @@ export function WorkflowCanvas() {
   const [schedulesTick, setSchedulesTick] = useState(0);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     try {
-      return localStorage.getItem("agentflow:sidebar-collapsed") === "1";
+      return localStorage.getItem("alfred:sidebar-collapsed") === "1";
     } catch {
       return false;
     }
@@ -196,7 +196,7 @@ export function WorkflowCanvas() {
     const collapsed = !open;
     setSidebarCollapsed(collapsed);
     try {
-      localStorage.setItem("agentflow:sidebar-collapsed", collapsed ? "1" : "0");
+      localStorage.setItem("alfred:sidebar-collapsed", collapsed ? "1" : "0");
     } catch {
       /* ignore */
     }
@@ -295,7 +295,7 @@ export function WorkflowCanvas() {
         const next = !collapsed;
         try {
           localStorage.setItem(
-            "agentflow:sidebar-collapsed",
+            "alfred:sidebar-collapsed",
             next ? "1" : "0",
           );
         } catch {
@@ -321,7 +321,7 @@ export function WorkflowCanvas() {
     };
     const checkUpdates = () => {
       window.alert(
-        "Agentflow 0.1.0\n\nAutomatic updates aren’t set up yet. You’ll get a notice here once they are.",
+        "Alfred 0.1.0\n\nAutomatic updates aren’t set up yet. You’ll get a notice here once they are.",
       );
     };
     const openWorkflow = (event: Event) => {
@@ -355,31 +355,31 @@ export function WorkflowCanvas() {
         });
       })();
     };
-    window.addEventListener("agentflow:open-schedule", openSchedule);
-    window.addEventListener("agentflow:delete-workflow", openDelete);
-    window.addEventListener("agentflow:open-memories", openMemories);
-    window.addEventListener("agentflow:open-settings", openSettings);
-    window.addEventListener("agentflow:open-schedules", openSchedules);
-    window.addEventListener("agentflow:rename-workflow", renameWorkflow);
-    window.addEventListener("agentflow:toggle-sidebar", toggleSidebar);
-    window.addEventListener("agentflow:toggle-activity", toggleActivity);
-    window.addEventListener("agentflow:check-updates", checkUpdates);
-    window.addEventListener("agentflow:open-workflow", openWorkflow);
-    window.addEventListener("agentflow:open-activity", openActivity);
-    window.addEventListener("agentflow:open-run-output", openRunOutput);
+    window.addEventListener("alfred:open-schedule", openSchedule);
+    window.addEventListener("alfred:delete-workflow", openDelete);
+    window.addEventListener("alfred:open-memories", openMemories);
+    window.addEventListener("alfred:open-settings", openSettings);
+    window.addEventListener("alfred:open-schedules", openSchedules);
+    window.addEventListener("alfred:rename-workflow", renameWorkflow);
+    window.addEventListener("alfred:toggle-sidebar", toggleSidebar);
+    window.addEventListener("alfred:toggle-activity", toggleActivity);
+    window.addEventListener("alfred:check-updates", checkUpdates);
+    window.addEventListener("alfred:open-workflow", openWorkflow);
+    window.addEventListener("alfred:open-activity", openActivity);
+    window.addEventListener("alfred:open-run-output", openRunOutput);
     return () => {
-      window.removeEventListener("agentflow:open-schedule", openSchedule);
-      window.removeEventListener("agentflow:delete-workflow", openDelete);
-      window.removeEventListener("agentflow:open-memories", openMemories);
-      window.removeEventListener("agentflow:open-settings", openSettings);
-      window.removeEventListener("agentflow:open-schedules", openSchedules);
-      window.removeEventListener("agentflow:rename-workflow", renameWorkflow);
-      window.removeEventListener("agentflow:toggle-sidebar", toggleSidebar);
-      window.removeEventListener("agentflow:toggle-activity", toggleActivity);
-      window.removeEventListener("agentflow:check-updates", checkUpdates);
-      window.removeEventListener("agentflow:open-workflow", openWorkflow);
-      window.removeEventListener("agentflow:open-activity", openActivity);
-      window.removeEventListener("agentflow:open-run-output", openRunOutput);
+      window.removeEventListener("alfred:open-schedule", openSchedule);
+      window.removeEventListener("alfred:delete-workflow", openDelete);
+      window.removeEventListener("alfred:open-memories", openMemories);
+      window.removeEventListener("alfred:open-settings", openSettings);
+      window.removeEventListener("alfred:open-schedules", openSchedules);
+      window.removeEventListener("alfred:rename-workflow", renameWorkflow);
+      window.removeEventListener("alfred:toggle-sidebar", toggleSidebar);
+      window.removeEventListener("alfred:toggle-activity", toggleActivity);
+      window.removeEventListener("alfred:check-updates", checkUpdates);
+      window.removeEventListener("alfred:open-workflow", openWorkflow);
+      window.removeEventListener("alfred:open-activity", openActivity);
+      window.removeEventListener("alfred:open-run-output", openRunOutput);
     };
   }, []);
 

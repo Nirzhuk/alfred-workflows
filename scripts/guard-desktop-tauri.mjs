@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Desktop-only Tauri wrapper.
- * Agentflow ships for macOS, Linux, and Windows — never Android, iOS, or a standalone website.
+ * Alfred ships for macOS, Linux, and Windows — never Android, iOS, or a standalone website.
  */
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
@@ -13,7 +13,7 @@ const first = args.find((a) => !a.startsWith("-"));
 
 if (first && blocked.has(first)) {
   console.error(
-    "Agentflow is desktop-only (macOS, Linux, Windows).\n" +
+    "Alfred is desktop-only (macOS, Linux, Windows).\n" +
       "Android/iOS targets are not supported.",
   );
   process.exit(1);

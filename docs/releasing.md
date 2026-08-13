@@ -1,10 +1,10 @@
-# Releasing Agentflow
+# Releasing Alfred
 
 Before cutting a public release, complete the
 [v0.1.0 release TODO](release-todo.md). This document is the operator runbook;
 the TODO is the launch gate and artifact acceptance checklist.
 
-Agentflow's source is public under GPL-3.0-or-later, but official maintainer-built
+Alfred's source is public under GPL-3.0-or-later, but official maintainer-built
 installers are a paid product. Release automation therefore stages binaries in
 a **draft** GitHub Release for maintainers only. Never publish that draft to the
 public repository. After validation, upload the artifacts to the configured
@@ -86,7 +86,7 @@ Generate once and store securely — losing the private key permanently breaks
 updates for already-installed apps:
 
 ```bash
-bunx tauri signer generate -w ~/.tauri/agentflow.key
+bunx tauri signer generate -w ~/.tauri/alfred.key
 ```
 
 | Secret | Value |

@@ -2,12 +2,12 @@
 
 ## Supported versions
 
-Agentflow has not published its first stable release. Until a version support
+Alfred has not published its first stable release. Until a version support
 table is announced, security fixes target the latest code on the default branch
 and the newest official binary release, if one exists.
 
 Self-built forks and modified third-party binaries are maintained by their
-distributors, not by the Agentflow maintainers.
+distributors, not by the Alfred maintainers.
 
 ## Report a vulnerability privately
 
@@ -36,7 +36,7 @@ rotation.
 
 ## Security-sensitive areas
 
-Agentflow launches authenticated local agent CLIs and may let those agents read
+Alfred launches authenticated local agent CLIs and may let those agents read
 or modify files according to their own permissions. Treat workflow prompts and
 imported workflows as executable instructions. Review them before running.
 

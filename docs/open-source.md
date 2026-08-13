@@ -1,20 +1,20 @@
 # Open-source and distribution policy
 
-Agentflow uses an **open-source, paid-distribution** model.
+Alfred uses an **open-source, paid-distribution** model.
 
 ## What is free
 
 The complete source code in this repository is licensed under the
 [GNU General Public License, version 3 or later](../LICENSE). You may use,
-inspect, modify, compile, and redistribute it under that license. Agentflow does
+inspect, modify, compile, and redistribute it under that license. Alfred does
 not require a purchase to compile or run a build you make from this repository.
 
 The GPL permits commercial redistribution. Someone may charge for an
 unofficial copy or fork, but they must preserve the recipients' GPL rights and
 provide the corresponding source. They may not present that copy as an
-official, maintainer-signed Agentflow release.
+official, maintainer-signed Alfred release.
 
-The AI agent tools that Agentflow launches are separate products. Their
+The AI agent tools that Alfred launches are separate products. Their
 providers may require their own subscriptions, accounts, or usage payments.
 
 ## What the official purchase pays for
@@ -43,7 +43,7 @@ could otherwise confuse users about its origin.
 
 Never copy signing certificates, private updater keys, storefront credentials,
 or other maintainer secrets into a source build. They are not required to
-compile Agentflow.
+compile Alfred.
 
 ## Contributions
 

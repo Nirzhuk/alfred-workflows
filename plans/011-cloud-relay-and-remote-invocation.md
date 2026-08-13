@@ -1,7 +1,7 @@
 # Plan 011: Specify and build the optional cloud relay
 
 > **Executor instructions**: Treat the architecture gate in Step 1 as
-> mandatory. This plan changes Agentflow's trust model and operating cost. Do
+> mandatory. This plan changes Alfred's trust model and operating cost. Do
 > not deploy, collect user data, or introduce an account system until the ADR is
 > approved. Update `plans/README.md` only after all approved phases are done.
 >
@@ -29,7 +29,7 @@ Several “real” integrations cannot reach a loopback-only desktop app:
 - Microsoft Graph webhooks require a public validation/delivery endpoint.
 - Gmail push uses Google Cloud Pub/Sub rather than a desktop callback.
 - Microsoft Copilot needs a remotely reachable authenticated API.
-- Events that arrive while Agentflow is closed need a durable queue.
+- Events that arrive while Alfred is closed need a durable queue.
 
 This is optional infrastructure. Local polling, native PKCE, and user-owned
 Slack credentials can ship without it, but Copilot cannot.

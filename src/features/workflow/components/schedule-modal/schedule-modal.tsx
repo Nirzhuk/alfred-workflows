@@ -86,7 +86,7 @@ export function ScheduleModal({ workflowId, workflowName, onClose }: Props) {
 
       <div className="schedule-modal-body">
         <p className="muted">
-          Choose when this automation should run while Agentflow is open.
+          Choose when this automation should run while Alfred is open.
         </p>
 
         <label className="field checkbox-field">

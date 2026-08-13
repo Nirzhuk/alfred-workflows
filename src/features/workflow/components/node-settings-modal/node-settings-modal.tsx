@@ -1,4 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+  MenuItem,
+} from "../../../../components/menu";
 import { Modal, ModalHeader } from "../../../../components/modal";
 import * as api from "../../api";
 import {
@@ -142,6 +148,7 @@ export function NodeSettingsModal({ nodeId, onClose }: Props) {
 
         {isAgentNodeData(node.data) ? (
           <AgentSettings
+            key={`${node.id}:${node.data.provider}`}
             provider={node.data.provider}
             model={node.data.model}
             skillNames={agentSkillNames(node.data)}
@@ -566,7 +573,14 @@ function AgentSettings({
 }: AgentSettingsProps) {
   const catalog = modelsForProvider(providerModels, provider);
   const selectedModel = model || catalog.defaultModel;
-  const knownIds = new Set(catalog.models.map((m) => m.id));
+  const selectedOption = catalog.models.find((m) => m.id === selectedModel);
+  const savedModelIsCustom = catalog.allowCustom && !selectedOption;
+  const [customModelSelected, setCustomModelSelected] = useState(false);
+  const [customModelDraft, setCustomModelDraft] = useState(
+    savedModelIsCustom ? selectedModel : "",
+  );
+  const [modelMenuOpen, setModelMenuOpen] = useState(false);
+  const showCustomModel = savedModelIsCustom || customModelSelected;
   const providerSkills = skills.filter((s) => s.providers.includes(provider));
 
   const invocation =
@@ -576,38 +590,96 @@ function AgentSettings({
 
   return (
     <>
-      <label className="field">
-        <span>Provider</span>
-        <strong>{provider}</strong>
-      </label>
+      <div className="agent-model-controls">
+        <div className="field agent-provider-field">
+          <span>Provider</span>
+          <strong className="agent-provider-value">{provider}</strong>
+        </div>
 
-      <div className="field-row">
-        <label className="field" style={{ flex: 1 }}>
+        <div className="field model-select-field">
           <span>Model</span>
-          <select
-            value={knownIds.has(selectedModel) ? selectedModel : "__custom__"}
-            onChange={(e) => {
-              const value = e.target.value;
-              if (value === "__custom__") {
-                onUpdate({ model: selectedModel });
-                return;
-              }
-              onUpdate({ model: value });
-            }}
+          <DropdownMenu
+            open={modelMenuOpen}
+            onOpenChange={setModelMenuOpen}
+            className="model-select"
           >
-            {catalog.models.map((m) => (
-              <option key={m.id} value={m.id} title={m.description}>
-                {m.label}
-              </option>
-            ))}
-            {catalog.allowCustom ? (
-              <option value="__custom__">Custom…</option>
-            ) : null}
-          </select>
-        </label>
+            <DropdownMenuTrigger
+              className="model-select-trigger"
+              aria-label="Select model"
+            >
+              <span className="model-select-value">
+                {showCustomModel
+                  ? customModelDraft.trim() || "Custom…"
+                  : selectedOption?.label || selectedModel}
+              </span>
+              <ChevronDownIcon />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="start"
+              side="bottom"
+              className="model-select-menu"
+              aria-label="Models"
+            >
+              {catalog.models.map((option) => {
+                const selected =
+                  !showCustomModel && option.id === selectedModel;
+                return (
+                  <MenuItem
+                    key={option.id}
+                    className="model-select-option"
+                    aria-checked={selected}
+                    role="menuitemradio"
+                    title={option.description || undefined}
+                    onSelect={() => {
+                      setCustomModelSelected(false);
+                      setCustomModelDraft("");
+                      setModelMenuOpen(false);
+                      onUpdate({ model: option.id });
+                    }}
+                  >
+                    <span className="model-select-option-copy">
+                      <span className="model-select-option-label">
+                        {option.label}
+                      </span>
+                      {option.description ? (
+                        <span className="model-select-option-description">
+                          {option.description}
+                        </span>
+                      ) : null}
+                    </span>
+                    {selected ? <CheckIcon /> : null}
+                  </MenuItem>
+                );
+              })}
+              {catalog.allowCustom ? (
+                <MenuItem
+                  className="model-select-option"
+                  aria-checked={showCustomModel}
+                  role="menuitemradio"
+                  onSelect={() => {
+                    setCustomModelSelected(true);
+                    setCustomModelDraft(
+                      savedModelIsCustom ? selectedModel : "",
+                    );
+                    setModelMenuOpen(false);
+                  }}
+                >
+                  <span className="model-select-option-copy">
+                    <span className="model-select-option-label">Custom…</span>
+                    <span className="model-select-option-description">
+                      Enter a model alias or ID
+                    </span>
+                  </span>
+                  {showCustomModel ? <CheckIcon /> : null}
+                </MenuItem>
+              ) : null}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+
         <button
           type="button"
-          className="ghost"
+          className="ghost agent-model-refresh"
           title="Refresh models from the agent / Cursor IDE"
           onClick={onRefreshModels}
         >
@@ -625,40 +697,37 @@ function AgentSettings({
             : "Using fallback model list"}
       </p>
 
-      {catalog.allowCustom && !knownIds.has(selectedModel) ? (
-        <label className="field">
-          <span>Custom model id</span>
-          <input
-            type="text"
-            value={selectedModel}
-            placeholder={
-              provider === "opencode"
-                ? "provider/model"
-                : "model alias or id"
-            }
-            onChange={(e) => onUpdate({ model: e.target.value })}
-          />
-        </label>
+      {catalog.allowCustom && showCustomModel ? (
+        <div className="custom-model-fields">
+          <label className="field">
+            <span>Custom model ID</span>
+            <input
+              type="text"
+              value={customModelDraft}
+              placeholder={
+                provider === "opencode"
+                  ? "provider/model"
+                  : "model alias or id"
+              }
+              autoFocus
+              onChange={(e) => {
+                const value = e.target.value;
+                setCustomModelDraft(value);
+                onUpdate({ model: value.trim() ? value : null });
+              }}
+            />
+          </label>
+          <p className="hint">
+            {customModelDraft.trim() ? (
+              <>
+                CLI will use <code>--model {customModelDraft.trim()}</code>
+              </>
+            ) : (
+              "Enter the model ID to pass to the CLI."
+            )}
+          </p>
+        </div>
       ) : null}
-
-      {catalog.allowCustom && knownIds.has(selectedModel) ? (
-        <label className="field">
-          <span>Or type a custom model</span>
-          <input
-            type="text"
-            value=""
-            placeholder="Override with custom id…"
-            onChange={(e) => {
-              const value = e.target.value.trim();
-              if (value) onUpdate({ model: value });
-            }}
-          />
-        </label>
-      ) : null}
-
-      <p className="hint">
-        CLI will use <code>--model {selectedModel}</code>
-      </p>
 
       <div className="field">
         <span>Skills</span>
@@ -677,5 +746,43 @@ function AgentSettings({
         <p className="hint">No skills — freeform prompt.</p>
       )}
     </>
+  );
+}
+
+function ChevronDownIcon() {
+  return (
+    <svg
+      className="model-select-chevron"
+      viewBox="0 0 16 16"
+      width="16"
+      height="16"
+      aria-hidden
+    >
+      <path
+        d="m4 6 4 4 4-4"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+      />
+    </svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg
+      className="model-select-check"
+      viewBox="0 0 16 16"
+      width="16"
+      height="16"
+      aria-hidden
+    >
+      <path
+        d="m3.5 8 3 3 6-6"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+      />
+    </svg>
   );
 }

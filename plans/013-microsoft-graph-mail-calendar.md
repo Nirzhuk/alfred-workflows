@@ -23,7 +23,7 @@
 Users connect a Microsoft work/school or personal account in the system
 browser, then workflows can send email, select recent messages safely, and
 create calendar events. A later event phase can trigger on new mail/calendar
-changes while Agentflow is open; relay webhooks add offline delivery.
+changes while Alfred is open; relay webhooks add offline delivery.
 
 Use delegated Microsoft Graph permissions on behalf of the signed-in user, not
 application-wide mailbox permissions. Copilot itself is handled separately in
@@ -140,7 +140,7 @@ metadata. New-mail normalized payload contains message ID, sender display/
 address, subject, received timestamp, web link, and bounded preview only if the
 user explicitly enabled it.
 
-Poll only while Agentflow runs and explain this in UI. Advance delta checkpoint
+Poll only while Alfred runs and explain this in UI. Advance delta checkpoint
 only after receipt persistence. Handle reset/expired delta tokens with a bounded
 resync that does not replay the whole mailbox.
 

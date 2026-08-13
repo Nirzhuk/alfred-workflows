@@ -30,11 +30,11 @@ The checked-in `src-tauri/icons/icon.icns` is the squircle/Liquid Glass export, 
 
 ```bash
 ACTOOL="/Applications/Xcode.app/Contents/Developer/usr/bin/actool"
-"$ACTOOL" assets/branding/AppIcon.icon --compile /tmp/agentflow-iconcar \
+"$ACTOOL" assets/branding/AppIcon.icon --compile /tmp/alfred-iconcar \
   --platform macosx --minimum-deployment-target 15.0 \
   --app-icon AppIcon --include-all-app-icons \
-  --output-partial-info-plist /tmp/agentflow-iconcar/partial.plist
-cp /tmp/agentflow-iconcar/Assets.car src-tauri/Assets.car
+  --output-partial-info-plist /tmp/alfred-iconcar/partial.plist
+cp /tmp/alfred-iconcar/Assets.car src-tauri/Assets.car
 ```
 
 `src-tauri/Info.plist` sets `CFBundleIconName=AppIcon`; `tauri.conf.json` bundles `Assets.car`.

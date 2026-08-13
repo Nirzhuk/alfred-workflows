@@ -150,7 +150,7 @@ state, advance only after durable receipts, and handle expired history with a
 bounded resync that establishes a fresh baseline without replaying the mailbox.
 
 Default event data excludes body; include ID/thread/from/subject/date/labels and
-an opt-in bounded preview only. UI says Agentflow must remain open.
+an opt-in bounded preview only. UI says Alfred must remain open.
 
 **Verify**: tests cover duplicate/out-of-order history, expired history ID,
 label filtering, deleted messages, restart, quota backoff, and no raw MIME in DB.

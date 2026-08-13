@@ -2,7 +2,7 @@
   "name": "workflows-local-agents",
   "private": true,
   "version": "0.1.0",
-  "description": "Agentflow — local multi-agent workflow automations",
+  "description": "Alfred — local multi-agent workflow automations",
   "license": "GPL-3.0-or-later",
   "author": "nirzhuk",
   "packageManager": "bun@1.3.8",

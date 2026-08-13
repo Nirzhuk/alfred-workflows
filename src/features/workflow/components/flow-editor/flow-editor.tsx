@@ -142,9 +142,9 @@ export function FlowEditor({ displayNodes }: Props) {
         duration: 180,
       });
     };
-    window.addEventListener("agentflow:fit-canvas", onFitCanvas);
+    window.addEventListener("alfred:fit-canvas", onFitCanvas);
     return () =>
-      window.removeEventListener("agentflow:fit-canvas", onFitCanvas);
+      window.removeEventListener("alfred:fit-canvas", onFitCanvas);
   }, [fitView]);
 
   const onPaneContextMenu = useCallback(

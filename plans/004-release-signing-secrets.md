@@ -154,8 +154,8 @@ provider credentials recommended by that provider.
 **Verify on the Windows CI runner**:
 
 ```powershell
-signtool verify /pa /v path\to\Agentflow-setup.exe
-Get-AuthenticodeSignature path\to\Agentflow-setup.exe
+signtool verify /pa /v path\to\Alfred-setup.exe
+Get-AuthenticodeSignature path\to\Alfred-setup.exe
 ```
 
 If MSI remains in the public artifact matrix, verify it with `signtool` too.
@@ -178,9 +178,9 @@ reputation; do not equate “signed” with guaranteed immediate reputation.
 **Verify macOS artifacts**:
 
 ```bash
-codesign --verify --deep --strict --verbose=2 /Applications/Agentflow.app
-spctl --assess --type execute --verbose=4 /Applications/Agentflow.app
-xcrun stapler validate path/to/Agentflow.dmg
+codesign --verify --deep --strict --verbose=2 /Applications/Alfred.app
+spctl --assess --type execute --verbose=4 /Applications/Alfred.app
+xcrun stapler validate path/to/Alfred.dmg
 ```
 
 Also install and launch the ARM64 DMG on Apple Silicon and the Intel DMG on an

@@ -1,4 +1,4 @@
-# Plan 005: Publish Agentflow via Homebrew Cask
+# Plan 005: Publish Alfred via Homebrew Cask
 
 > **Executor instructions**: Follow this plan step by step. Run every
 > verification command and confirm the expected result before moving to the
@@ -24,19 +24,19 @@
 
 Homebrew gives macOS users a familiar install and upgrade path while consuming
 the same immutable DMGs as direct downloads. The first release should use a
-personal or organization tap unless Agentflow already satisfies the official
+personal or organization tap unless Alfred already satisfies the official
 Homebrew notability and repository-age requirements.
 
 ## Current state
 
 - Release CI is configured for separate `aarch64-apple-darwin` and
   `x86_64-apple-darwin` DMGs, but no public release exists yet.
-- A local ARM64 build produced `Agentflow_0.1.0_aarch64.dmg`; the Intel asset
+- A local ARM64 build produced `Alfred_0.1.0_aarch64.dmg`; the Intel asset
   filename must be taken from CI rather than guessed.
 - There is no tap repository or cask file.
 - README/install docs mention Homebrew as a future channel but cannot provide a
   real tap command or verified URL yet.
-- Product ID is `com.nirzhuk.agentflow`; product name is `Agentflow`.
+- Product ID is `com.nirzhuk.alfred`; product name is `Alfred`.
 - The Rust data directory currently derives from
   `com.nirzhuk.workflows-local-agents`, so zap paths must retain the legacy
   location until identity migration is complete.
@@ -47,10 +47,10 @@ Homebrew notability and repository-age requirements.
 | --- | --- | --- |
 | Check Homebrew | `brew --version` | version printed |
 | Create starting cask | `brew create --cask <arm64-dmg-url>` | template created |
-| Install local cask | `brew install --cask ./Casks/agentflow.rb` | app installed |
-| Uninstall local cask | `brew uninstall --cask agentflow` | app removed |
-| Audit new cask | `brew audit --new --cask agentflow` | no errors |
-| Style cask | `brew style --fix --cask agentflow` | clean style |
+| Install local cask | `brew install --cask ./Casks/alfred.rb` | app installed |
+| Uninstall local cask | `brew uninstall --cask alfred` | app removed |
+| Audit new cask | `brew audit --new --cask alfred` | no errors |
+| Style cask | `brew style --fix --cask alfred` | clean style |
 | Final online check | `brew lgtm --online` | checks pass |
 
 ## Scope
@@ -74,8 +74,8 @@ Homebrew notability and repository-age requirements.
 
 ### Step 1: Choose cask hosting
 
-Default to a personal/organization tap such as `<owner>/homebrew-agentflow` or
-`<owner>/homebrew-tap`, containing `Casks/agentflow.rb`.
+Default to a personal/organization tap such as `<owner>/homebrew-alfred` or
+`<owner>/homebrew-tap`, containing `Casks/alfred.rb`.
 
 Use the official `Homebrew/homebrew-cask` repository only after confirming the
 current package acceptance policy. At plan time, a self-submission normally
@@ -100,10 +100,10 @@ and SHA-256 digests.
 
 ```bash
 gh release view v0.1.0 --json assets,isDraft,url
-shasum -a 256 path/to/Agentflow-arm64.dmg
-shasum -a 256 path/to/Agentflow-intel.dmg
-xcrun stapler validate path/to/Agentflow-arm64.dmg
-xcrun stapler validate path/to/Agentflow-intel.dmg
+shasum -a 256 path/to/Alfred-arm64.dmg
+shasum -a 256 path/to/Alfred-intel.dmg
+xcrun stapler validate path/to/Alfred-arm64.dmg
+xcrun stapler validate path/to/Alfred-intel.dmg
 ```
 
 Both architectures are required while README advertises Intel support. If only
@@ -116,27 +116,27 @@ the only filename difference is the architecture suffix, prefer Homebrew's
 `arch` substitution and per-architecture checksums:
 
 ```ruby
-cask "agentflow" do
+cask "alfred" do
   arch arm: "aarch64", intel: "x64"
 
   version "0.1.0"
   sha256 arm:   "<arm64-dmg-sha256>",
          intel: "<intel-dmg-sha256>"
 
-  url "https://github.com/<owner>/<repo>/releases/download/v#{version}/Agentflow_#{version}_#{arch}.dmg"
-  name "Agentflow"
+  url "https://github.com/<owner>/<repo>/releases/download/v#{version}/Alfred_#{version}_#{arch}.dmg"
+  name "Alfred"
   desc "Local multi-agent workflow automations"
   homepage "https://github.com/<owner>/<repo>"
 
   depends_on macos: ">= :big_sur"
 
-  app "Agentflow.app"
+  app "Alfred.app"
 
   zap trash: [
     "~/Library/Application Support/com.nirzhuk.workflows-local-agents",
-    "~/Library/Application Support/com.nirzhuk.agentflow",
-    "~/Library/Caches/com.nirzhuk.agentflow",
-    "~/Library/Preferences/com.nirzhuk.agentflow.plist",
+    "~/Library/Application Support/com.nirzhuk.alfred",
+    "~/Library/Caches/com.nirzhuk.alfred",
+    "~/Library/Preferences/com.nirzhuk.alfred.plist",
   ]
 end
 ```
@@ -154,20 +154,20 @@ and plan 006 will suppress self-updating for that channel.
 From the tap checkout:
 
 ```bash
-brew install --cask ./Casks/agentflow.rb
-brew list --cask --versions agentflow
-brew uninstall --cask agentflow
-brew audit --new --cask agentflow
-brew style --fix --cask agentflow
+brew install --cask ./Casks/alfred.rb
+brew list --cask --versions alfred
+brew uninstall --cask alfred
+brew audit --new --cask alfred
+brew style --fix --cask alfred
 ```
 
 Test the ARM branch on Apple Silicon and the Intel branch on Intel hardware or
 a suitable Intel CI runner. On each architecture:
 
 1. Confirm Homebrew downloads the expected DMG and checksum.
-2. Confirm `Agentflow.app` lands in the configured Applications directory.
+2. Confirm `Alfred.app` lands in the configured Applications directory.
 3. Launch the app and pass Gatekeeper.
-4. Confirm `brew upgrade --cask agentflow` works with a second test version.
+4. Confirm `brew upgrade --cask alfred` works with a second test version.
 5. Confirm uninstall removes the app and `--zap` targets only documented user
    data.
 
@@ -180,8 +180,8 @@ For a personal tap, document:
 
 ```bash
 brew tap <owner>/<tap>
-brew install --cask agentflow
-brew upgrade --cask agentflow
+brew install --cask alfred
+brew upgrade --cask alfred
 ```
 
 For the official cask, omit the tap command. Update `docs/releasing.md` with a
@@ -190,16 +190,16 @@ architecture URLs.
 
 ### Step 6: Define the updater's Homebrew signal
 
-Record the stable cask token `agentflow` and test how installed receipts are
+Record the stable cask token `alfred` and test how installed receipts are
 reported on Intel and Apple Silicon:
 
 ```bash
-/opt/homebrew/bin/brew list --cask --versions agentflow
-/usr/local/bin/brew list --cask --versions agentflow
+/opt/homebrew/bin/brew list --cask --versions alfred
+/usr/local/bin/brew list --cask --versions alfred
 ```
 
 Only one path normally exists. Plan 006 should query an available known Homebrew
-binary and verify an installed `agentflow` receipt. It must not infer Homebrew
+binary and verify an installed `alfred` receipt. It must not infer Homebrew
 ownership solely from the running executable path, because the `app` stanza
 places the executable under `/Applications`.
 

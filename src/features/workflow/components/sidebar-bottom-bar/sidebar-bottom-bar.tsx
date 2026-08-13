@@ -101,17 +101,17 @@ function HelpMenuItems() {
         onSelect={() => {
           close();
           window.alert(
-            "Agentflow runs local coding agents as visual workflow automations. Workflows, memories, and runs stay on this machine.",
+            "Alfred runs local coding agents as visual workflow automations. Workflows, memories, and runs stay on this machine.",
           );
         }}
       >
-        About Agentflow
+        About Alfred
       </MenuItem>
       <MenuSeparator />
       <MenuItem
         onSelect={() => {
           close();
-          window.dispatchEvent(new Event("agentflow:open-schedule"));
+          window.dispatchEvent(new Event("alfred:open-schedule"));
         }}
       >
         Schedule current workflow…

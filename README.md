@@ -1,22 +1,22 @@
-# Agentflow
+# Alfred
 
-**Agentflow** is a local desktop app for building automations across your AI coding agents.
+**Alfred** is a local desktop app for building automations across your AI coding agents.
 
 Compose workflows as visual graphs: write prompts, route them through agents you already use on your machine, optionally pin a **skill** and a **model**, then run the sequence and choose which outputs to keep.
 
 > **Open source, paid official builds.** The complete source is available under
 > [GPL-3.0-or-later](LICENSE). You can inspect, modify, and compile it without
-> buying Agentflow. Official maintainer-built downloads will be paid when the
+> buying Alfred. Official maintainer-built downloads will be paid when the
 > sales channel launches; purchases will fund testing, signing, support, and
 > release engineering.
 
-| Get Agentflow | Agentflow fee | What you receive |
+| Get Alfred | Alfred fee | What you receive |
 | --- | --- | --- |
 | Official download | Paid | Maintainer-built and tested installer, code signing/notarization where available, and official release support |
 | [Build from source](docs/building-from-source.md) | Free | A local build you compile yourself; it may be unsigned and has no official binary support |
 
 Subscriptions or usage fees charged by Claude, Cursor, OpenAI, or other agent
-providers are separate from Agentflow in both cases. See
+providers are separate from Alfred in both cases. See
 [Open-source and distribution policy](docs/open-source.md) for details.
 
 ## Install
@@ -27,15 +27,15 @@ source builds, OS requirements, and agent CLI setup.
 Short version:
 
 1. Buy the official installer when the download channel launches, or
-   [compile Agentflow from source](docs/building-from-source.md) for free.
+   [compile Alfred from source](docs/building-from-source.md) for free.
 2. Install and sign in to at least one agent CLI you plan to use:
    - Claude Code → `claude`
    - Cursor Agent → `cursor-agent` (or `agent`)
    - Codex → `codex`
    - OpenCode → `opencode`
-3. Confirm the CLI works in a normal terminal, then open Agentflow and run a workflow.
+3. Confirm the CLI works in a normal terminal, then open Alfred and run a workflow.
 
-Agentflow does **not** replace those subscriptions or store their API keys. It shells out to CLIs that are already authenticated on your machine.
+Alfred does **not** replace those subscriptions or store their API keys. It shells out to CLIs that are already authenticated on your machine.
 
 Schedules, file triggers, and webhooks only run while the app is open (including tray / menu bar).
 
@@ -62,21 +62,21 @@ Schedules, file triggers, and webhooks only run while the app is open (including
 
 Desktop only: **macOS 11+**, **Windows 10/11**, and **Linux**. Android, iOS, and standalone website builds are not supported.
 
-Official binaries are distributed through Agentflow's paid download channel,
+Official binaries are distributed through Alfred's paid download channel,
 not public GitHub Releases. The public repository remains fully buildable. See
 [installing](docs/install.md), [building from source](docs/building-from-source.md),
 and the [maintainer release runbook](docs/releasing.md).
 
 ## License
 
-Agentflow is free software licensed under
+Alfred is free software licensed under
 [GPL-3.0-or-later](LICENSE), Copyright © 2026 nirzhuk. You may use, modify,
 compile, and redistribute it, including commercially, provided you follow the
 GPL. Distributed binaries must be accompanied by access to their corresponding
 source under the same license.
 
 The GPL does not grant trademark rights or permission to imply that an
-unofficial build is an official Agentflow release. See
+unofficial build is an official Alfred release. See
 [BRANDING.md](BRANDING.md) and the
 [open-source and distribution policy](docs/open-source.md).
 

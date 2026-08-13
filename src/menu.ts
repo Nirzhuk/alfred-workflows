@@ -19,13 +19,13 @@ export type MenuActions = {
 /** Native macOS / Windows / Linux application menu. */
 export async function installAppMenu(actions: MenuActions): Promise<void> {
   const about = await Submenu.new({
-    text: "Agentflow",
+    text: "Alfred",
     items: [
       await PredefinedMenuItem.new({
-        text: "About Agentflow",
+        text: "About Alfred",
         item: {
           About: {
-            name: "Agentflow",
+            name: "Alfred",
             version: "0.1.0",
             copyright: "Local multi-agent workflow automations",
             comments:
@@ -42,11 +42,11 @@ export async function installAppMenu(actions: MenuActions): Promise<void> {
       await PredefinedMenuItem.new({ item: "Separator" }),
       await PredefinedMenuItem.new({ item: "Services" }),
       await PredefinedMenuItem.new({ item: "Separator" }),
-      await PredefinedMenuItem.new({ item: "Hide", text: "Hide Agentflow" }),
+      await PredefinedMenuItem.new({ item: "Hide", text: "Hide Alfred" }),
       await PredefinedMenuItem.new({ item: "HideOthers" }),
       await PredefinedMenuItem.new({ item: "ShowAll" }),
       await PredefinedMenuItem.new({ item: "Separator" }),
-      await PredefinedMenuItem.new({ item: "Quit", text: "Quit Agentflow" }),
+      await PredefinedMenuItem.new({ item: "Quit", text: "Quit Alfred" }),
     ],
   });
 
@@ -148,10 +148,10 @@ export async function installAppMenu(actions: MenuActions): Promise<void> {
     items: [
       await MenuItem.new({
         id: "help-about-app",
-        text: "What is Agentflow?",
+        text: "What is Alfred?",
         action: () => {
           window.alert(
-            "Agentflow builds local automations across Claude Code, Cursor, Codex, and OpenCode — prompts, skills, models, and runnable workflows on your machine.",
+            "Alfred builds local automations across Claude Code, Cursor, Codex, and OpenCode — prompts, skills, models, and runnable workflows on your machine.",
           );
         },
       }),

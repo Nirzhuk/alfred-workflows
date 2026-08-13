@@ -1,6 +1,6 @@
-# Agentflow — product & engineering specs
+# Alfred — product & engineering specs
 
-Living doc for what Agentflow is, how it works, and how we build it. Prefer updating this when product decisions change.
+Living doc for what Alfred is, how it works, and how we build it. Prefer updating this when product decisions change.
 
 Related docs: [README.md](README.md), [docs/install.md](docs/install.md), [docs/releasing.md](docs/releasing.md), [plans/](plans/).
 
@@ -10,9 +10,9 @@ Related docs: [README.md](README.md), [docs/install.md](docs/install.md), [docs/
 
 | | |
 | --- | --- |
-| **Name** | Agentflow |
+| **Name** | Alfred |
 | **Repo / package** | `workflows-local-agents` |
-| **Bundle id** | `com.nirzhuk.agentflow` |
+| **Bundle id** | `com.nirzhuk.alfred` |
 | **Version** | `0.1.0` (see `package.json` / `tauri.conf.json`) |
 | **License** | GPL-3.0-or-later |
 | **Author** | nirzhuk |
@@ -102,7 +102,7 @@ workflow graph and can be reversed from the node, its context menu, or settings.
 4. Walk nodes: Input → Memories → Agent (CLI adapter) → Output (persist / final)
 5. Persist `run_steps`, emit `run://event` for the activity UI; finish status; refresh tray
 
-Schedules and event triggers only fire while Agentflow is running (including tray).
+Schedules and event triggers only fire while Alfred is running (including tray).
 
 ---
 

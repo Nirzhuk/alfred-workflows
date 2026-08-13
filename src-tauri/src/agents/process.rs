@@ -21,7 +21,7 @@ pub struct CmdOutput {
 /// Claude Code stores subscription OAuth credentials in one shared macOS
 /// Keychain item. Its headless processes can race while rotating that item,
 /// invalidating every active session. Keep all Claude processes launched by
-/// Agentflow mutually exclusive until Claude Code makes Keychain refreshes
+/// Alfred mutually exclusive until Claude Code makes Keychain refreshes
 /// atomic upstream.
 fn claude_invocation_lock() -> &'static Mutex<()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();

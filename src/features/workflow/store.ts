@@ -100,7 +100,7 @@ function visibleRunFields(runState: WorkflowRunState) {
   };
 }
 
-const OPEN_TABS_KEY = "agentflow:open-workflow-tabs";
+const OPEN_TABS_KEY = "alfred:open-workflow-tabs";
 const MAX_RUN_LOG_LINES = 1_000;
 
 function runLogLine(event: RunEvent): RunLogLine {

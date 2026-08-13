@@ -1,4 +1,4 @@
-# Agentflow v0.1.0 release TODO
+# Alfred v0.1.0 release TODO
 
 **Status:** Not ready to publish  
 **Primary deliverables:** signed and notarized macOS `.dmg` installers and a
@@ -27,7 +27,7 @@ This is the launch gate. The detailed implementation notes remain in
 - [x] Verified locally on 2026-08-11: 16 frontend tests pass, 20 Rust tests
   pass, and the production frontend builds.
 - [x] Verified locally on Apple Silicon on 2026-08-11: Tauri produced
-  `Agentflow_0.1.0_aarch64.dmg`, and `hdiutil verify` passed. This artifact is
+  `Alfred_0.1.0_aarch64.dmg`, and `hdiutil verify` passed. This artifact is
   unsigned and is only proof that local packaging works.
 
 ## P0 — required before publishing
@@ -49,15 +49,15 @@ workflow cannot run yet.
 ### 2. Decide the v0.1.0 product scope
 
 - [x] Distribution decision: official maintainer-built binaries are paid;
-  source is GPL-3.0-or-later and may be compiled without an Agentflow purchase.
+  source is GPL-3.0-or-later and may be compiled without an Alfred purchase.
 - [ ] Reconcile freemium/license plans `001`–`003` with free source builds
   before executing them. GPL licensing does not itself enforce payment and
   users may modify the source, including entitlement code.
 - [ ] Freeze the features included in v0.1.0; connected apps (`008`–`017`),
   authenticated updates, and other planned work should not silently expand the
   first release.
-- [ ] Confirm the final app name `Agentflow`, bundle ID
-  `com.nirzhuk.agentflow`, minimum macOS version, and Windows 10/11 support.
+- [ ] Confirm the final app name `Alfred`, bundle ID
+  `com.nirzhuk.alfred`, minimum macOS version, and Windows 10/11 support.
 
 ### 3. Make the release workflow internally consistent
 
@@ -129,7 +129,7 @@ Do this with files downloaded from the draft release, not local build output.
 - [ ] Clean Intel Mac: repeat the same flow.
 - [ ] Clean Windows 10 or 11 x64 VM/device: install from NSIS EXE, launch from
   Start, quit/relaunch, and uninstall.
-- [ ] Verify each supported agent CLI is detected when Agentflow is launched
+- [ ] Verify each supported agent CLI is detected when Alfred is launched
   from Finder/Start rather than a terminal.
 - [ ] Run one real workflow end to end and confirm output selection, history,
   and SQLite persistence survive restart.
@@ -143,7 +143,7 @@ Do this with files downloaded from the draft release, not local build output.
 ### 7. Deliver through the paid channel
 
 - [ ] Write release notes with supported OS versions, supported agent CLIs,
-  known limitations, and the fact that automations run only while Agentflow is
+  known limitations, and the fact that automations run only while Alfred is
   open/tray-running.
 - [ ] Configure the official storefront/download service and add its purchase
   link to the README/install guide.

@@ -258,7 +258,7 @@ Free state must show:
 - usage rows: workflows `/ 3`, owned memories `/ 25`, active automations `/ 1`;
 - `Upgrade to Pro` opening hosted checkout;
 - license-key input and `Activate license`;
-- no requirement to create an Agentflow account.
+- no requirement to create an Alfred account.
 
 Pro state must show:
 
@@ -394,7 +394,7 @@ Expected: all commands exit 0.
 - [ ] `bun run test` exits 0.
 - [ ] `bun run build:frontend` exits 0.
 - [ ] `cargo test --manifest-path src-tauri/Cargo.toml` exits 0.
-- [ ] Agentflow launches and loads local workflows without waiting for Polar.
+- [ ] Alfred launches and loads local workflows without waiting for Polar.
 - [ ] Pro works offline for the policy window and local model execution never
       makes a license network request per run.
 - [ ] Free usage displays 3 workflows, 25 owned memories, and 1 active

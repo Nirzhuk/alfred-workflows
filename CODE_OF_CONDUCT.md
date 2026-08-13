@@ -1,6 +1,6 @@
 # Code of Conduct
 
-Agentflow's community should be useful, welcoming, and safe for everyone.
+Alfred's community should be useful, welcoming, and safe for everyone.
 
 ## Expected behavior
 

@@ -135,7 +135,7 @@ export function AppTitlebar({
       data-tauri-drag-region
     >
       <div className="titlebar-leading" data-tauri-drag-region>
-        <p className="titlebar-brand">Agentflow</p>
+        <p className="titlebar-brand">Alfred</p>
         <button
           type="button"
           className="ghost titlebar-icon-btn"

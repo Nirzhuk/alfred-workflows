@@ -22,11 +22,11 @@
 
 ## Why this matters
 
-Agentflow needs one authoritative license state before feature limits can be
+Alfred needs one authoritative license state before feature limits can be
 added safely. The application is local-first and may run local models without
 internet access, so launch and workflow execution must never depend on a live
 Polar request. This plan adds direct Polar activation plus a cached 30-day Pro
-lease, without an Agentflow backend or a secret API token in the desktop app.
+lease, without an Alfred backend or a secret API token in the desktop app.
 
 ## Current state
 
@@ -174,7 +174,7 @@ The record must contain only what offline evaluation and revalidation need:
 - `last_validated_at` and `last_attempted_at`;
 - sanitized last network/error category, never a raw response body;
 - non-identifying device label generated once, such as
-  `Agentflow macOS 7f3a91c2`;
+  `Alfred macOS 7f3a91c2`;
 - `updated_at`.
 
 Implement database methods to load, upsert, update validation fields, and
@@ -232,17 +232,17 @@ Add `reqwest` with JSON and rustls TLS support and no native OpenSSL dependency.
 Use one reusable client with an 8-second total timeout. Add compile-time public
 configuration:
 
-- `AGENTFLOW_POLAR_ORGANIZATION_ID`
-- `AGENTFLOW_POLAR_BENEFIT_ID`
+- `ALFRED_POLAR_ORGANIZATION_ID`
+- `ALFRED_POLAR_BENEFIT_ID`
 
 Missing configuration must return a clear `licensing_not_configured` error; it
-must not panic or prevent the rest of Agentflow from running.
+must not panic or prevent the rest of Alfred from running.
 
 In `licensing/polar.rs`, implement activate, validate, and deactivate against
 `https://api.polar.sh/v1/customer-portal/license-keys/*`. Do not send an
 Authorization header. Parse only fields needed for licensing and ignore the
 customer object so customer PII is neither persisted nor logged. Validate that
-the returned organization and benefit IDs match Agentflow's configured IDs
+the returned organization and benefit IDs match Alfred's configured IDs
 before granting Pro.
 
 Classify results:

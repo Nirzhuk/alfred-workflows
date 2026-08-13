@@ -54,7 +54,7 @@ export function SettingsPage({ onClose }: Props) {
     <section className="settings-page" aria-label="Settings">
       <header className="settings-page-header">
         <div>
-          <p className="settings-kicker">Agentflow</p>
+          <p className="settings-kicker">Alfred</p>
           <h1>Settings</h1>
         </div>
         <button type="button" className="ghost" onClick={onClose}>
@@ -106,7 +106,7 @@ export function SettingsPage({ onClose }: Props) {
             <div className="settings-row">
               <div>
                 <p className="settings-label">App</p>
-                <p className="settings-value">Agentflow</p>
+                <p className="settings-value">Alfred</p>
               </div>
               <span className="settings-meta">v0.1.0</span>
             </div>

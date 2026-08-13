@@ -1,4 +1,4 @@
-# Plan 017: Expose selected Agentflow workflows to Microsoft Copilot
+# Plan 017: Expose selected Alfred workflows to Microsoft Copilot
 
 > **Executor instructions**: Copilot is a remote control surface, not a local
 > coding-agent provider. Do not add it to `AgentProviderId` or invoke a Copilot
@@ -21,7 +21,7 @@
 
 ## Product outcome
 
-A user can ask an Agentflow Copilot Studio agent something like “Run my release
+A user can ask an Alfred Copilot Studio agent something like “Run my release
 readiness workflow,” confirm the action, and receive a request ID plus status.
 The paired desktop performs the workflow locally. Copilot never connects to
 `127.0.0.1`, reads the workflow graph, or receives provider/CLI credentials.
@@ -49,7 +49,7 @@ and [publish to Teams/Microsoft 365 Copilot](https://learn.microsoft.com/en-us/m
 
 **In scope**:
 
-- Entra-protected Agentflow remote API and tenant/user mapping.
+- Entra-protected Alfred remote API and tenant/user mapping.
 - Explicit workflow publication and safe input schemas.
 - OpenAPI definition/custom connector.
 - Copilot Studio agent/tool instructions, confirmation rules, async status UX,
@@ -81,7 +81,7 @@ Extend Plan 011's ADR with:
 - supported Microsoft tenants (single-tenant pilot vs multitenant product);
 - Entra app registrations per environment and verified publisher plan;
 - delegated scope such as `Workflow.Invoke` and admin-consent expectations;
-- exact mapping from Entra `tid` + stable user subject to Agentflow relay user;
+- exact mapping from Entra `tid` + stable user subject to Alfred relay user;
 - device choice when a user has multiple paired desktops;
 - destructive workflow classification and confirmation policy;
 - output disclosure policy (recommend status/summary only in v1);
@@ -140,7 +140,7 @@ Register the relay API under the chosen tenant model. Validate issuer, audience,
 tenant, user, scopes/roles, timestamps, and signing keys server-side. Follow
 current Copilot Studio connector authentication guidance; use on-behalf-of only
 if the connector architecture actually requires downstream delegated calls.
-The Agentflow API itself should accept a token intended for its own audience.
+The Alfred API itself should accept a token intended for its own audience.
 
 Generate/import the reviewed OpenAPI definition into a custom connector. Give
 operations clear names/descriptions and no hidden parameters. Configure per-
@@ -159,7 +159,7 @@ Create a versioned agent definition/instructions that:
 - reports request ID and queued/offline status honestly;
 - polls status with a bounded interval/count rather than holding one request;
 - never claims success until API status is `succeeded`;
-- gives reconnect/open-Agentflow guidance for offline/expired cases;
+- gives reconnect/open-Alfred guidance for offline/expired cases;
 - does not invent workflow names, inputs, results, or remediation.
 
 Use deterministic tool descriptions and examples with synthetic data. Avoid
@@ -187,7 +187,7 @@ unpublish workflow, offline expiry, and incident rollback exercises.
 ### Step 7: Decide later protocol adapters
 
 After v1 usage, document whether MCP adds value for tool discovery or whether
-Copilot Studio's agent-to-agent protocol fits a richer Agentflow agent. Any
+Copilot Studio's agent-to-agent protocol fits a richer Alfred agent. Any
 adapter must reuse the same Entra identity, publication allow-list, input
 validation, idempotency, confirmation, queue, and audit boundaries. Do not
 expose the internal action registry wholesale.

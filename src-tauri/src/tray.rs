@@ -1,4 +1,4 @@
-//! macOS menu-bar (and desktop tray) icon for Agentflow.
+//! macOS menu-bar (and desktop tray) icon for Alfred.
 //!
 //! Menu + title reflect active runs and upcoming schedules.
 
@@ -13,7 +13,7 @@ use tauri::{
     AppHandle, Emitter, Manager, Runtime, Wry,
 };
 
-const TRAY_ID: &str = "agentflow-tray";
+const TRAY_ID: &str = "alfred-tray";
 const MAX_ACTIVE_ROWS: usize = 5;
 const MAX_SCHEDULE_ROWS: usize = 5;
 
@@ -105,7 +105,7 @@ fn status_title(snap: &TraySnapshot) -> String {
 }
 
 fn status_tooltip(snap: &TraySnapshot) -> String {
-    let mut lines = vec!["Agentflow".to_string()];
+    let mut lines = vec!["Alfred".to_string()];
     if snap.active.is_empty() {
         lines.push("No active runs".into());
     } else {
@@ -138,7 +138,7 @@ fn status_icon() -> tauri::Result<Image<'static>> {
 }
 
 fn build_menu(app: &AppHandle, snap: &TraySnapshot) -> tauri::Result<Menu<Wry>> {
-    let open = MenuItem::with_id(app, "tray-open", "Open Agentflow", true, None::<&str>)?;
+    let open = MenuItem::with_id(app, "tray-open", "Open Alfred", true, None::<&str>)?;
     let settings = MenuItem::with_id(app, "tray-settings", "Settings", true, None::<&str>)?;
     let updates = MenuItem::with_id(
         app,

@@ -243,7 +243,7 @@ mod tests {
     impl TestDir {
         fn new() -> Self {
             let path =
-                std::env::temp_dir().join(format!("agentflow-skill-test-{}", uuid::Uuid::new_v4()));
+                std::env::temp_dir().join(format!("alfred-skill-test-{}", uuid::Uuid::new_v4()));
             fs::create_dir_all(&path).expect("create test directory");
             Self(path)
         }

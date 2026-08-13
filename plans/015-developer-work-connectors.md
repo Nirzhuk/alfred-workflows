@@ -141,7 +141,7 @@ selection minimal and map `errors` even when HTTP status is 200.
 Use provider webhooks through Plan 011 for issue/comment/update events. Verify
 the current signature algorithm and webhook timestamp/secret handling from
 official docs. Filter by team/project/status and dedupe delivery/entity update
-IDs. Add bot-loop/source-marker rules for Agentflow-created comments.
+IDs. Add bot-loop/source-marker rules for Alfred-created comments.
 
 **Verify Stage B**: personal token and OAuth staging flows, pagination/GraphQL
 partial errors, 429/backoff, revoked token, webhook forgery/replay, workspace

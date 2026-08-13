@@ -6,7 +6,7 @@
 > report — do not improvise. When done, update the status row for this plan in
 > `plans/README.md`.
 >
-> **Drift check (run first)**: Run `rg -n "checkUpdates|agentflow:check-updates|Automatic updates" src`
+> **Drift check (run first)**: Run `rg -n "checkUpdates|alfred:check-updates|Automatic updates" src`
 > and read the complete event handler plus its menu wiring. At plan time it is
 > still a hardcoded `0.1.0` alert. If a real updater implementation or different
 > event contract has landed, stop and reconcile this plan before editing.
@@ -37,11 +37,11 @@ The current `workflow-canvas.tsx` handler only shows:
 
 ```tsx
 window.alert(
-  "Agentflow 0.1.0\n\nAutomatic updates aren’t set up yet. You’ll get a notice here once they are.",
+  "Alfred 0.1.0\n\nAutomatic updates aren’t set up yet. You’ll get a notice here once they are.",
 );
 ```
 
-- The event is wired from the native menu to `agentflow:check-updates`.
+- The event is wired from the native menu to `alfred:check-updates`.
 - No updater or process plugin is installed.
 - `tauri.conf.json` has no updater public key, endpoint, or
   `createUpdaterArtifacts` setting.
@@ -57,7 +57,7 @@ window.alert(
 
 | Purpose | Command | Expected |
 | --- | --- | --- |
-| Generate keys | `bunx tauri signer generate -w ~/.tauri/agentflow.key` | private + `.pub` files |
+| Generate keys | `bunx tauri signer generate -w ~/.tauri/alfred.key` | private + `.pub` files |
 | Add updater | `bun run tauri add updater` | Rust/JS plugin configured |
 | Add process plugin | `bun run tauri add process` | Rust/JS plugin configured |
 | Frontend build | `bun run build:frontend` | exit 0 |
@@ -99,7 +99,7 @@ Before generating a key:
 Generate the keypair once:
 
 ```bash
-bunx tauri signer generate -w ~/.tauri/agentflow.key
+bunx tauri signer generate -w ~/.tauri/alfred.key
 ```
 
 - Store the private-key **contents** in `TAURI_SIGNING_PRIVATE_KEY`.
@@ -113,8 +113,8 @@ bunx tauri signer generate -w ~/.tauri/agentflow.key
 **Verify**:
 
 ```bash
-test -f ~/.tauri/agentflow.key
-test -f ~/.tauri/agentflow.key.pub
+test -f ~/.tauri/alfred.key
+test -f ~/.tauri/alfred.key.pub
 gh secret list
 ```
 
@@ -163,7 +163,7 @@ In `src-tauri/tauri.conf.json`:
 },
 "plugins": {
   "updater": {
-    "pubkey": "<CONTENTS OF agentflow.key.pub>",
+    "pubkey": "<CONTENTS OF alfred.key.pub>",
     "endpoints": [
       "https://github.com/<owner>/<repo>/releases/latest/download/latest.json"
     ],
@@ -224,9 +224,9 @@ Rules:
 - **macOS Homebrew**:
   1. Look for `brew` using the existing PATH/common-location strategy,
      including `/opt/homebrew/bin/brew` and `/usr/local/bin/brew`.
-  2. Run `brew list --cask --versions agentflow` without invoking a shell.
+  2. Run `brew list --cask --versions alfred` without invoking a shell.
   3. A successful non-empty result means `brew`.
-  4. If Homebrew execution fails but a current Agentflow receipt exists under a
+  4. If Homebrew execution fails but a current Alfred receipt exists under a
      known Caskroom prefix, return `brew` or `unknown`, never `direct`.
 - **macOS direct**: no installed cask receipt and the running app is a normal
   signed bundle → `direct`.
@@ -236,14 +236,14 @@ Only `direct` may enter the install flow. `brew`, `unsupported`, and `unknown`
 must never call updater installation APIs.
 
 Do not use `current_exe()` path containing `Homebrew`/`Caskroom` as the primary
-signal; the cask installs `Agentflow.app` into `/Applications`.
+signal; the cask installs `Alfred.app` into `/Applications`.
 
 **Verify with unit tests using an injected command/path probe**:
 
 - Apple Silicon Homebrew receipt
 - Intel Homebrew receipt
 - Homebrew binary missing but receipt present
-- Homebrew installed but Agentflow cask absent
+- Homebrew installed but Alfred cask absent
 - Direct DMG install
 - Ambiguous/stale receipt failure
 - Windows direct and Linux unsupported
@@ -259,7 +259,7 @@ Behavior:
 
 1. Prevent concurrent checks/downloads from repeated menu clicks.
 2. Read platform/channel from the Rust command.
-3. `brew` → show `brew upgrade --cask agentflow`; never call updater install.
+3. `brew` → show `brew upgrade --cask alfred`; never call updater install.
 4. `unsupported` → explain that Linux updates use release downloads.
 5. `unknown` → show a safe manual-download path; never install automatically.
 6. `direct` → call `check()` from `@tauri-apps/plugin-updater`.
@@ -269,7 +269,7 @@ Behavior:
 9. macOS → call `relaunch()` after successful installation.
 10. Windows → the updater exits the app during installer execution; do not rely
     on code after `downloadAndInstall()` running. Tell the user beforehand that
-    Agentflow will close and restart/reopen as appropriate.
+    Alfred will close and restart/reopen as appropriate.
 
 Remove the hardcoded `0.1.0` and the “Automatic updates aren’t set up” text.
 Do not add quiet startup checks in this plan's first implementation.
@@ -278,7 +278,7 @@ Do not add quiet startup checks in this plan's first implementation.
 
 ```bash
 bun run build:frontend
-rg -n "Automatic updates aren’t set up|Agentflow 0.1.0" src
+rg -n "Automatic updates aren’t set up|Alfred 0.1.0" src
 ```
 
 The `rg` command must return no matches.
@@ -313,7 +313,7 @@ production smoke check after the first full release is published.
 Update `docs/releasing.md`:
 
 - Direct DMG/NSIS installs consume `latest.json`.
-- Homebrew uses `brew upgrade --cask agentflow`.
+- Homebrew uses `brew upgrade --cask alfred`.
 - Linux uses release downloads in v1.
 - CI must retain `uploadUpdaterJson: true`,
   `updaterJsonPreferNsis: true`, updater signatures, and the private-key secret.

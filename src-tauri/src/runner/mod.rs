@@ -1177,7 +1177,7 @@ pub fn execute_run(
                 let title = apply_template(
                     data.get("title")
                         .and_then(|v| v.as_str())
-                        .unwrap_or("Agentflow"),
+                        .unwrap_or("Alfred"),
                     &context_prompt,
                     &last_output,
                     cwd,

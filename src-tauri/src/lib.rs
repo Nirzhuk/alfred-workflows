@@ -91,7 +91,7 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            // Closing the window keeps Agentflow running in the menu bar / tray.
+            // Closing the window keeps Alfred running in the menu bar / tray.
             if let WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
                 let _ = window.hide();

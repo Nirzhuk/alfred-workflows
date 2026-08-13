@@ -20,7 +20,7 @@ const DEFAULT_PORT: u16 = 8787;
 const MAX_BODY_BYTES: usize = 1024 * 1024;
 
 pub fn configured_port() -> u16 {
-    std::env::var("AGENTFLOW_HTTP_PORT")
+    std::env::var("ALFRED_HTTP_PORT")
         .ok()
         .and_then(|p| p.parse().ok())
         .unwrap_or(DEFAULT_PORT)
@@ -79,7 +79,7 @@ fn split_target(url: &str) -> (&str, Option<&str>) {
 
 fn token_from(request: &Request, query: Option<&str>) -> Option<String> {
     for header in request.headers() {
-        if header.field.equiv("X-Agentflow-Token") {
+        if header.field.equiv("X-Alfred-Token") {
             return Some(header.value.as_str().to_string());
         }
         if header.field.equiv("Authorization") {

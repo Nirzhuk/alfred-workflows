@@ -7,8 +7,8 @@ import {
 } from "@tauri-apps/plugin-notification";
 import { create } from "zustand";
 
-const ENABLED_KEY = "agentflow:notifications-enabled";
-const SOUND_KEY = "agentflow:notification-sound";
+const ENABLED_KEY = "alfred:notifications-enabled";
+const SOUND_KEY = "alfred:notification-sound";
 
 export const NOTIFICATION_SOUND_OPTIONS = [
   { value: "system", label: "System default" },
@@ -118,7 +118,7 @@ async function pushSimpleNotification(title: string, body: string) {
 }
 
 /**
- * True when the Agentflow window is not the frontmost visible window.
+ * True when the Alfred window is not the frontmost visible window.
  * Prefer Tauri window state — `document.hasFocus()` is unreliable in WKWebView.
  */
 export async function shouldNotifyAboutRun(): Promise<boolean> {
@@ -159,7 +159,7 @@ export const useNotificationsStore = create<NotificationsState>((set, get) => ({
       if (permission === "granted") {
         await pushSimpleNotification(
           "Notifications on",
-          "Agentflow will notify you when a background run finishes.",
+          "Alfred will notify you when a background run finishes.",
         );
       }
     } finally {
@@ -198,7 +198,7 @@ export const useNotificationsStore = create<NotificationsState>((set, get) => ({
     if (permission !== "granted") return false;
     await pushSimpleNotification(
       "Test notification",
-      "Agentflow notifications are working.",
+      "Alfred notifications are working.",
     );
     return true;
   },

@@ -35,7 +35,7 @@ function localClockTime(
   return hour && minute ? `${hour}:${minute}` : null;
 }
 
-/** Compact, human-readable text for a six-field Agentflow cron expression. */
+/** Compact, human-readable text for a six-field Alfred cron expression. */
 export function formatScheduleLabel(
   cron: string,
   nextRunAt?: string | null,

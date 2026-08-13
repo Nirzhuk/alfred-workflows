@@ -1,6 +1,6 @@
 # Desktop only
 
-Agentflow is a **desktop** Tauri app for **macOS, Linux, and Windows** only.
+Alfred is a **desktop** Tauri app for **macOS, Linux, and Windows** only.
 
 ## Do not
 

@@ -1,6 +1,6 @@
-# Build Agentflow desktop installers into a private GitHub Release draft.
+# Build Alfred desktop installers into a private GitHub Release draft.
 #
-# Agentflow's official binaries are paid. The public repository distributes
+# Alfred's official binaries are paid. The public repository distributes
 # source, not maintainer-signed installers. After verification, maintainers
 # copy accepted draft assets to the paid download service. NEVER publish the
 # draft GitHub Release.
@@ -142,7 +142,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: v__VERSION__
-          releaseName: Agentflow v__VERSION__
+          releaseName: Alfred v__VERSION__
           releaseBody: |
             PRIVATE STAGING DRAFT — DO NOT PUBLISH TO THE PUBLIC REPOSITORY.
 
@@ -152,7 +152,7 @@ jobs:
             - **Windows:** `.exe` (NSIS) and `.msi`
             - **Linux:** `.AppImage`, `.deb`, and `.rpm`
 
-            Agentflow shells out to local agent CLIs (Claude Code, Cursor, Codex, OpenCode). Install and authenticate those on the machine before running workflows.
+            Alfred shells out to local agent CLIs (Claude Code, Cursor, Codex, OpenCode). Install and authenticate those on the machine before running workflows.
 
             Follow docs/releasing.md: test these exact assets, generate checksums, and upload accepted files to the paid download service. Never convert this draft into a public GitHub Release.
           releaseDraft: true

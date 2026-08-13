@@ -33,7 +33,7 @@ const SIZE_CLASS: Record<ModalSize, string> = {
 
 /**
  * Shared modal shell: portal to `document.body`, backdrop dismiss, Escape,
- * and size variants used across Agentflow dialogs.
+ * and size variants used across Alfred dialogs.
  */
 export function Modal({
   open = true,

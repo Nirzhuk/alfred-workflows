@@ -152,12 +152,12 @@ fn configure_notification<R: Runtime>(
     }
 }
 
-/// Register an Agentflow-shaped app bundle for development notifications.
+/// Register an Alfred-shaped app bundle for development notifications.
 ///
 /// Tauri normally attributes development notifications to Terminal because the
 /// debug executable is not inside an app bundle. Launch Services only needs a
 /// registered bundle to provide the correct name and icon, so create a tiny
-/// identity bundle in Agentflow's local data directory and keep the real app as
+/// identity bundle in Alfred's local data directory and keep the real app as
 /// the notification delegate.
 #[cfg(target_os = "macos")]
 fn install_development_notification_identity<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
@@ -171,7 +171,7 @@ fn install_development_notification_identity<R: Runtime>(app: &AppHandle<R>) -> 
         .app_local_data_dir()
         .map_err(|error| error.to_string())?
         .join("notification-identity")
-        .join("Agentflow.app");
+        .join("Alfred.app");
     let contents = bundle.join("Contents");
     let macos = contents.join("MacOS");
     let resources = contents.join("Resources");
@@ -183,11 +183,11 @@ fn install_development_notification_identity<R: Runtime>(app: &AppHandle<R>) -> 
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>CFBundleDisplayName</key><string>Agentflow</string>
-  <key>CFBundleExecutable</key><string>AgentflowNotificationIdentity</string>
+  <key>CFBundleDisplayName</key><string>Alfred</string>
+  <key>CFBundleExecutable</key><string>AlfredNotificationIdentity</string>
   <key>CFBundleIconFile</key><string>icon.icns</string>
   <key>CFBundleIdentifier</key><string>{identifier}</string>
-  <key>CFBundleName</key><string>Agentflow</string>
+  <key>CFBundleName</key><string>Alfred</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>0.1.0</string>
   <key>CFBundleVersion</key><string>1</string>
@@ -204,7 +204,7 @@ fn install_development_notification_identity<R: Runtime>(app: &AppHandle<R>) -> 
     )
     .map_err(|error| error.to_string())?;
 
-    let executable = macos.join("AgentflowNotificationIdentity");
+    let executable = macos.join("AlfredNotificationIdentity");
     fs::write(&executable, b"#!/bin/sh\nexit 0\n").map_err(|error| error.to_string())?;
     fs::set_permissions(&executable, fs::Permissions::from_mode(0o755))
         .map_err(|error| error.to_string())?;
@@ -238,7 +238,7 @@ pub fn prepare_notification_identity<R: Runtime>(app: &AppHandle<R>) {
     }
 }
 
-/// Show a run-finished notification. Clicking it focuses Agentflow and emits
+/// Show a run-finished notification. Clicking it focuses Alfred and emits
 /// `app://open-run-output` so the UI can open the output modal.
 pub fn notify_run_finished<R: Runtime>(
     app: &AppHandle<R>,

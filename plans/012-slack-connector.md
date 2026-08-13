@@ -27,11 +27,11 @@ V1 lets a workflow send a channel message or thread reply and react to an
 
 1. **Developer/private workspace mode**: an advanced user creates their own
    Slack app and supplies bot/app tokens through a backend-owned secret form.
-   Socket Mode avoids a public inbound endpoint while Agentflow is open.
+   Socket Mode avoids a public inbound endpoint while Alfred is open.
 2. **Native user action mode**: Slack PKCE authorizes user scopes through a
    custom URI/localhost redirect without a client secret. Messages act with the
    user's identity; bot scopes and `app_mention` events are unavailable.
-3. **Public Agentflow bot app**: normal workspace bot installation, token
+3. **Public Alfred bot app**: normal workspace bot installation, token
    rotation, and HTTP event delivery through Plan 011. This is the complete
    branded bot/event mode.
 
@@ -160,14 +160,14 @@ enqueueing.
 
 Normalize only team/channel/user IDs, event timestamp, thread timestamp,
 permalink, and a bounded text preview. Treat Slack text as untrusted input. The
-UI states clearly that local Socket Mode events work only while Agentflow runs.
+UI states clearly that local Socket Mode events work only while Alfred runs.
 
 **Verify**: fixture tests cover duplicate envelope, reconnect, ack, edited/
 deleted/unsupported subtypes, bot-loop prevention, and payload minimization.
 
 ### Step 6: Add public bot OAuth and relay event delivery
 
-After Plan 011 is production-ready, create the Agentflow Slack bot app. The relay
+After Plan 011 is production-ready, create the Alfred Slack bot app. The relay
 generates/binds OAuth state, receives the HTTPS redirect, exchanges the code
 with the server-held client secret, and transfers/stores the grant according to
 the approved relay ADR. Support token rotation if enabled. Implement uninstall/

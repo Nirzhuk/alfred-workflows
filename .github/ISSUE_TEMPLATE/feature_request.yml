@@ -1,5 +1,5 @@
 name: Feature request
-description: Propose a focused improvement to Agentflow
+description: Propose a focused improvement to Alfred
 title: "[Feature]: "
 labels:
   - enhancement
@@ -39,5 +39,5 @@ body:
       options:
         - label: I searched existing issues and plans for this request.
           required: true
-        - label: This request keeps Agentflow a desktop application rather than a hosted website or mobile app.
+        - label: This request keeps Alfred a desktop application rather than a hosted website or mobile app.
           required: true

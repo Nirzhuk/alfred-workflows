@@ -34,7 +34,7 @@ any provider OAuth flow or workflow action.
 
 ## Current state
 
-- The app is local Tauri 2 + React; there is no Agentflow account or backend.
+- The app is local Tauri 2 + React; there is no Alfred account or backend.
 - `src-tauri/src/db/schema.sql:14-20` hard-codes four *agent CLI* providers.
   Connected apps are a separate concept and must not extend that enum/table.
 - `src/features/workflow/types.ts:204-225` stores generic HTTP headers inside a
@@ -88,7 +88,7 @@ to `AgentProviderId` or the CLI adapter registry.
 
 - Provider-specific authorization URLs, client IDs, scopes, API calls, events,
   or workflow nodes.
-- A cloud service, browser callback endpoint, or Agentflow user account.
+- A cloud service, browser callback endpoint, or Alfred user account.
 - Importing secrets from the existing HTTP node or `triggers.secret`.
 - A generic “paste OAuth token” field in React.
 
@@ -135,7 +135,7 @@ The `TokenStore` interface must support `put`, `get`, and `delete` by opaque
 credential reference. Add an in-memory implementation for unit tests. Evaluate
 the current maintained `keyring` crate (or equivalent) for macOS Keychain,
 Windows Credential Manager, and Linux Secret Service. Use an app-specific
-service name such as `com.agentflow.connected-apps`.
+service name such as `com.alfred.connected-apps`.
 
 Disconnect order is: mark connection revoked/inactive, delete keychain entry,
 then remove metadata only when cleanup succeeds or the user explicitly accepts

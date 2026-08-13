@@ -1,6 +1,6 @@
 import type { OutputMemory } from "./types";
 
-const KEY = (workflowId: string) => `agentflow:memories:${workflowId}`;
+const KEY = (workflowId: string) => `alfred:memories:${workflowId}`;
 
 /** Legacy localStorage shape (pre-SQLite memories). */
 type LegacyMemory = {

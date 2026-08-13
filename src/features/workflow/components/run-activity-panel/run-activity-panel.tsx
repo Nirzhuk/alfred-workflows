@@ -108,7 +108,7 @@ function MemoryCard({
           className="run-memory-card-body"
           onClick={() =>
             window.dispatchEvent(
-              new CustomEvent("agentflow:open-memories", {
+              new CustomEvent("alfred:open-memories", {
                 detail: { memoryId: memory.id },
               }),
             )
@@ -525,7 +525,7 @@ export function RunActivityPanel() {
                   className="ghost run-memories-clear"
                   onClick={() =>
                     window.dispatchEvent(
-                      new CustomEvent("agentflow:open-memories"),
+                      new CustomEvent("alfred:open-memories"),
                     )
                   }
                 >

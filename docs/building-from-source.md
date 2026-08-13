@@ -1,6 +1,6 @@
-# Build Agentflow from source
+# Build Alfred from source
 
-You can compile and run Agentflow from this repository without buying the
+You can compile and run Alfred from this repository without buying the
 official binary. Source builds use the same checked-in application code but are
 unsigned unless you configure your own platform signing identity.
 
@@ -46,15 +46,15 @@ prerequisites guide.
 ## 2. Get the source and dependencies
 
 ```bash
-git clone <agentflow-repository-url>
+git clone <alfred-repository-url>
 cd workflows-local-agents
 bun install --frozen-lockfile
 ```
 
-Replace `<agentflow-repository-url>` with this repository's public clone URL.
+Replace `<alfred-repository-url>` with this repository's public clone URL.
 The final public repository URL has not been configured yet.
 
-No Agentflow API key, purchase key, signing certificate, or maintainer secret
+No Alfred API key, purchase key, signing certificate, or maintainer secret
 is needed. Install and authenticate at least one supported agent CLI separately
 if you want to run a real workflow.
 
@@ -64,7 +64,7 @@ if you want to run a real workflow.
 bun run dev
 ```
 
-This starts the Tauri desktop application and its Vite frontend. Agentflow is
+This starts the Tauri desktop application and its Vite frontend. Alfred is
 not a standalone website; do not use the Vite server as a deployed app.
 
 ## 4. Run the checks
@@ -103,7 +103,7 @@ private signing material.
 | Problem | Check |
 | --- | --- |
 | Tauri cannot find a native library | Revisit the platform packages in the Tauri prerequisites guide |
-| An agent CLI is not found | Confirm its command works in a normal terminal, then fully restart Agentflow |
+| An agent CLI is not found | Confirm its command works in a normal terminal, then fully restart Alfred |
 | The app builds but workflows cannot authenticate | Sign in using that agent CLI's own login flow |
 | macOS or Windows warns about the app | Expected for an unsigned self-build; sign it with your own identity if you distribute it |
 | A clean checkout behaves differently | Use `bun install --frozen-lockfile` and the recorded Bun version |

@@ -59,7 +59,7 @@ type WorkflowGroup = {
 };
 
 const DRAG_THRESHOLD_PX = 4;
-const COLLAPSED_FOLDERS_KEY = "agentflow:collapsed-workflow-folders";
+const COLLAPSED_FOLDERS_KEY = "alfred:collapsed-workflow-folders";
 const UNFILED_KEY = "__unfiled__";
 
 function loadCollapsedFolders(): string[] {

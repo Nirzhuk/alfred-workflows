@@ -30,7 +30,7 @@ function hookUrl(baseUrl: string | null, trigger: Trigger) {
 function curlFor(baseUrl: string | null, trigger: Trigger) {
   const url = hookUrl(baseUrl, trigger);
   if (!url || !trigger.secret) return null;
-  return `curl -X POST ${url} \\\n  -H "X-Agentflow-Token: ${trigger.secret}" \\\n  -H "Content-Type: application/json" \\\n  -d '{"hello":"world"}'`;
+  return `curl -X POST ${url} \\\n  -H "X-Alfred-Token: ${trigger.secret}" \\\n  -H "Content-Type: application/json" \\\n  -d '{"hello":"world"}'`;
 }
 
 type Props = {
@@ -103,7 +103,7 @@ export function TriggersModal({ workflowId, workflowName, onClose }: Props) {
       <div className="schedule-modal-body">
         <p className="muted">
           Start this automation when something happens — a file changes, or an
-          HTTP request arrives. Triggers only fire while Agentflow is open.
+          HTTP request arrives. Triggers only fire while Alfred is open.
         </p>
 
           {triggers.length === 0 ? (
@@ -172,7 +172,7 @@ export function TriggersModal({ workflowId, workflowName, onClose }: Props) {
                     ) : (
                       <p className="hint">
                         Listener is not running — port in use? Set
-                        <code> AGENTFLOW_HTTP_PORT</code> and restart.
+                        <code> ALFRED_HTTP_PORT</code> and restart.
                       </p>
                     )}
 

@@ -37,7 +37,7 @@ while the desktop app is open.
 - `RunTrigger::Event(String)` is provider-neutral, but enqueueing stores the
   full event string in `runs.payload_json`. Prompt injection truncates at 8,000
   characters; database persistence does not minimize sensitive payloads.
-- Schedules/triggers only work while Agentflow is running, including tray mode.
+- Schedules/triggers only work while Alfred is running, including tray mode.
   This local-runtime rule remains true until Plan 011.
 
 ## Event contract
@@ -156,7 +156,7 @@ signature are absent while normalized subject/preview/resource ID remain.
 ### Step 5: Add descriptor-driven trigger UI and health
 
 Extend the triggers modal with **Connected app**. Select provider/event,
-connection, and descriptor filter fields. Explain “Runs while Agentflow is
+connection, and descriptor filter fields. Explain “Runs while Alfred is
 open” beside local delivery modes. Display last success, next poll/renewal,
 paused credential state, and a reconnect action linking to Connected Apps.
 
