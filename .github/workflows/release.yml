@@ -223,11 +223,28 @@ jobs:
           version=$(jq -r '.version' src-tauri/tauri.conf.json)
           release_dir="$RUNNER_TEMP/release"
           mkdir -p "$release_dir"
-          gh release download "v${version}" \
-            --repo "$GITHUB_REPOSITORY" \
-            --pattern "Alfred_${version}_${{ matrix.arch }}.dmg" \
-            --dir "$release_dir"
-          echo "DMG_PATH=$release_dir/Alfred_${version}_${{ matrix.arch }}.dmg" >> "$GITHUB_ENV"
+          asset_name="Alfred_${version}_${{ matrix.arch }}.dmg"
+          release_id=$(gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --jq ".[] | select(.draft and .tag_name == \"v${version}\") | .id" | head -1)
+          if [ -z "$release_id" ]; then
+            echo "Draft release v${version} was not found"
+            exit 1
+          fi
+
+          asset_id=$(gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/releases/$release_id/assets?per_page=100" \
+            --jq ".[] | select(.name == \"$asset_name\") | .id" | head -1)
+          if [ -z "$asset_id" ]; then
+            echo "Draft asset $asset_name was not found"
+            exit 1
+          fi
+
+          dmg_path="$release_dir/$asset_name"
+          gh api \
+            -H "Accept: application/octet-stream" \
+            "repos/$GITHUB_REPOSITORY/releases/assets/$asset_id" > "$dmg_path"
+          echo "DMG_PATH=$dmg_path" >> "$GITHUB_ENV"
 
       - name: Verify, install, and launch twice
         run: |
@@ -290,16 +307,40 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          $ErrorActionPreference = 'Stop'
           $version = (Get-Content src-tauri/tauri.conf.json | ConvertFrom-Json).version
           $releaseDir = Join-Path $env:RUNNER_TEMP 'release'
           New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
           $installerName = "Alfred_${version}_x64-setup.exe"
-          gh release download "v${version}" `
-            --repo $env:GITHUB_REPOSITORY `
-            --pattern $installerName `
-            --dir $releaseDir
-
           $installer = Join-Path $releaseDir $installerName
+
+          $releases = gh api "repos/$env:GITHUB_REPOSITORY/releases?per_page=100" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) {
+            throw "Could not list GitHub Releases"
+          }
+          $release = $releases |
+            Where-Object { $_.draft -and $_.tag_name -eq "v${version}" } |
+            Select-Object -First 1
+          if (-not $release) {
+            throw "Draft release v${version} was not found"
+          }
+
+          $asset = $release.assets |
+            Where-Object { $_.name -eq $installerName } |
+            Select-Object -First 1
+          if (-not $asset) {
+            throw "Draft asset $installerName was not found"
+          }
+
+          Invoke-WebRequest `
+            -Uri $asset.url `
+            -Headers @{
+              Authorization = "Bearer $env:GH_TOKEN"
+              Accept = 'application/octet-stream'
+              'X-GitHub-Api-Version' = '2022-11-28'
+            } `
+            -OutFile $installer
+
           $signature = Get-AuthenticodeSignature $installer
           if ($signature.Status -ne 'NotSigned') {
             throw "Expected the waived Windows beta to be unsigned, found $($signature.Status)"
