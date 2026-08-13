@@ -167,10 +167,13 @@ jobs:
           uploadUpdaterJson: false
           args: ${{ matrix.args }} --bundles ${{ matrix.bundles }}
 
-      - name: Staple and replace macOS DMG
+      - name: Notarize, staple, and replace macOS DMG
         if: matrix.platform == 'macos-latest'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           shopt -s nullglob
           dmgs=(src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg)
@@ -179,6 +182,11 @@ jobs:
             exit 1
           fi
 
+          xcrun notarytool submit "${dmgs[0]}" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait
           xcrun stapler staple "${dmgs[0]}"
           xcrun stapler validate "${dmgs[0]}"
 
