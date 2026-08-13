@@ -30,6 +30,23 @@ signing, notarization, stapling, CI, and downloaded-artifact checks remain
 required. Completion must be recorded as `DONE (Windows signing waived)` so the
 exception is not mistaken for a signed Windows release.
 
+### Execution evidence (2026-08-13)
+
+- Frozen release source: `c5fc81fb0ddb658001fb058e0c33a03c646ffb6a`.
+- GitHub Actions run
+  [31695713076](https://github.com/Nirzhuk/alfred-workflows/actions/runs/31695713076)
+  passed all four build jobs and all three clean-runner verification jobs.
+- Both downloaded DMGs passed `hdiutil verify`, stapler validation, strict
+  code-signature verification, Gatekeeper assessment, native architecture
+  checks, installation, two launch/quit cycles, and removal on clean Apple
+  Silicon and Intel GitHub-hosted runners.
+- The downloaded Windows NSIS installer was confirmed unsigned as expected,
+  then installed silently, launched twice, and uninstalled on a clean Windows
+  GitHub-hosted runner.
+- The private `Alfred v0.1.0` draft remains unpublished, targets the frozen
+  source commit, and contains all nine expected macOS, Windows, and Linux
+  assets with GitHub-recorded SHA-256 digests.
+
 ## Why this matters
 
 The public release needs macOS DMGs that pass Gatekeeper without a bypass and
@@ -203,13 +220,13 @@ launch the NSIS EXE on a clean Windows 10/11 x64 machine.
 
 - [x] GitHub repository, `origin`, Actions permissions, and release workflow exist
 - [x] All required Apple secret names exist in GitHub
-- [ ] Both macOS DMGs are Developer ID signed, notarized, and stapled
+- [x] Both macOS DMGs are Developer ID signed, notarized, and stapled
 - [x] Windows Authenticode signing is explicitly waived; every Windows artifact
   is labeled as an unsigned beta with an unknown-publisher warning
-- [ ] A CI run produced a signed draft release with both signed DMGs and the
+- [x] A CI run produced a signed draft release with both signed DMGs and the
   unsigned beta EXE
-- [ ] Downloaded artifacts passed clean-machine launch checks
-- [ ] `plans/README.md` status row for 004 is
+- [x] Downloaded artifacts passed clean-machine launch checks
+- [x] `plans/README.md` status row for 004 is
   `DONE (Windows signing waived)`
 
 The execution decision above supersedes the original Windows-signing blocker

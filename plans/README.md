@@ -58,13 +58,13 @@ public Homebrew cask would expose the paid binary without purchase.
 | Item | Location | Status |
 |------|----------|--------|
 | GPL-3.0-or-later `LICENSE` + package/Cargo metadata | `LICENSE`, `package.json`, `src-tauri/Cargo.toml` | DONE |
-| Release CI (multi-OS build → draft GitHub Release) | `.github/workflows/release.yml` | DONE (unsigned until secrets) |
+| Release CI (multi-OS build → draft GitHub Release) | `.github/workflows/release.yml` | DONE (macOS signed/notarized; Windows beta unsigned) |
 | Release operator docs | `docs/releasing.md` | DONE |
 | User install docs (OS + agent CLI prerequisites) | `docs/install.md`, `README.md` | DONE |
 
 | Plan | Title | Priority | Effort | Depends on | Status |
 |------|-------|----------|--------|------------|--------|
-| 004 | Sign and notarize public DMG/EXE installers | P0 | M | GitHub repository | IN PROGRESS (Windows signing waived) |
+| 004 | Sign and notarize public DMG/EXE installers | P0 | M | GitHub repository | DONE (Windows signing waived) |
 | 005 | Publish Alfred via an architecture-aware Homebrew Cask | P1 | M | 004 + published DMGs | TODO |
 | 006 | Signed in-app updates for direct DMG/EXE installs | P1 | L | 004, 005 | TODO |
 

@@ -31,7 +31,10 @@ authenticated distribution integration requires a separate reviewed design.
 2. Push/merge that commit to `main` (or whichever branch you want to build).
 3. In GitHub: **Actions → release → Run workflow** → choose that branch → **Run workflow**.
    Builds never start from a push; only this manual trigger stages draft installers.
-4. Wait for [`.github/workflows/release.yml`](../.github/workflows/release.yml) to finish.
+4. Wait for [`.github/workflows/release.yml`](../.github/workflows/release.yml)
+   to finish. Its release gates download the exact draft DMGs and NSIS EXE,
+   verify signing/notarization or the documented Windows-signing waiver, and
+   exercise clean install, two launches, and uninstall on native hosted runners.
 5. Open the draft GitHub Release and verify every artifact from that exact
    commit. **Do not publish the draft.**
 6. Generate SHA-256 checksums, smoke-test the downloaded draft artifacts, and
@@ -51,7 +54,8 @@ Settings → Actions → General → Workflow permissions → **Read and write p
 
 ## Secrets (add before a public ship)
 
-Unsigned draft builds work without these. Gatekeeper / SmartScreen will warn users until they are set.
+The macOS release jobs intentionally fail when these values are absent. The
+Windows artifacts remain unsigned by the explicit beta decision below.
 
 ### macOS (Developer ID + notarization)
 

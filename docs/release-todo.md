@@ -30,6 +30,11 @@ This is the launch gate. The detailed implementation notes remain in
 - [x] Verified locally on Apple Silicon on 2026-08-11: Tauri produced
   `Alfred_0.1.0_aarch64.dmg`, and `hdiutil verify` passed. This artifact is
   unsigned and is only proof that local packaging works.
+- [x] Verified in GitHub Actions on 2026-08-13: run
+  [31695713076](https://github.com/Nirzhuk/alfred-workflows/actions/runs/31695713076)
+  built all advertised platforms, signed/notarized/stapled both macOS DMGs,
+  and passed clean-runner installer smoke tests for native Apple Silicon,
+  native Intel, and unsigned-beta Windows.
 
 ## P0 — required before publishing
 
@@ -89,9 +94,9 @@ Application identity and all six required secret names exist in GitHub.
 - [x] Add `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`,
   `KEYCHAIN_PASSWORD`, `APPLE_ID`, `APPLE_PASSWORD`, and `APPLE_TEAM_ID` as
   GitHub Actions secrets (plan 004).
-- [ ] Confirm both ARM64 and Intel `.app` bundles are signed.
-- [ ] Confirm both DMGs are notarized and stapled.
-- [ ] Verify a downloaded DMG on a clean Mac with `codesign`, `spctl`, and
+- [x] Confirm both ARM64 and Intel `.app` bundles are signed.
+- [x] Confirm both DMGs are notarized and stapled.
+- [x] Verify a downloaded DMG on a clean Mac with `codesign`, `spctl`, and
   `xcrun stapler validate`.
 
 #### Windows EXE — required for a warning-free public release
@@ -116,26 +121,30 @@ an explicit beta decision because SmartScreen will warn users.
 
 ### 5. Produce and inspect the draft release
 
-- [ ] Confirm `0.1.0` is still the intended version and keep it identical in
+- [x] Confirm `0.1.0` is still the intended version and keep it identical in
   all three version files.
-- [ ] Run **Actions → release → Run workflow** from the frozen release commit.
-- [ ] Require these assets in the draft release:
-  - [ ] Apple Silicon `.dmg`
-  - [ ] Intel `.dmg`
-  - [ ] Windows NSIS `-setup.exe`
-- [ ] Inspect the optional `.msi`, `.AppImage`, `.deb`, and `.rpm` assets; do
+- [x] Run **Actions → release → Run workflow** from the frozen release commit.
+- [x] Require these assets in the draft release:
+  - [x] Apple Silicon `.dmg`
+  - [x] Intel `.dmg`
+  - [x] Windows NSIS `-setup.exe`
+- [x] Inspect the optional `.msi`, `.AppImage`, `.deb`, and `.rpm` assets; do
   not let failures in advertised platforms pass unnoticed.
 - [ ] Generate and publish SHA-256 checksums for the downloadable installers.
-- [ ] Check that filenames include the product, version, architecture where
+- [x] Check that filenames include the product, version, architecture where
   relevant, and an unambiguous installer extension.
 
 ### 6. Smoke-test the actual downloaded artifacts
 
 Do this with files downloaded from the draft release, not local build output.
 
-- [ ] Clean Apple Silicon Mac: install from DMG, first launch, quit/relaunch,
+The automated Windows gate installs the downloaded NSIS asset, launches the
+installed executable twice, and uninstalls it. The Start-menu-specific item
+below remains open until the shortcut itself is exercised manually.
+
+- [x] Clean Apple Silicon Mac: install from DMG, first launch, quit/relaunch,
   and uninstall.
-- [ ] Clean Intel Mac: repeat the same flow.
+- [x] Clean Intel Mac: repeat the same flow.
 - [ ] Clean Windows 10 or 11 x64 VM/device: install from NSIS EXE, launch from
   Start, quit/relaunch, and uninstall.
 - [ ] Verify each supported agent CLI is detected when Alfred is launched
@@ -172,7 +181,7 @@ Do this with files downloaded from the draft release, not local build output.
 - [ ] Design authenticated signed updates that preserve paid download access
   before implementing plan 006.
 - [ ] Improve authentication-error feedback (plan 007) if not pulled into P0.
-- [ ] Add automated clean-install/smoke coverage for release artifacts.
+- [x] Add automated clean-install/smoke coverage for release artifacts.
 - [ ] Decide whether Linux packages are fully supported or best-effort, and
   align README/release wording with that decision.
 
