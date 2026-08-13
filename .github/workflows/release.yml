@@ -353,7 +353,7 @@ jobs:
             throw "NSIS installer exited with $($install.ExitCode)"
           }
 
-          $executable = Join-Path $env:LOCALAPPDATA 'Alfred\Alfred.exe'
+          $executable = Join-Path $env:LOCALAPPDATA 'Alfred\workflows-local-agents.exe'
           if (-not (Test-Path $executable)) {
             throw "Installed executable not found at $executable"
           }
@@ -380,5 +380,5 @@ jobs:
             throw "NSIS uninstaller exited with $($uninstall.ExitCode)"
           }
           if (Test-Path $executable) {
-            throw "Alfred.exe remains after uninstall"
+            throw "Alfred executable remains after uninstall"
           }
