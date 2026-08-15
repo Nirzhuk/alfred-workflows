@@ -21,6 +21,7 @@ import {
   type AgentProviderId,
   type AgentStepStats,
   type AgentUsageSnapshot,
+  type AppTriggerStatus,
   type OutputMemory,
   type RunEvent,
   type RunLogLine,
@@ -235,6 +236,7 @@ type WorkflowStore = {
   /** Saved schedules for labels across the entire workflow sidebar. */
   workflowSchedules: ScheduleListItem[];
   triggers: Trigger[];
+  appTriggerStatuses: AppTriggerStatus[];
   /** `http://127.0.0.1:<port>` for webhook triggers; null if the listener is down. */
   webhookBaseUrl: string | null;
   selectedNodeId: string | null;
@@ -386,6 +388,7 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
   schedule: null,
   workflowSchedules: [],
   triggers: [],
+  appTriggerStatuses: [],
   webhookBaseUrl: null,
   selectedNodeId: null,
   dirty: false,
@@ -572,16 +575,17 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
 
   loadTriggers: async (workflowId) => {
     try {
-      const [triggers, baseUrl] = await Promise.all([
+      const [triggers, baseUrl, appTriggerStatuses] = await Promise.all([
         api.listWorkflowTriggers(workflowId),
         // Cheap, and the port can change between launches when 8787 is taken.
         api.webhookBaseUrl(),
+        api.listAppTriggerStatuses(workflowId),
       ]);
       if (get().activeWorkflowId === workflowId) {
-        set({ triggers, webhookBaseUrl: baseUrl });
+        set({ triggers, webhookBaseUrl: baseUrl, appTriggerStatuses });
       }
     } catch (e) {
-      set({ triggers: [], error: String(e) });
+      set({ triggers: [], appTriggerStatuses: [], error: String(e) });
     }
   },
 
@@ -596,6 +600,12 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
         ].sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
         loading: false,
       }));
+      if (input.source === "app") {
+        const appTriggerStatuses = await api.listAppTriggerStatuses(
+          input.workflowId,
+        );
+        set({ appTriggerStatuses });
+      }
       return trigger;
     } catch (e) {
       set({ loading: false, error: String(e) });
@@ -606,7 +616,12 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
   removeTrigger: async (id) => {
     try {
       await api.deleteWorkflowTrigger(id);
-      set((state) => ({ triggers: state.triggers.filter((t) => t.id !== id) }));
+      set((state) => ({
+        triggers: state.triggers.filter((t) => t.id !== id),
+        appTriggerStatuses: state.appTriggerStatuses.filter(
+          (status) => status.triggerId !== id,
+        ),
+      }));
     } catch (e) {
       set({ error: String(e) });
     }
@@ -644,6 +659,7 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
       selectedNodeId: null,
       schedule: null,
       triggers: [],
+      appTriggerStatuses: [],
     });
     try {
       const workflow = await api.getWorkflow(id);

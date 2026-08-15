@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { ConfirmDialog } from "../../components/confirm-dialog";
+import { SlackPrivateConnect } from "./slack-private-connect";
 import { useIntegrationsStore } from "./store";
 import type {
   AppConnection,
@@ -37,6 +38,7 @@ export function ConnectedAppsSettings() {
   const [pending, setPending] = useState<PendingDisconnect | null>(null);
   const [metadataCleanup, setMetadataCleanup] =
     useState<AppConnection | null>(null);
+  const [slackConnectOpen, setSlackConnectOpen] = useState(false);
 
   useEffect(() => {
     void load();
@@ -141,6 +143,9 @@ export function ConnectedAppsSettings() {
                     ? `Connect ${provider.name}`
                     : "Authorization arrives in the provider plan"
                 }
+                onClick={() => {
+                  if (provider.id === "slack") setSlackConnectOpen(true);
+                }}
               >
                 {provider.connectAvailable ? "Connect" : "Coming next"}
               </button>
@@ -169,10 +174,17 @@ export function ConnectedAppsSettings() {
                       <button
                         type="button"
                         className="ghost integration-action"
-                        disabled
-                        title="Provider management arrives with authorization"
+                        disabled={provider.id !== "slack"}
+                        title={
+                          provider.id === "slack"
+                            ? "Reconnect or add Socket Mode capabilities"
+                            : "Provider management arrives with authorization"
+                        }
+                        onClick={() => {
+                          if (provider.id === "slack") setSlackConnectOpen(true);
+                        }}
                       >
-                        Manage
+                        {provider.id === "slack" ? "Reconnect" : "Manage"}
                       </button>
                       <button
                         type="button"
@@ -223,6 +235,10 @@ export function ConnectedAppsSettings() {
           onCancel={() => setMetadataCleanup(null)}
           onConfirm={() => void confirmMetadataCleanup()}
         />
+      ) : null}
+
+      {slackConnectOpen ? (
+        <SlackPrivateConnect onClose={() => setSlackConnectOpen(false)} />
       ) : null}
     </section>
   );

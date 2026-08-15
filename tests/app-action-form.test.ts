@@ -78,6 +78,23 @@ function api(
     getUsage: async () => ({ workflows: [], schedules: [], triggers: [] }),
     disconnect: async () => {},
     listActionDescriptors: async () => [descriptor],
+    listEventDescriptors: async () => [],
+    listEventResources: async () => ({ items: [], nextPageToken: null }),
+    connectSlackPrivate: async () => ({
+      id: "connection",
+      providerId: "slack",
+      displayName: "Workspace",
+      externalAccountId: null,
+      externalTenantId: null,
+      connectionMode: "private_bot",
+      scopes: [],
+      status: "connected",
+      expiresAt: null,
+      lastCheckedAt: null,
+      lastErrorCode: null,
+      createdAt: "now",
+      updatedAt: "now",
+    }),
     listActionResources,
   };
 }

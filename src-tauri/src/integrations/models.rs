@@ -1,6 +1,7 @@
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::collections::BTreeMap;
 use std::fmt;
 use std::str::FromStr;
 
@@ -56,6 +57,9 @@ pub struct AppConnection {
     pub connection_mode: String,
     pub identity_key: String,
     pub scopes: Vec<String>,
+    /// Provider-owned, non-secret routing metadata. This never crosses the
+    /// frontend command boundary; credentials belong in `CredentialEnvelope`.
+    pub provider_metadata: BTreeMap<String, String>,
     pub status: ConnectionStatus,
     pub expires_at: Option<String>,
     pub last_checked_at: Option<String>,
@@ -74,6 +78,7 @@ pub struct UpsertAppConnection {
     pub connection_mode: String,
     pub identity_key: String,
     pub scopes: Vec<String>,
+    pub provider_metadata: BTreeMap<String, String>,
     pub expires_at: Option<String>,
     pub credential_ref: String,
 }
@@ -218,6 +223,7 @@ mod tests {
             connection_mode: "native_oauth".into(),
             identity_key: "identity-fixture-that-must-not-leak".into(),
             scopes: vec!["channels:read".into()],
+            provider_metadata: BTreeMap::new(),
             status: ConnectionStatus::Connected,
             expires_at: None,
             last_checked_at: None,

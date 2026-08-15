@@ -45,6 +45,9 @@ function api(overrides: Partial<IntegrationsApi> = {}): IntegrationsApi {
     disconnect: async () => {},
     listActionDescriptors: async () => [],
     listActionResources: async () => ({ items: [], nextPageToken: null }),
+    listEventDescriptors: async () => [],
+    listEventResources: async () => ({ items: [], nextPageToken: null }),
+    connectSlackPrivate: async () => connection(),
     ...overrides,
   };
 }
@@ -137,5 +140,36 @@ describe("Connected Apps store", () => {
     );
     expect(error.code).toBe("integration_failed");
     expect(error.message).not.toContain("access-secret-fixture");
+  });
+
+  test("submits a Slack secret without retaining it in store state", async () => {
+    let submittedToken = "";
+    const store = createStore(
+      createIntegrationsState(
+        api({
+          connectSlackPrivate: async (input) => {
+            submittedToken = input.botToken;
+            return {
+              ...connection(),
+              connectionMode: "private_bot",
+              scopes: ["chat:write", "channels:read"],
+            };
+          },
+        }),
+      ),
+    );
+
+    expect(
+      await store.getState().connectSlackPrivate({
+        mode: "bot",
+        botToken: "xoxb-secret-fixture",
+        appToken: null,
+        webhookUrl: null,
+        enablePrivateChannels: false,
+        enableMentions: false,
+      }),
+    ).toBeNull();
+    expect(submittedToken).toBe("xoxb-secret-fixture");
+    expect(JSON.stringify(store.getState())).not.toContain("xoxb-secret-fixture");
   });
 });

@@ -309,7 +309,11 @@ export function WorkflowCanvas() {
       setMemoriesFocusId(detail?.memoryId ?? null);
       setMemoriesOpen(true);
     };
-    const openSettings = () => {
+    const openSettings = (event: Event) => {
+      const section = (
+        event as CustomEvent<{ section?: SettingsSectionId }>
+      ).detail?.section;
+      if (section) setSettingsSection(section);
       setView("settings");
       setMemoriesOpen(false);
     };

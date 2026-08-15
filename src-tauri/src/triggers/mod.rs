@@ -9,6 +9,7 @@
 //! There is deliberately no `TriggerSource` trait — two implementations don't
 //! justify one; extract it if a third arrives.
 
+pub mod app;
 pub mod file;
 pub mod http;
 
@@ -16,7 +17,7 @@ use crate::db::{Db, Trigger};
 use crate::runner::{start_run, RunTrigger};
 use serde_json::Value;
 use std::sync::Mutex;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
 /// Live watcher handles + the bound HTTP port. Held in Tauri state so file
 /// watchers can be rebuilt when triggers change.
@@ -75,5 +76,12 @@ pub fn fire(app: &AppHandle, db: &Db, trigger: &Trigger, payload: Value) -> Resu
 /// (Re)bind file watchers to the current enabled triggers. The HTTP listener
 /// needs no reload — it resolves triggers from the DB per request.
 pub fn reload(app: &AppHandle) -> Result<usize, String> {
-    file::reload_watchers(app)
+    let watchers = file::reload_watchers(app)?;
+    if let Some(runtime) = app.try_state::<app::AppEventRuntime>() {
+        runtime.reload();
+    }
+    if let Some(integrations) = app.try_state::<crate::integrations::IntegrationsState>() {
+        integrations.events.reset();
+    }
+    Ok(watchers)
 }

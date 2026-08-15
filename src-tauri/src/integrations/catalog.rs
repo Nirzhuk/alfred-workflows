@@ -14,67 +14,82 @@ impl Default for ProviderCatalog {
                     "Slack",
                     "Messages and channel activity",
                     &["native_oauth", "private_bot"],
+                    true,
                 ),
                 provider(
                     "microsoft",
                     "Microsoft 365",
                     "Outlook mail and calendar",
                     &["native_oauth"],
+                    false,
                 ),
                 provider(
                     "gmail",
                     "Gmail",
                     "Mail search, reading, and sending",
                     &["native_oauth"],
+                    false,
                 ),
                 provider(
                     "github",
                     "GitHub",
                     "Repositories, issues, and pull requests",
                     &["native_oauth"],
+                    false,
                 ),
                 provider(
                     "linear",
                     "Linear",
                     "Issues and project updates",
                     &["native_oauth"],
+                    false,
                 ),
                 provider(
                     "sentry",
                     "Sentry",
                     "Errors, projects, and releases",
                     &["native_oauth"],
+                    false,
                 ),
                 provider(
                     "notion",
                     "Notion",
                     "Pages and workspace knowledge",
                     &["native_oauth"],
+                    false,
                 ),
                 provider(
                     "google_drive",
                     "Google Drive",
                     "Files and document context",
                     &["native_oauth"],
+                    false,
                 ),
                 provider(
                     "sharepoint",
                     "SharePoint",
                     "Sites, files, and organization knowledge",
                     &["native_oauth"],
+                    false,
                 ),
             ],
         }
     }
 }
 
-fn provider(id: &str, name: &str, summary: &str, modes: &[&str]) -> AppProviderDto {
+fn provider(
+    id: &str,
+    name: &str,
+    summary: &str,
+    modes: &[&str],
+    connect_available: bool,
+) -> AppProviderDto {
     AppProviderDto {
         id: id.into(),
         name: name.into(),
         capability_summary: summary.into(),
         connection_modes: modes.iter().map(|mode| (*mode).to_owned()).collect(),
-        connect_available: false,
+        connect_available,
     }
 }
 

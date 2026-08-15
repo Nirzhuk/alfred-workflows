@@ -2694,6 +2694,28 @@ button:disabled {
   line-height: 1.4;
 }
 
+.link-button {
+  appearance: none;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-weight: var(--font-weight-semibold);
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+  cursor: pointer;
+}
+
+.app-trigger-health {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.app-trigger-health p {
+  margin: 0;
+}
+
 .app-action-validation {
   margin: 0;
   padding: 0.6rem 0.75rem 0.6rem 1.75rem;

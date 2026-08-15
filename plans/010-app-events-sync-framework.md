@@ -20,6 +20,9 @@
 - **Depends on**: Plan 008
 - **Category**: architecture / data handling
 - **Planned at**: 2026-08-11; reconciled at `36835c9`, 2026-08-13
+- **Implementation status**: IN PROGRESS — generic descriptors, normalization,
+  durable receipts/queue, runtime, UI, documentation, and automated gates pass;
+  extended lifecycle coverage and the manual app-close/restart smoke remain
 
 ## Why this matters
 

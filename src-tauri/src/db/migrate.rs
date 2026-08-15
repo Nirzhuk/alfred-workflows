@@ -81,6 +81,7 @@ pub fn apply_migrations(conn: &Connection) -> Result<(), DbError> {
            connection_mode TEXT NOT NULL,
            identity_key TEXT NOT NULL,
            scopes_json TEXT NOT NULL DEFAULT '[]',
+           provider_metadata_json TEXT NOT NULL DEFAULT '{}',
            status TEXT NOT NULL DEFAULT 'connected' CHECK (status IN ('connected', 'expired', 'error', 'revoked')),
            expires_at TEXT,
            last_checked_at TEXT,
@@ -93,6 +94,49 @@ pub fn apply_migrations(conn: &Connection) -> Result<(), DbError> {
            ON app_connections(provider_id, connection_mode, identity_key);
          CREATE INDEX IF NOT EXISTS idx_app_connections_provider_id
            ON app_connections(provider_id);",
+    )?;
+    ensure_column(
+        conn,
+        "app_connections",
+        "provider_metadata_json",
+        "TEXT NOT NULL DEFAULT '{}'",
+    )?;
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS app_trigger_state (
+           trigger_id TEXT PRIMARY KEY NOT NULL REFERENCES triggers(id) ON DELETE CASCADE,
+           cursor TEXT,
+           subscription_id TEXT,
+           expires_at TEXT,
+           last_polled_at TEXT,
+           last_success_at TEXT,
+           last_error_code TEXT,
+           next_attempt_at TEXT,
+           retry_count INTEGER NOT NULL DEFAULT 0,
+           overrun_count INTEGER NOT NULL DEFAULT 0,
+           updated_at TEXT NOT NULL
+         );
+         CREATE TABLE IF NOT EXISTS app_event_receipts (
+           trigger_id TEXT NOT NULL REFERENCES triggers(id) ON DELETE CASCADE,
+           external_event_id TEXT NOT NULL,
+           received_at TEXT NOT NULL,
+           disposition TEXT NOT NULL CHECK (disposition IN ('queued', 'enqueued', 'dropped_overrun', 'rejected_invalid')),
+           run_id TEXT,
+           reason_code TEXT,
+           PRIMARY KEY (trigger_id, external_event_id)
+         );
+         CREATE TABLE IF NOT EXISTS app_event_queue (
+           id TEXT PRIMARY KEY NOT NULL,
+           trigger_id TEXT NOT NULL REFERENCES triggers(id) ON DELETE CASCADE,
+           external_event_id TEXT NOT NULL,
+           normalized_event_json TEXT NOT NULL,
+           enqueued_at TEXT NOT NULL,
+           started_at TEXT,
+           UNIQUE (trigger_id, external_event_id)
+         );
+         CREATE INDEX IF NOT EXISTS idx_app_event_queue_trigger
+           ON app_event_queue(trigger_id, enqueued_at);
+         CREATE INDEX IF NOT EXISTS idx_app_event_receipts_received
+           ON app_event_receipts(received_at);",
     )?;
 
     Ok(())
@@ -237,5 +281,18 @@ mod tests {
         apply_migrations(&conn).expect("upgrade fixture");
 
         assert!(columns(&conn, "app_connections").contains(&"identity_key".to_owned()));
+        assert!(columns(&conn, "app_connections").contains(&"provider_metadata_json".to_owned()));
+    }
+
+    #[test]
+    fn initializes_app_event_delivery_tables() {
+        let conn = Connection::open_in_memory().expect("open database");
+        conn.execute_batch(include_str!("schema.sql"))
+            .expect("initialize schema");
+        apply_migrations(&conn).expect("apply migrations");
+
+        assert!(columns(&conn, "app_trigger_state").contains(&"cursor".to_owned()));
+        assert!(columns(&conn, "app_event_receipts").contains(&"disposition".to_owned()));
+        assert!(columns(&conn, "app_event_queue").contains(&"normalized_event_json".to_owned()));
     }
 }

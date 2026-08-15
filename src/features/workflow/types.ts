@@ -529,7 +529,7 @@ export type ScheduleListItem = Schedule & {
   workflowName: string;
 };
 
-export type TriggerSource = "file" | "webhook";
+export type TriggerSource = "file" | "webhook" | "app";
 
 /** A file trigger's `config`. `pattern` empty means any file. */
 export type FileTriggerConfig = {
@@ -538,13 +538,34 @@ export type FileTriggerConfig = {
   debounceMs?: number;
 };
 
+export type AppTriggerConfig = {
+  providerId: string;
+  eventType: string;
+  connectionId: string;
+  filters: Record<string, unknown>;
+  descriptorVersion: number;
+};
+
+export type AppTriggerStatus = {
+  triggerId: string;
+  cursorPresent: boolean;
+  subscriptionActive: boolean;
+  expiresAt: string | null;
+  lastPolledAt: string | null;
+  lastSuccessAt: string | null;
+  lastErrorCode: string | null;
+  nextAttemptAt: string | null;
+  overrunCount: number;
+  pendingCount: number;
+};
+
 /** Event trigger — a workflow can have many, unlike schedules. */
 export type Trigger = {
   id: string;
   workflowId: string;
   source: TriggerSource;
   label: string;
-  config: FileTriggerConfig | Record<string, unknown>;
+  config: FileTriggerConfig | AppTriggerConfig | Record<string, unknown>;
   /** Bearer token for `webhook` triggers. */
   secret: string | null;
   enabled: boolean;

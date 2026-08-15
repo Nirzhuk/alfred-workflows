@@ -128,6 +128,7 @@ pub enum ActionErrorCode {
     OutputTooLarge,
     OutputInvalid,
     TimedOut,
+    DeliveryUnknown,
     Cancelled,
 }
 
@@ -144,6 +145,7 @@ impl ActionErrorCode {
             Self::OutputTooLarge => "output_too_large",
             Self::OutputInvalid => "output_invalid",
             Self::TimedOut => "timed_out",
+            Self::DeliveryUnknown => "delivery_unknown",
             Self::Cancelled => "cancelled",
         }
     }
@@ -220,6 +222,9 @@ fn safe_message(code: ActionErrorCode) -> &'static str {
         ActionErrorCode::OutputTooLarge => "The provider result exceeds the safe output limit.",
         ActionErrorCode::OutputInvalid => "The provider returned an invalid result.",
         ActionErrorCode::TimedOut => "The app action timed out.",
+        ActionErrorCode::DeliveryUnknown => {
+            "Slack may have accepted this message, but delivery could not be confirmed."
+        }
         ActionErrorCode::Cancelled => "The app action was cancelled.",
     }
 }
@@ -292,7 +297,10 @@ impl fmt::Debug for TokenAccessCapability {
 }
 
 impl TokenAccessCapability {
-    async fn load(store: Arc<dyn TokenStore>, credential_ref: String) -> Result<Self, ActionError> {
+    pub(crate) async fn load(
+        store: Arc<dyn TokenStore>,
+        credential_ref: String,
+    ) -> Result<Self, ActionError> {
         let credential = tauri::async_runtime::spawn_blocking(move || store.get(&credential_ref))
             .await
             .map_err(|_| ActionError::new(ActionErrorCode::ProviderUnavailable))?
@@ -315,7 +323,7 @@ impl TokenAccessCapability {
         Ok(use_credential(&credential))
     }
 
-    fn contains_secret(&self, serialized: &str) -> bool {
+    pub(crate) fn contains_secret(&self, serialized: &str) -> bool {
         let Ok(credential) = self.credential.lock() else {
             return true;
         };
@@ -1105,6 +1113,7 @@ mod tests {
                 connection_mode: "native_oauth".into(),
                 identity_key: canonical_identity_key("slack", "native_oauth", &["workspace"]),
                 scopes: vec!["chat:write".into()],
+                provider_metadata: BTreeMap::new(),
                 expires_at: None,
                 credential_ref: "credential".into(),
             })
@@ -1314,6 +1323,7 @@ mod tests {
                 connection_mode: "native_oauth".into(),
                 identity_key: canonical_identity_key("gmail", "native_oauth", &["mailbox"]),
                 scopes: vec!["chat:write".into()],
+                provider_metadata: BTreeMap::new(),
                 expires_at: None,
                 credential_ref: "gmail-credential".into(),
             })

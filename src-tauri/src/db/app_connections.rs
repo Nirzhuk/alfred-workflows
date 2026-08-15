@@ -6,12 +6,13 @@ use crate::integrations::models::{
 use chrono::Utc;
 use rusqlite::{params, OptionalExtension};
 use serde_json::Value;
+use std::collections::BTreeMap;
 use std::str::FromStr;
 use uuid::Uuid;
 
 const COLUMNS: &str = "id, provider_id, display_name, external_account_id, \
-external_tenant_id, connection_mode, identity_key, scopes_json, status, expires_at, \
-last_checked_at, last_error_code, credential_ref, created_at, updated_at";
+external_tenant_id, connection_mode, identity_key, scopes_json, provider_metadata_json, \
+status, expires_at, last_checked_at, last_error_code, credential_ref, created_at, updated_at";
 
 fn now() -> String {
     Utc::now().to_rfc3339()
@@ -19,16 +20,23 @@ fn now() -> String {
 
 fn map_connection(row: &rusqlite::Row<'_>) -> rusqlite::Result<AppConnection> {
     let scopes_json: String = row.get(7)?;
-    let status: String = row.get(8)?;
+    let provider_metadata_json: String = row.get(8)?;
+    let status: String = row.get(9)?;
     let scopes = serde_json::from_str(&scopes_json).map_err(|error| {
         rusqlite::Error::FromSqlConversionFailure(7, rusqlite::types::Type::Text, Box::new(error))
     })?;
     let status = ConnectionStatus::from_str(&status).map_err(|error| {
         rusqlite::Error::FromSqlConversionFailure(
-            8,
+            9,
             rusqlite::types::Type::Text,
             Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, error)),
         )
+    })?;
+    let provider_metadata = serde_json::from_str::<BTreeMap<String, String>>(
+        &provider_metadata_json,
+    )
+    .map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(8, rusqlite::types::Type::Text, Box::new(error))
     })?;
     Ok(AppConnection {
         id: row.get(0)?,
@@ -39,13 +47,14 @@ fn map_connection(row: &rusqlite::Row<'_>) -> rusqlite::Result<AppConnection> {
         connection_mode: row.get(5)?,
         identity_key: row.get(6)?,
         scopes,
+        provider_metadata,
         status,
-        expires_at: row.get(9)?,
-        last_checked_at: row.get(10)?,
-        last_error_code: row.get(11)?,
-        credential_ref: row.get(12)?,
-        created_at: row.get(13)?,
-        updated_at: row.get(14)?,
+        expires_at: row.get(10)?,
+        last_checked_at: row.get(11)?,
+        last_error_code: row.get(12)?,
+        credential_ref: row.get(13)?,
+        created_at: row.get(14)?,
+        updated_at: row.get(15)?,
     })
 }
 
@@ -95,6 +104,8 @@ impl Db {
         input.scopes.dedup();
         let scopes_json = serde_json::to_string(&input.scopes)
             .map_err(|error| DbError::Other(error.to_string()))?;
+        let provider_metadata_json = serde_json::to_string(&input.provider_metadata)
+            .map_err(|error| DbError::Other(error.to_string()))?;
         let updated_at = now();
 
         let id = self.with_conn(|conn| {
@@ -111,15 +122,17 @@ impl Db {
                 conn.execute(
                     "UPDATE app_connections SET
                        display_name = ?1, external_account_id = ?2, external_tenant_id = ?3,
-                       scopes_json = ?4, status = 'connected', expires_at = ?5,
-                       last_checked_at = ?6, last_error_code = NULL,
-                       updated_at = ?6
-                     WHERE id = ?7",
+                       scopes_json = ?4, provider_metadata_json = ?5,
+                       status = 'connected', expires_at = ?6,
+                       last_checked_at = ?7, last_error_code = NULL,
+                       updated_at = ?7
+                     WHERE id = ?8",
                     params![
                         input.display_name,
                         input.external_account_id,
                         input.external_tenant_id,
                         scopes_json,
+                        provider_metadata_json,
                         input.expires_at,
                         updated_at,
                         id
@@ -132,9 +145,9 @@ impl Db {
             conn.execute(
                 "INSERT INTO app_connections (
                    id, provider_id, display_name, external_account_id, external_tenant_id,
-                   connection_mode, identity_key, scopes_json, status, expires_at,
-                   last_checked_at, credential_ref, created_at, updated_at
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'connected', ?9, ?10, ?11, ?10, ?10)",
+                   connection_mode, identity_key, scopes_json, provider_metadata_json,
+                   status, expires_at, last_checked_at, credential_ref, created_at, updated_at
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'connected', ?10, ?11, ?12, ?11, ?11)",
                 params![
                     id,
                     input.provider_id,
@@ -144,6 +157,7 @@ impl Db {
                     input.connection_mode,
                     input.identity_key,
                     scopes_json,
+                    provider_metadata_json,
                     input.expires_at,
                     updated_at,
                     input.credential_ref
@@ -154,6 +168,26 @@ impl Db {
 
         self.get_app_connection(&id)?
             .ok_or_else(|| DbError::Other("failed to load saved app connection".into()))
+    }
+
+    pub fn get_app_connection_by_identity(
+        &self,
+        provider_id: &str,
+        connection_mode: &str,
+        identity_key: &str,
+    ) -> Result<Option<AppConnection>, DbError> {
+        self.with_conn(|conn| {
+            Ok(conn
+                .query_row(
+                    &format!(
+                        "SELECT {COLUMNS} FROM app_connections
+                         WHERE provider_id = ?1 AND connection_mode = ?2 AND identity_key = ?3"
+                    ),
+                    params![provider_id, connection_mode, identity_key],
+                    map_connection,
+                )
+                .optional()?)
+        })
     }
 
     pub fn set_app_connection_refresh_state(
@@ -315,6 +349,7 @@ mod tests {
             connection_mode: mode.into(),
             identity_key: canonical_identity_key("slack", mode, &parts),
             scopes: vec!["write".into(), "read".into(), "read".into()],
+            provider_metadata: BTreeMap::new(),
             expires_at: None,
             credential_ref: credential_ref.into(),
         }

@@ -157,9 +157,9 @@ improvement drafts were merged into these canonical files and the duplicate
 |------|-------|----------|--------|------------|--------|
 | 008 | Build the secure Connected Apps foundation | P0 | L | — | IN PROGRESS (OS smoke pending) |
 | 009 | Add a descriptor-driven app action framework | P0 | L | 008 | IN PROGRESS (packaged smoke pending) |
-| 010 | Add app events, polling, and subscription lifecycle | P0 | XL | 008 (009 recommended) | TODO |
-| 011 | Specify and build the optional cloud relay | P1 / Copilot P0 | XL | 008; 010 for events | TODO |
-| 012 | Add the Slack connected app | P0 | L–XL | 008, 009; 010 events; 011 public bot OAuth | TODO |
+| 010 | Add app events, polling, and subscription lifecycle | P0 | XL | 008 (009 recommended) | IN PROGRESS (framework green; lifecycle smoke pending) |
+| 011 | Specify and build the optional cloud relay | P1 / Copilot P0 | XL | 008; 010 for events | BLOCKED (ADR approvals pending) |
+| 012 | Add the Slack connected app | P0 | L–XL | 008, 009; 010 events; 011 public bot OAuth | IN PROGRESS (private bot actions green; events/PKCE/public pending) |
 | 013 | Add Outlook Mail and Calendar through Microsoft Graph | P0 | XL | 008, 009; 010 events; 011 webhooks | TODO |
 | 014 | Add Gmail with staged, least-privilege access | P0–P1 | L–XL | 008, 009; 010 events; 011 push | TODO |
 | 015 | Add GitHub, Linear, and Sentry in priority order | P1–P2 | XL | 008, 009; 010 events; 011 public modes | TODO |

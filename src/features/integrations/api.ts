@@ -2,9 +2,12 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   ActionDescriptor,
   ActionResourcePage,
+  AppEventDescriptor,
+  AppEventResourcePage,
   AppConnection,
   AppConnectionUsage,
   AppProvider,
+  SlackPrivateConnectionInput,
 } from "./types";
 
 export type IntegrationsApi = {
@@ -22,6 +25,18 @@ export type IntegrationsApi = {
     query: string;
     pageToken?: string | null;
   }) => Promise<ActionResourcePage>;
+  listEventDescriptors: (providerId?: string) => Promise<AppEventDescriptor[]>;
+  listEventResources: (input: {
+    connectionId: string;
+    providerId: string;
+    eventType: string;
+    fieldKey: string;
+    query: string;
+    pageToken?: string | null;
+  }) => Promise<AppEventResourcePage>;
+  connectSlackPrivate: (
+    input: SlackPrivateConnectionInput,
+  ) => Promise<AppConnection>;
 };
 
 export const integrationsApi: IntegrationsApi = {
@@ -38,4 +53,13 @@ export const integrationsApi: IntegrationsApi = {
       ...input,
       pageToken: input.pageToken ?? null,
     }),
+  listEventDescriptors: (providerId) =>
+    invoke("list_app_event_descriptors", { providerId: providerId ?? null }),
+  listEventResources: (input) =>
+    invoke("list_app_event_resources", {
+      ...input,
+      pageToken: input.pageToken ?? null,
+    }),
+  connectSlackPrivate: (input) =>
+    invoke("connect_slack_private", { input }),
 };

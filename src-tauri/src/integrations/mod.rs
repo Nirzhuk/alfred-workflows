@@ -1,8 +1,10 @@
 pub mod actions;
 pub mod catalog;
+pub mod events;
 pub mod models;
 pub mod oauth_native;
 pub mod refresh;
+pub mod slack;
 pub mod token_store;
 
 use self::actions::ActionRegistry;
@@ -10,6 +12,9 @@ use self::actions::{
     ActionCancellation, ActionDescriptor, ActionRequest, ActionResourcePage, ActionResult,
 };
 use self::catalog::ProviderCatalog;
+use self::events::{
+    AppEventCancellation, AppEventRegistry, AppEventResourcePage, AppTriggerConfig, SyncReport,
+};
 use self::models::IntegrationCommandError;
 use self::refresh::RefreshService;
 use self::token_store::{OsTokenStore, TokenStore, TokenStoreError};
@@ -19,6 +24,7 @@ use std::sync::Arc;
 pub struct IntegrationsState {
     pub actions: ActionRegistry,
     pub catalog: ProviderCatalog,
+    pub events: AppEventRegistry,
     pub refresh: RefreshService,
     token_store: Arc<dyn TokenStore>,
 }
@@ -31,12 +37,16 @@ impl Default for IntegrationsState {
 
 impl IntegrationsState {
     pub fn new(token_store: Arc<dyn TokenStore>) -> Self {
-        Self {
+        let state = Self {
             actions: ActionRegistry::default(),
             catalog: ProviderCatalog::default(),
+            events: AppEventRegistry::default(),
             refresh: RefreshService::new(token_store.clone()),
             token_store,
-        }
+        };
+        slack::register(&state.actions, &state.events)
+            .expect("Slack action and event descriptors must be valid");
+        state
     }
 
     pub fn action_descriptors(&self, provider_id: Option<&str>) -> Vec<ActionDescriptor> {
@@ -56,6 +66,50 @@ impl IntegrationsState {
                 self.token_store.clone(),
                 request,
                 cancellation,
+            )
+            .await
+    }
+
+    pub async fn sync_app_trigger(
+        &self,
+        db: &Db,
+        trigger: &crate::db::Trigger,
+        cancellation: AppEventCancellation,
+    ) -> Result<SyncReport, events::AppEventError> {
+        self.events
+            .sync_trigger_cancellable(db, self.token_store.clone(), trigger, cancellation)
+            .await
+    }
+
+    pub fn validate_app_trigger(
+        &self,
+        db: &Db,
+        config: &AppTriggerConfig,
+    ) -> Result<(), events::AppEventError> {
+        self.events.validate_trigger(db, config)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn list_app_event_resources(
+        &self,
+        db: &Db,
+        connection_id: &str,
+        provider_id: &str,
+        event_type: &str,
+        field_key: &str,
+        query: &str,
+        page_token: Option<&str>,
+    ) -> Result<AppEventResourcePage, events::AppEventError> {
+        self.events
+            .list_resources(
+                db,
+                self.token_store.clone(),
+                connection_id,
+                provider_id,
+                event_type,
+                field_key,
+                query,
+                page_token,
             )
             .await
     }
@@ -108,6 +162,7 @@ impl IntegrationsState {
             .ok_or_else(IntegrationCommandError::not_found)?;
         db.mark_app_connection_revoked(connection_id)
             .map_err(|_| database_error())?;
+        self.events.reset();
 
         if !metadata_only {
             let store = self.token_store.clone();
@@ -129,6 +184,14 @@ impl IntegrationsState {
 
         db.delete_app_connection_metadata(connection_id)
             .map_err(|_| database_error())
+    }
+
+    pub async fn connect_slack_private(
+        &self,
+        db: &Db,
+        input: slack::SlackPrivateConnectionInput,
+    ) -> Result<models::AppConnectionDto, IntegrationCommandError> {
+        slack::connect_private(db, self.token_store.clone(), input).await
     }
 }
 
@@ -180,6 +243,7 @@ mod tests {
                 connection_mode: "native_oauth".into(),
                 identity_key: canonical_identity_key("slack", "native_oauth", &["workspace"]),
                 scopes: vec![],
+                provider_metadata: std::collections::BTreeMap::new(),
                 expires_at: None,
                 credential_ref: "credential".into(),
             })
@@ -216,6 +280,7 @@ mod tests {
                 connection_mode: "native_oauth".into(),
                 identity_key: canonical_identity_key("slack", "native_oauth", &["workspace"]),
                 scopes: vec![],
+                provider_metadata: std::collections::BTreeMap::new(),
                 expires_at: None,
                 credential_ref: "missing".into(),
             })

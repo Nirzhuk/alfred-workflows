@@ -6,6 +6,10 @@ use crate::db::{
     ScheduleListItem, Trigger, UpdateMemoryInput, UpdateWorkflowInput, UpsertTriggerInput,
     Workflow, WorkflowFolder,
 };
+use crate::integrations::events::{
+    AppTriggerConfig, NormalizedAppEvent, NORMALIZED_APP_EVENT_SCHEMA_VERSION,
+};
+use crate::integrations::IntegrationsState;
 use crate::runner::{self, RunSummary, RunTrigger};
 use crate::scheduler;
 use crate::skills::{self, SkillRef};
@@ -192,13 +196,30 @@ pub fn list_workflow_triggers(
     db.list_triggers(&workflow_id).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+pub fn list_app_trigger_statuses(
+    db: State<'_, Db>,
+    workflow_id: String,
+) -> Result<Vec<crate::db::AppTriggerStatus>, String> {
+    db.list_app_trigger_statuses(&workflow_id)
+        .map_err(|error| error.to_string())
+}
+
 /// Create or update a trigger, then rebind the file watchers.
 #[tauri::command]
 pub fn upsert_workflow_trigger(
     app: AppHandle,
     db: State<'_, Db>,
+    integrations: State<'_, IntegrationsState>,
     input: UpsertTriggerInput,
 ) -> Result<Trigger, String> {
+    if input.source == "app" && input.enabled {
+        let config: AppTriggerConfig =
+            serde_json::from_value(input.config.clone()).map_err(|_| "invalid_input".to_owned())?;
+        integrations
+            .validate_app_trigger(db.inner(), &config)
+            .map_err(|error| error.code.as_str().to_owned())?;
+    }
     let trigger = db.upsert_trigger(input).map_err(|e| e.to_string())?;
     triggers::reload(&app)?;
     Ok(trigger)
@@ -229,6 +250,7 @@ pub fn webhook_base_url(runtime: State<'_, TriggerRuntime>) -> Option<String> {
 pub fn test_workflow_trigger(
     app: AppHandle,
     db: State<'_, Db>,
+    integrations: State<'_, IntegrationsState>,
     id: String,
 ) -> Result<String, String> {
     let trigger = db
@@ -236,11 +258,33 @@ pub fn test_workflow_trigger(
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("trigger not found: {id}"))?;
 
-    let payload = serde_json::json!({
-        "source": trigger.source,
-        "triggerId": trigger.id,
-        "test": true,
-    });
+    let payload = if trigger.source == "app" {
+        let config: AppTriggerConfig = serde_json::from_value(trigger.config.clone())
+            .map_err(|_| "invalid_input".to_owned())?;
+        integrations
+            .validate_app_trigger(db.inner(), &config)
+            .map_err(|error| error.code.as_str().to_owned())?;
+        serde_json::to_value(NormalizedAppEvent {
+            schema_version: NORMALIZED_APP_EVENT_SCHEMA_VERSION,
+            provider_id: config.provider_id,
+            event_type: config.event_type,
+            connection_id: config.connection_id,
+            external_event_id: format!("test-{}", uuid::Uuid::new_v4()),
+            occurred_at: chrono::Utc::now().to_rfc3339(),
+            subject: Some("Test connected-app event".into()),
+            actor: None,
+            resource_url: None,
+            preview: Some("This is a locally generated test event.".into()),
+            attributes: std::collections::BTreeMap::new(),
+        })
+        .map_err(|_| "event_invalid".to_owned())?
+    } else {
+        serde_json::json!({
+            "source": trigger.source,
+            "triggerId": trigger.id,
+            "test": true,
+        })
+    };
     triggers::fire(&app, &db, &trigger, payload)
 }
 

@@ -119,6 +119,7 @@ CREATE TABLE IF NOT EXISTS app_connections (
   connection_mode TEXT NOT NULL,
   identity_key TEXT NOT NULL,
   scopes_json TEXT NOT NULL DEFAULT '[]',
+  provider_metadata_json TEXT NOT NULL DEFAULT '{}',
   status TEXT NOT NULL DEFAULT 'connected' CHECK (status IN ('connected', 'expired', 'error', 'revoked')),
   expires_at TEXT,
   last_checked_at TEXT,
@@ -126,6 +127,42 @@ CREATE TABLE IF NOT EXISTS app_connections (
   credential_ref TEXT NOT NULL UNIQUE,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
+);
+
+-- Provider-neutral app event delivery. Normalized payloads are bounded and
+-- minimized before entering this queue; provider bodies and headers never do.
+CREATE TABLE IF NOT EXISTS app_trigger_state (
+  trigger_id TEXT PRIMARY KEY NOT NULL REFERENCES triggers(id) ON DELETE CASCADE,
+  cursor TEXT,
+  subscription_id TEXT,
+  expires_at TEXT,
+  last_polled_at TEXT,
+  last_success_at TEXT,
+  last_error_code TEXT,
+  next_attempt_at TEXT,
+  retry_count INTEGER NOT NULL DEFAULT 0,
+  overrun_count INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS app_event_receipts (
+  trigger_id TEXT NOT NULL REFERENCES triggers(id) ON DELETE CASCADE,
+  external_event_id TEXT NOT NULL,
+  received_at TEXT NOT NULL,
+  disposition TEXT NOT NULL CHECK (disposition IN ('queued', 'enqueued', 'dropped_overrun', 'rejected_invalid')),
+  run_id TEXT,
+  reason_code TEXT,
+  PRIMARY KEY (trigger_id, external_event_id)
+);
+
+CREATE TABLE IF NOT EXISTS app_event_queue (
+  id TEXT PRIMARY KEY NOT NULL,
+  trigger_id TEXT NOT NULL REFERENCES triggers(id) ON DELETE CASCADE,
+  external_event_id TEXT NOT NULL,
+  normalized_event_json TEXT NOT NULL,
+  enqueued_at TEXT NOT NULL,
+  started_at TEXT,
+  UNIQUE (trigger_id, external_event_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_runs_workflow_id ON runs(workflow_id);
@@ -141,3 +178,5 @@ CREATE INDEX IF NOT EXISTS idx_memory_links_memory_id ON memory_links(memory_id)
 CREATE UNIQUE INDEX IF NOT EXISTS idx_app_connections_identity
   ON app_connections(provider_id, connection_mode, identity_key);
 CREATE INDEX IF NOT EXISTS idx_app_connections_provider_id ON app_connections(provider_id);
+CREATE INDEX IF NOT EXISTS idx_app_event_queue_trigger ON app_event_queue(trigger_id, enqueued_at);
+CREATE INDEX IF NOT EXISTS idx_app_event_receipts_received ON app_event_receipts(received_at);

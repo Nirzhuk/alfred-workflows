@@ -93,3 +93,40 @@ export type ActionResourcePage = {
   items: ActionResourceItem[];
   nextPageToken: string | null;
 };
+
+export type AppEventDeliveryMode = "polling" | "socket" | "subscription";
+
+export type AppEventDescriptor = {
+  providerId: string;
+  eventType: string;
+  label: string;
+  description: string;
+  requiredScopes: string[];
+  deliveryModes: AppEventDeliveryMode[];
+  filterFields: ActionFieldDescriptor[];
+  fetchesResourceContent: boolean;
+  descriptorVersion: number;
+  externalEventIdRequired: boolean;
+  allowedAttributeKeys: string[];
+  pollIntervalSeconds: number;
+  pendingCap: number;
+};
+
+export type AppEventResourceItem = {
+  id: string;
+  label: string;
+};
+
+export type AppEventResourcePage = {
+  items: AppEventResourceItem[];
+  nextPageToken: string | null;
+};
+
+export type SlackPrivateConnectionInput = {
+  mode: "bot" | "incoming_webhook";
+  botToken: string;
+  appToken?: string | null;
+  webhookUrl?: string | null;
+  enablePrivateChannels: boolean;
+  enableMentions: boolean;
+};
