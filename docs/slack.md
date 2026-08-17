@@ -1,21 +1,27 @@
 # Slack connected app
 
-Alfred currently supports an advanced, local-only Slack connection for actions.
-It is not the public Alfred bot and it does not receive events while Alfred is
-closed.
+Alfred currently supports an advanced, local-only Slack connection for actions
+and `app_mention` triggers over Socket Mode. It is not the public Alfred bot,
+and mention triggers run only while Alfred is open (including tray mode).
 
 ## Private workspace setup
 
 1. Create a Slack app in the workspace you control.
 2. Add the bot scopes `chat:write` and `channels:read`.
 3. Add `groups:read` only if private-channel selectors are needed.
-4. Install or reinstall the app after changing scopes.
-5. Copy the `xoxb-` bot token into **Settings → Connected Apps → Slack**.
+4. To receive mentions, also add `app_mentions:read`, subscribe to the
+   `app_mention` bot event, and enable Socket Mode.
+5. Generate an app-level token with `connections:write` for Socket Mode.
+6. Install or reinstall the app after changing bot scopes.
+7. Enter the `xoxb-` bot token and, for mentions, the `xapp-` app-level token in
+   **Settings → Connected Apps → Slack**.
 
-The token is submitted directly to Rust, validated with Slack `auth.test`, and
-stored in the operating-system credential store. It is cleared from the React
-form after every attempt. SQLite retains only the workspace/bot identity,
-connection mode, and granted scopes.
+The tokens are submitted directly to Rust. Alfred validates the bot token with
+Slack `auth.test` and validates the app-level token by requesting a temporary
+Socket Mode URL. Both are stored in one operating-system credential entry and
+cleared from the React form after every attempt. SQLite retains only workspace,
+enterprise (when present), and bot identity metadata, connection mode, and
+granted capabilities.
 
 The connection provides two generic app actions:
 
@@ -28,12 +34,22 @@ channel ID, message timestamp, and permalink when Slack provides one. Alfred
 does not accept arbitrary Block Kit JSON, read message history, or automatically
 retry a send whose delivery became ambiguous.
 
+It also registers **Connected app → Slack → App mention**. An optional channel
+filter is available. Alfred maintains one WebSocket per Slack installation,
+acknowledges envelopes before processing them, reconnects when Slack refreshes
+the URL, and fans each accepted event into Plan 010's per-trigger durable
+receipt queue.
+
+Only the event ID, workspace/channel/user IDs, message and thread timestamps,
+an optional permalink, and a bounded text preview enter workflow data. Blocks,
+attachments, headers, wrapper tokens, and raw event bodies do not. Edited,
+unsupported-subtype, and bot-authored mention events are acknowledged but
+ignored to prevent loops.
+
 ## Capabilities not enabled yet
 
 - Native Slack PKCE would send actions as the signed-in user, not as a bot. The
   product decision in `docs/adr/012-slack-connection-modes.md` remains pending.
-- Local `app_mention` requires Socket Mode, an `xapp-` token, and a shared
-  connection lifecycle. It is not exposed by the current UI.
 - Public branded bot installation, HTTP Events API, token rotation, and offline
   delivery remain blocked on approval and implementation of ADR 011.
 - Incoming Webhook URLs are validated syntactically by the backend but are not
@@ -42,7 +58,8 @@ retry a send whose delivery became ambiguous.
 ## Data and revocation
 
 Slack message text is sent to Slack at action execution time and remains subject
-to normal local workflow/run history. Tokens and raw Slack responses are not
+to normal local workflow/run history. A bounded mention preview is stored as
+untrusted workflow-event data. Tokens and raw Slack responses/events are not
 written to workflow JSON or run output.
 
 Disconnect the connection in Connected Apps to delete its credential and local
@@ -50,4 +67,3 @@ metadata. To revoke it independently, remove the private app from Slack's app
 management UI; then remove the stale Alfred connection locally.
 
 Recheck Slack scopes, method rate limits, and token policy before every release.
-

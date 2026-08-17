@@ -17,6 +17,13 @@ impl Default for ProviderCatalog {
                     true,
                 ),
                 provider(
+                    "telegram",
+                    "Telegram",
+                    "Send plain-text notifications to your paired private chat",
+                    &["private_bot"],
+                    true,
+                ),
+                provider(
                     "microsoft",
                     "Microsoft 365",
                     "Outlook mail and calendar",
@@ -34,8 +41,8 @@ impl Default for ProviderCatalog {
                     "github",
                     "GitHub",
                     "Repositories, issues, and pull requests",
-                    &["native_oauth"],
-                    false,
+                    &["github_app_device"],
+                    super::github::is_configured(),
                 ),
                 provider(
                     "linear",
@@ -54,9 +61,9 @@ impl Default for ProviderCatalog {
                 provider(
                     "notion",
                     "Notion",
-                    "Pages and workspace knowledge",
-                    &["native_oauth"],
-                    false,
+                    "Selected pages and data sources, fetched on demand",
+                    &["private_bot", "native_oauth"],
+                    true,
                 ),
                 provider(
                     "google_drive",

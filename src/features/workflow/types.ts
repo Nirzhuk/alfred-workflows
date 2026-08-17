@@ -1,4 +1,5 @@
 import type { Edge, Node } from "@xyflow/react";
+import { detectDesktopPlatform } from "../../platform";
 
 export type AgentProviderId =
   | "claude_code"
@@ -25,6 +26,52 @@ export type InputAttachment = {
   kind: "file" | "folder";
 };
 
+/**
+ * Where a script's text comes from. Shared by the Script node and the Input
+ * node's "use this script" option.
+ */
+export type ScriptRef = {
+  source: "file" | "inline";
+  /** File mode. Absolute, or relative to the workflow working directory. */
+  path: string;
+  /** Inline mode. On macOS/Linux a leading `#!` line is honored. */
+  body: string;
+  /** `bash`, `python3`, `node`, `pwsh`, … Ignored when a shebang applies. */
+  interpreter: string;
+};
+
+export const DEFAULT_SCRIPT_MESSAGE = "Use this script for this task:";
+
+/** `pwsh` on Windows — there is no shebang there. */
+export function defaultInterpreter(): string {
+  return detectDesktopPlatform() === "windows" ? "pwsh" : "bash";
+}
+
+/**
+ * Input-node option: tell the agent about a script, and optionally run it
+ * first. A non-zero exit here never fails the run — the output is handed to
+ * the agent instead.
+ */
+export type InputScript = ScriptRef & {
+  /** Editable sentence placed above the path or body in the prompt. */
+  message: string;
+  /** Run it before the agent and append `## Script output`. */
+  run: boolean;
+};
+
+export function defaultInputScript(
+  source: ScriptRef["source"] = "file",
+): InputScript {
+  return {
+    source,
+    path: "",
+    body: "",
+    interpreter: defaultInterpreter(),
+    message: DEFAULT_SCRIPT_MESSAGE,
+    run: false,
+  };
+}
+
 /** Input node (legacy graphs may still use type `"prompt"`). */
 export type PromptNodeData = {
   label: string;
@@ -33,6 +80,8 @@ export type PromptNodeData = {
   blocked?: boolean;
   /** Paths the agent should consider (files and/or folders). */
   attachments?: InputAttachment[];
+  /** Absent on legacy graphs and whenever the user picks "None". */
+  script?: InputScript;
 };
 
 export type AgentNodeData = {
@@ -206,6 +255,30 @@ export function defaultShellNodeData(label = "Shell"): ShellNodeData {
   return { kind: "shell", label, command: "", appendOutput: true };
 }
 
+/**
+ * Run a script and pass its stdout downstream. Supersedes `shell` in the
+ * palette. Upstream output arrives on stdin and in `$ALFRED_OUTPUT`; a
+ * non-zero exit fails the step.
+ */
+export type ScriptNodeData = ScriptRef & {
+  kind: "script";
+  label: string;
+  /** Append stdout/stderr into context_prompt after the run. */
+  appendOutput: boolean;
+};
+
+export function defaultScriptNodeData(label = "Script"): ScriptNodeData {
+  return {
+    kind: "script",
+    label,
+    source: "inline",
+    path: "",
+    body: "",
+    interpreter: defaultInterpreter(),
+    appendOutput: true,
+  };
+}
+
 /** HTTP request; response body is appended to context. */
 export type HttpNodeData = {
   kind: "http";
@@ -329,6 +402,7 @@ export type WorkflowNodeData =
   | FileInjectNodeData
   | GitStatusNodeData
   | ShellNodeData
+  | ScriptNodeData
   | HttpNodeData
   | NotifyNodeData
   | WriteFileNodeData
@@ -667,6 +741,12 @@ export function isShellNodeData(data: WorkflowNodeData): data is ShellNodeData {
   return hasKind(data, "shell");
 }
 
+export function isScriptNodeData(
+  data: WorkflowNodeData,
+): data is ScriptNodeData {
+  return hasKind(data, "script");
+}
+
 export function isHttpNodeData(data: WorkflowNodeData): data is HttpNodeData {
   return hasKind(data, "http");
 }
@@ -717,6 +797,8 @@ export function titleForNodeType(type: string | undefined): string {
       return "Git status";
     case "shell":
       return "Shell";
+    case "script":
+      return "Script";
     case "http":
       return "HTTP";
     case "notify":

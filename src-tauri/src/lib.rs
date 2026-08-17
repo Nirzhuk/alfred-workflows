@@ -238,6 +238,13 @@ pub fn run() {
             commands::integrations::get_app_connection_usage,
             commands::integrations::disconnect_app_connection,
             commands::integrations::connect_slack_private,
+            commands::integrations::prepare_github_connection,
+            commands::integrations::poll_github_connection,
+            commands::integrations::cancel_github_pairing,
+            commands::integrations::connect_notion_private,
+            commands::integrations::prepare_telegram_connection,
+            commands::integrations::complete_telegram_connection,
+            commands::integrations::cancel_telegram_pairing,
             commands::list_workflows,
             commands::get_workflow,
             commands::create_workflow,
@@ -286,6 +293,17 @@ pub fn run() {
             notifications::notify_run_finished_cmd,
             set_global_shortcut,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            // macOS dock-icon click while the window is hidden sends Reopen,
+            // not a fresh launch, so single-instance's re-show never fires.
+            if let tauri::RunEvent::Reopen { .. } = event {
+                if let Some(window) = app_handle.get_webview_window("main") {
+                    let _ = window.unminimize();
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            }
+        });
 }

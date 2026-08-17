@@ -2683,6 +2683,80 @@ button:disabled {
   font-size: 0.72rem;
 }
 
+.telegram-progress {
+  display: flex;
+  margin: 0 0 var(--space-1);
+  padding: 0;
+  list-style: none;
+}
+
+.telegram-progress-step {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  text-align: center;
+}
+
+.telegram-progress-step:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  top: calc(var(--icon-size-default) / 2);
+  left: 50%;
+  width: 100%;
+  height: 1px;
+  background: var(--line);
+}
+
+.telegram-progress-step.is-done:not(:last-child)::after {
+  background: var(--accent-border);
+}
+
+.telegram-progress-node {
+  position: relative;
+  z-index: var(--layer-content);
+  display: grid;
+  place-items: center;
+  width: var(--icon-size-default);
+  height: var(--icon-size-default);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 0.62rem;
+  font-weight: var(--font-weight-semibold);
+}
+
+.telegram-progress-node svg {
+  width: 10px;
+  height: 10px;
+}
+
+.telegram-progress-step.is-done .telegram-progress-node {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.telegram-progress-step.is-current .telegram-progress-node {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.telegram-progress-label {
+  color: var(--muted);
+  font-size: 0.66rem;
+  line-height: 1.2;
+}
+
+.telegram-progress-step.is-current .telegram-progress-label {
+  color: var(--ink);
+  font-weight: var(--font-weight-semibold);
+}
+
 .app-action-warning {
   margin: 0;
   padding: 0.65rem 0.75rem;
@@ -3882,6 +3956,65 @@ button.primary.danger-solid:hover:not(:disabled) {
 
 .schedule-actions button {
   min-width: 0;
+}
+
+.telegram-setup-steps {
+  margin: 0;
+  padding-left: 1.25rem;
+  color: var(--muted);
+  font-size: var(--text-sm);
+  line-height: 1.55;
+}
+
+.telegram-pairing-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface-soft);
+}
+
+.telegram-pairing-card p {
+  margin: 0;
+}
+
+.github-pairing-card {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface-soft);
+}
+
+.github-pairing-card p {
+  margin: 0;
+}
+
+.github-connection-notes {
+  margin: 0;
+  padding-inline-start: var(--space-5);
+  color: var(--text-secondary);
+}
+
+.github-device-code-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.github-device-code-row code {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  font-size: var(--text-lg);
+  letter-spacing: 0.08em;
+}
+
+.telegram-open-button {
+  align-self: flex-start;
 }
 
 .trigger-list {

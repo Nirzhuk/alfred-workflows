@@ -50,6 +50,7 @@ const descriptor: ActionDescriptor = {
   ],
   requiredScopes: ["chat:write"],
   outputSchemaVersion: 1,
+  outputIsUntrusted: false,
 };
 
 const connected: AppConnection = {
@@ -140,7 +141,12 @@ describe("app action configuration", () => {
       providerId: "slack",
       actionId: descriptor.actionId,
       connectionId: connected.id,
-      input: { channel: "C1", message: "Hi", futureField: 42 },
+      input: {
+        channel: "C1",
+        channel__display: "Engineering",
+        message: "Hi",
+        futureField: 42,
+      },
     };
     expect(unknownActionInputKeys(data, descriptor)).toEqual(["futureField"]);
     expect(validateAppActionForm(data, null)).toContain(

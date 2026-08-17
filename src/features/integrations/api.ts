@@ -7,7 +7,13 @@ import type {
   AppConnection,
   AppConnectionUsage,
   AppProvider,
+  GitHubDeviceAuthorization,
+  GitHubDevicePollResult,
+  NotionPrivateConnectionInput,
   SlackPrivateConnectionInput,
+  TelegramCompleteInput,
+  TelegramPairingPrepared,
+  TelegramPrepareInput,
 } from "./types";
 
 export type IntegrationsApi = {
@@ -37,6 +43,21 @@ export type IntegrationsApi = {
   connectSlackPrivate: (
     input: SlackPrivateConnectionInput,
   ) => Promise<AppConnection>;
+  prepareGithubConnection: () => Promise<GitHubDeviceAuthorization>;
+  pollGithubConnection: (
+    pairingSessionId: string,
+  ) => Promise<GitHubDevicePollResult>;
+  cancelGithubPairing: (pairingSessionId: string) => Promise<void>;
+  connectNotionPrivate: (
+    input: NotionPrivateConnectionInput,
+  ) => Promise<AppConnection>;
+  prepareTelegramConnection: (
+    input: TelegramPrepareInput,
+  ) => Promise<TelegramPairingPrepared>;
+  completeTelegramConnection: (
+    input: TelegramCompleteInput,
+  ) => Promise<AppConnection>;
+  cancelTelegramPairing: (pairingSessionId: string) => Promise<void>;
 };
 
 export const integrationsApi: IntegrationsApi = {
@@ -62,4 +83,17 @@ export const integrationsApi: IntegrationsApi = {
     }),
   connectSlackPrivate: (input) =>
     invoke("connect_slack_private", { input }),
+  prepareGithubConnection: () => invoke("prepare_github_connection"),
+  pollGithubConnection: (pairingSessionId) =>
+    invoke("poll_github_connection", { pairingSessionId }),
+  cancelGithubPairing: (pairingSessionId) =>
+    invoke("cancel_github_pairing", { pairingSessionId }),
+  connectNotionPrivate: (input) =>
+    invoke("connect_notion_private", { input }),
+  prepareTelegramConnection: (input) =>
+    invoke("prepare_telegram_connection", { input }),
+  completeTelegramConnection: (input) =>
+    invoke("complete_telegram_connection", { input }),
+  cancelTelegramPairing: (pairingSessionId) =>
+    invoke("cancel_telegram_pairing", { pairingSessionId }),
 };

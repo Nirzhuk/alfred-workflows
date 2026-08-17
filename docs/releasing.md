@@ -14,13 +14,36 @@ Distribution boundary:
 
 | Channel | Artifact | How users update |
 | --- | --- | --- |
-| Paid official download | Signed/notarized macOS `.dmg`, unsigned-beta Windows `.exe` (NSIS), supported Linux packages | Re-download, or the official updater once wired |
+| Desktop License | Official signed/notarized desktop installers for one named user | Authenticated download and Tauri updater through the Alfred gateway |
+| Company/Enterprise member seat | Same official desktop entitlement plus organization/hosted access | Authenticated member download and the same Tauri updater |
 | Public source repository | Source only | Pull/clone a newer version and rebuild |
 | Draft GitHub Release | Private staging for maintainers | Never user-facing; do not publish |
 
+Commercial products follow the same inclusion rule as Cap: every paid Company
+or Enterprise member seat includes the Desktop License. A standalone Desktop
+License is sold per named user with annual/lifetime options; Company is billed
+per active member with monthly/annual options. Prices and Stripe Price IDs are
+server-side catalog data.
+
+Under Alfred's current GPL-3.0-or-later license, these products control the
+official signed distribution, authenticated updates, hosted organization
+features, and support. They do not remove the GPL right to build or use the
+source commercially. Do not publish commercial-use restriction copy unless a
+separate dual-license/EULA and contributor-rights review is complete.
+
 A public Homebrew cask or public GitHub Release asset would expose the paid
-official binary without purchase, so neither is part of this model. A future
-authenticated distribution integration requires a separate reviewed design.
+official binary without purchase, so neither is part of this model. Plan 022
+defines the reviewed commercial entitlement/update gateway: Stripe is
+server-only, CrabNebula stores release assets/channels, and Alfred returns an
+authorized Tauri manifest plus a short-lived asset URL.
+
+The updater has two layers, by design:
+
+- Tauri's updater plugin runs in Alfred and verifies the signed artifact before
+  installing it.
+- The Alfred gateway authenticates the device entitlement and asks CrabNebula
+  for the matching channel/target asset. A license check does not replace
+  Tauri signature verification.
 
 ## Stage and deliver a release
 
@@ -39,10 +62,14 @@ authenticated distribution integration requires a separate reviewed design.
    commit. **Do not publish the draft.**
 6. Generate SHA-256 checksums, smoke-test the downloaded draft artifacts, and
    upload only the accepted files and checksums to the paid download service.
+   For updater-enabled releases, upload the signed updater archives to the
+   selected CrabNebula channel and publish only after the gateway smoke test.
 7. Publish or link the exact Corresponding Source for the release at no extra
    charge. Tag the exact source commit used by CI and place a prominent source
    link beside the paid binary download, as required for GPL binary distribution.
-8. Verify purchase, download authorization, update entitlement, and a clean
+8. Verify a standalone Desktop purchase and a Company member seat both receive
+   the correct download/update entitlement. Verify seat removal revokes new
+   hosted/update access without deleting local data, then complete a clean
    install through the customer-facing channel before announcing the release.
 9. Keep the GitHub draft private as a maintainer record, or delete it after the
    storefront upload according to the retention policy. Never convert it to a
@@ -102,9 +129,16 @@ bunx tauri signer generate -w ~/.tauri/alfred.key
 
 Embed the **public** key in `tauri.conf.json` when implementing the updater
 plugin (`plans/006-in-app-updater-dmg-exe.md`). The update manifest and download
-URLs must enforce the same paid-distribution boundary as the storefront. Until
-that authenticated updater exists, keep `uploadUpdaterJson: false` in the
-release workflow and require manual customer downloads.
+URLs must enforce the same paid-distribution boundary as the storefront. The
+production endpoint is the authenticated Alfred gateway backed by CrabNebula,
+not a public GitHub `latest.json`. Until Plans 022 and 006 are complete, keep
+`uploadUpdaterJson: false` in the release workflow and require manual customer
+downloads.
+
+The desktop sends a short-lived entitlement/update token in the updater request
+headers. The gateway returns `204` for no update, `200` with Tauri's dynamic
+manifest for an entitled device, and `401/403` for a missing or revoked
+entitlement. Stripe and CrabNebula API credentials never ship in Alfred.
 
 ## Local smoke build
 

@@ -20,6 +20,13 @@ provider-specific fields required for refresh. Alfred uses the service name
 Authorization codes, PKCE verifiers, OAuth state and nonce values exist only in
 memory for the lifetime of one authorization attempt.
 
+Provider setup and capability details:
+
+- [Slack](slack.md)
+- [GitHub](github.md)
+- [Telegram personal notifications](telegram.md)
+- [Notion and the knowledge-source boundary](knowledge-connectors.md)
+
 The provider-specific plans add authorization endpoints and API calls. The
 foundation does not embed confidential OAuth client secrets or provide a field
 for pasting OAuth tokens into the web interface.

@@ -48,6 +48,44 @@ function api(overrides: Partial<IntegrationsApi> = {}): IntegrationsApi {
     listEventDescriptors: async () => [],
     listEventResources: async () => ({ items: [], nextPageToken: null }),
     connectSlackPrivate: async () => connection(),
+    prepareGithubConnection: async () => ({
+      pairingSessionId: "github-pairing-session",
+      userCode: "ABCD-EFGH",
+      verificationUri: "https://github.com/login/device",
+      installationUrl: "https://github.com/apps/alfred/installations/new",
+      expiresAt: "2026-08-13T10:10:00Z",
+      intervalSeconds: 5,
+    }),
+    pollGithubConnection: async () => ({
+      status: "connected",
+      connection: {
+        ...connection("@octocat"),
+        providerId: "github",
+        connectionMode: "github_app_device",
+        scopes: ["metadata:read", "issues:write", "pull_requests:write"],
+      },
+    }),
+    cancelGithubPairing: async () => {},
+    connectNotionPrivate: async () => ({
+      ...connection("Product workspace"),
+      providerId: "notion",
+      connectionMode: "private_bot",
+      scopes: ["search", "read_content"],
+    }),
+    prepareTelegramConnection: async () => ({
+      pairingSessionId: "pairing-session",
+      botUsername: "alfred_fixture_bot",
+      pairingUrl:
+        "https://t.me/alfred_fixture_bot?start=pairing-nonce-fixture",
+      expiresAt: "2026-08-13T10:10:00Z",
+    }),
+    completeTelegramConnection: async () => ({
+      ...connection("Alfred Bot → private chat ••••1234"),
+      providerId: "telegram",
+      connectionMode: "private_bot",
+      scopes: [],
+    }),
+    cancelTelegramPairing: async () => {},
     ...overrides,
   };
 }
@@ -171,5 +209,127 @@ describe("Connected Apps store", () => {
     ).toBeNull();
     expect(submittedToken).toBe("xoxb-secret-fixture");
     expect(JSON.stringify(store.getState())).not.toContain("xoxb-secret-fixture");
+  });
+
+  test("submits a Notion token without retaining it in store state", async () => {
+    let submittedToken = "";
+    const store = createStore(
+      createIntegrationsState(
+        api({
+          connectNotionPrivate: async (input) => {
+            submittedToken = input.integrationToken;
+            return {
+              ...connection("Product workspace"),
+              providerId: "notion",
+              connectionMode: "private_bot",
+              scopes: ["search", "read_content"],
+            };
+          },
+        }),
+      ),
+    );
+
+    expect(
+      await store.getState().connectNotionPrivate({
+        integrationToken: "ntn_notion-token-secret-fixture",
+      }),
+    ).toBeNull();
+    expect(submittedToken).toBe("ntn_notion-token-secret-fixture");
+    expect(JSON.stringify(store.getState())).not.toContain(
+      "notion-token-secret-fixture",
+    );
+  });
+
+  test("keeps GitHub device authorization data ephemeral and stores only redacted metadata", async () => {
+    let polledSession = "";
+    const store = createStore(
+      createIntegrationsState(
+        api({
+          pollGithubConnection: async (pairingSessionId) => {
+            polledSession = pairingSessionId;
+            return {
+              status: "connected",
+              connection: {
+                ...connection("@octocat"),
+                providerId: "github",
+                connectionMode: "github_app_device",
+                scopes: ["metadata:read", "issues:write"],
+              },
+            };
+          },
+        }),
+      ),
+    );
+
+    const pairing = await store.getState().prepareGithubConnection();
+    expect(pairing?.verificationUri).toBe("https://github.com/login/device");
+    expect(JSON.stringify(store.getState())).not.toContain("ABCD-EFGH");
+    const result = await store
+      .getState()
+      .pollGithubConnection(pairing!.pairingSessionId);
+    expect(result?.status).toBe("connected");
+    expect(polledSession).toBe("github-pairing-session");
+    expect(store.getState().connections).toEqual([
+      expect.objectContaining({
+        providerId: "github",
+        displayName: "@octocat",
+      }),
+    ]);
+  });
+
+  test("does not retain the Telegram token or pairing nonce in store state", async () => {
+    let submittedToken = "";
+    let completedSession = "";
+    const store = createStore(
+      createIntegrationsState(
+        api({
+          prepareTelegramConnection: async (input) => {
+            submittedToken = input.botToken;
+            return {
+              pairingSessionId: "pairing-session-fixture",
+              botUsername: "alfred_fixture_bot",
+              pairingUrl:
+                "https://t.me/alfred_fixture_bot?start=nonce-secret-fixture",
+              expiresAt: "2026-08-13T10:10:00Z",
+            };
+          },
+          completeTelegramConnection: async (input) => {
+            completedSession = input.pairingSessionId;
+            return {
+              ...connection("Alfred Bot → private chat ••••1234"),
+              providerId: "telegram",
+              connectionMode: "private_bot",
+              scopes: [],
+            };
+          },
+        }),
+      ),
+    );
+
+    const pairing = await store.getState().prepareTelegramConnection({
+      botToken: "123456:telegram-token-secret-fixture",
+    });
+    expect(submittedToken).toBe("123456:telegram-token-secret-fixture");
+    expect(pairing?.pairingSessionId).toBe("pairing-session-fixture");
+    expect(JSON.stringify(store.getState())).not.toContain(
+      "telegram-token-secret-fixture",
+    );
+    expect(JSON.stringify(store.getState())).not.toContain(
+      "nonce-secret-fixture",
+    );
+
+    expect(
+      await store.getState().completeTelegramConnection({
+        pairingSessionId: pairing!.pairingSessionId,
+        testMessage: "explicit test",
+      }),
+    ).toBeNull();
+    expect(completedSession).toBe("pairing-session-fixture");
+    expect(store.getState().connections).toEqual([
+      expect.objectContaining({
+        providerId: "telegram",
+        displayName: "Alfred Bot → private chat ••••1234",
+      }),
+    ]);
   });
 });

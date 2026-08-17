@@ -65,6 +65,9 @@ pub struct ActionDescriptor {
     pub fields: Vec<ActionFieldDescriptor>,
     pub required_scopes: Vec<String>,
     pub output_schema_version: u16,
+    /// Marks provider text that must enter downstream prompts as untrusted
+    /// external data rather than workflow instructions.
+    pub output_is_untrusted: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -223,7 +226,7 @@ fn safe_message(code: ActionErrorCode) -> &'static str {
         ActionErrorCode::OutputInvalid => "The provider returned an invalid result.",
         ActionErrorCode::TimedOut => "The app action timed out.",
         ActionErrorCode::DeliveryUnknown => {
-            "Slack may have accepted this message, but delivery could not be confirmed."
+            "The provider may have accepted this action. Check the target before retrying."
         }
         ActionErrorCode::Cancelled => "The app action was cancelled.",
     }
@@ -788,11 +791,15 @@ fn validate_request(
         .iter()
         .map(|field| (field.key.as_str(), field))
         .collect::<HashMap<_, _>>();
-    if request
-        .input
-        .keys()
-        .any(|key| !fields.contains_key(key.as_str()))
-    {
+    let display_snapshot_keys = descriptor
+        .fields
+        .iter()
+        .filter(|field| field.kind == ActionFieldKind::ResourceSelector)
+        .map(|field| format!("{}__display", field.key))
+        .collect::<HashSet<_>>();
+    if request.input.keys().any(|key| {
+        !fields.contains_key(key.as_str()) && !display_snapshot_keys.contains(key.as_str())
+    }) {
         return Err(ActionError::new(ActionErrorCode::InvalidInput));
     }
     let mut input = request.input;
@@ -806,6 +813,20 @@ fn validate_request(
         }
         if let Some(value) = input.get(&field.key) {
             validate_field_value(field, value)?;
+        }
+        if field.kind == ActionFieldKind::ResourceSelector {
+            if let Some(snapshot) = input.get(&format!("{}__display", field.key)) {
+                let valid = snapshot.as_str().is_some_and(|value| {
+                    !value.trim().is_empty()
+                        && value.len() <= 512
+                        && !value.chars().any(|character| {
+                            character.is_control() && !matches!(character, '\n' | '\t')
+                        })
+                });
+                if !valid {
+                    return Err(ActionError::new(ActionErrorCode::InvalidInput));
+                }
+            }
         }
     }
     Ok(ValidatedActionRequest {
@@ -965,6 +986,7 @@ mod tests {
             ],
             required_scopes: vec!["chat:write".into()],
             output_schema_version: 1,
+            output_is_untrusted: false,
         }
     }
 
@@ -1199,6 +1221,25 @@ mod tests {
         let mut wrong_type = request();
         wrong_type.input.insert("message".into(), Value::Bool(true));
         assert!(validate_request(wrong_type, &descriptor()).is_err());
+
+        let mut with_snapshot = request();
+        with_snapshot.input.insert(
+            "channel__display".into(),
+            Value::String("Engineering".into()),
+        );
+        assert_eq!(
+            validate_request(with_snapshot, &descriptor())
+                .expect("resource display snapshot")
+                .input["channel__display"],
+            Value::String("Engineering".into())
+        );
+
+        let mut unsafe_snapshot = request();
+        unsafe_snapshot.input.insert(
+            "channel__display".into(),
+            Value::String("bad\u{0000}label".into()),
+        );
+        assert!(validate_request(unsafe_snapshot, &descriptor()).is_err());
     }
 
     #[tokio::test]

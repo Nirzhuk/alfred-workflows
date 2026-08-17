@@ -7,8 +7,14 @@ import type {
   AppConnection,
   AppConnectionUsage,
   AppProvider,
+  GitHubDeviceAuthorization,
+  GitHubDevicePollResult,
   IntegrationError,
+  NotionPrivateConnectionInput,
   SlackPrivateConnectionInput,
+  TelegramCompleteInput,
+  TelegramPairingPrepared,
+  TelegramPrepareInput,
 } from "./types";
 
 const ERROR_MESSAGES: Record<string, string> = {
@@ -46,9 +52,52 @@ const ERROR_MESSAGES: Record<string, string> = {
     "Use a valid Slack app-level token with connections:write.",
   slack_app_token_unused:
     "Enable Socket Mode mentions before adding an app-level token.",
+  notion_token_invalid: "Use a valid Notion internal integration token.",
+  notion_identity_invalid:
+    "Notion did not return a valid workspace and integration identity.",
+  notion_connection_failed:
+    "Notion could not validate or securely save this internal integration.",
+  telegram_token_invalid: "Use a valid token from BotFather.",
+  telegram_identity_invalid:
+    "Telegram did not return a valid bot identity for this token.",
+  telegram_webhook_conflict:
+    "This bot already has a webhook. Create a fresh BotFather bot dedicated to Alfred.",
+  telegram_connection_exists:
+    "Disconnect the current Telegram bot before pairing another one.",
+  telegram_pairing_expired:
+    "This pairing session expired. Validate the bot token again.",
+  telegram_pairing_not_found:
+    "Press Start in the opened Telegram chat, then try finishing again.",
+  telegram_pairing_ambiguous:
+    "More than one pairing message matched. Start pairing again.",
+  telegram_private_chat_required:
+    "Pair Alfred from a private one-to-one Telegram chat.",
+  telegram_test_message_invalid:
+    "Enter a test message between 1 and 4,096 characters.",
+  telegram_test_failed:
+    "Telegram rejected the test notification. Make sure the bot chat is available.",
+  telegram_test_delivery_unknown:
+    "Telegram may have accepted the test, but Alfred could not confirm it. Start pairing again.",
+  telegram_connection_failed: "The Telegram credential could not be saved.",
+  github_not_configured:
+    "This Alfred build is not configured with the public GitHub App client ID.",
+  github_pairing_busy:
+    "Too many GitHub authorization attempts are active. Close another attempt and try again.",
+  github_pairing_failed: "The GitHub authorization attempt could not be updated.",
+  github_pairing_expired: "This GitHub authorization attempt expired. Start again.",
+  github_authorization_denied: "GitHub authorization was denied.",
+  github_authorization_expired: "GitHub rejected the authorization. Start again.",
+  github_invalid_response: "GitHub returned an invalid authorization response.",
+  github_identity_invalid: "GitHub did not return a valid user identity.",
+  github_installation_required:
+    "Install the Alfred GitHub App on at least one repository, then authorize again.",
+  github_permissions_missing:
+    "The GitHub App installation does not grant repository metadata access.",
+  github_unavailable: "GitHub is temporarily unavailable.",
+  github_connection_failed: "The GitHub credential could not be saved securely.",
   timed_out: "The provider request timed out.",
   delivery_unknown:
-    "The provider may have accepted this action, but delivery could not be confirmed.",
+    "The provider may have accepted this action. Check the target before retrying.",
   cancelled: "The app action was cancelled.",
 };
 
@@ -108,6 +157,21 @@ export type IntegrationsState = {
   connectSlackPrivate: (
     input: SlackPrivateConnectionInput,
   ) => Promise<IntegrationError | null>;
+  prepareGithubConnection: () => Promise<GitHubDeviceAuthorization | null>;
+  pollGithubConnection: (
+    pairingSessionId: string,
+  ) => Promise<GitHubDevicePollResult | null>;
+  cancelGithubPairing: (pairingSessionId: string) => Promise<void>;
+  connectNotionPrivate: (
+    input: NotionPrivateConnectionInput,
+  ) => Promise<IntegrationError | null>;
+  prepareTelegramConnection: (
+    input: TelegramPrepareInput,
+  ) => Promise<TelegramPairingPrepared | null>;
+  completeTelegramConnection: (
+    input: TelegramCompleteInput,
+  ) => Promise<IntegrationError | null>;
+  cancelTelegramPairing: (pairingSessionId: string) => Promise<void>;
   clearError: () => void;
 };
 
@@ -219,6 +283,114 @@ export function createIntegrationsState(
         const normalized = normalizeIntegrationError(error);
         set({ loading: false, error: normalized });
         return normalized;
+      }
+    },
+
+    prepareGithubConnection: async () => {
+      set({ loading: true, error: null });
+      try {
+        const pairing = await api.prepareGithubConnection();
+        set({ loading: false });
+        return pairing;
+      } catch (error) {
+        set({ loading: false, error: normalizeIntegrationError(error) });
+        return null;
+      }
+    },
+
+    pollGithubConnection: async (pairingSessionId) => {
+      set({ loading: true, error: null });
+      try {
+        const result = await api.pollGithubConnection(pairingSessionId);
+        if (result.status === "connected") {
+          const connected = redactConnectionPayload(result.connection);
+          set((state) => ({
+            connections: [
+              ...state.connections.filter((item) => item.id !== connected.id),
+              connected,
+            ],
+            loading: false,
+          }));
+          return { ...result, connection: connected };
+        }
+        set({ loading: false });
+        return result;
+      } catch (error) {
+        set({ loading: false, error: normalizeIntegrationError(error) });
+        return null;
+      }
+    },
+
+    cancelGithubPairing: async (pairingSessionId) => {
+      try {
+        await api.cancelGithubPairing(pairingSessionId);
+      } catch {
+        // Device sessions are process-local and expire automatically.
+      }
+    },
+
+    connectNotionPrivate: async (input) => {
+      set({ loading: true, error: null });
+      try {
+        const connected = redactConnectionPayload(
+          await api.connectNotionPrivate(input),
+        );
+        set((state) => ({
+          connections: [
+            ...state.connections.filter((item) => item.id !== connected.id),
+            connected,
+          ],
+          loading: false,
+        }));
+        return null;
+      } catch (error) {
+        const normalized = normalizeIntegrationError(error);
+        set({ loading: false, error: normalized });
+        return normalized;
+      }
+    },
+
+    prepareTelegramConnection: async (input) => {
+      set({ loading: true, error: null });
+      try {
+        const pairing = await api.prepareTelegramConnection(input);
+        set({ loading: false });
+        return pairing;
+      } catch (error) {
+        set({ loading: false, error: normalizeIntegrationError(error) });
+        return null;
+      }
+    },
+
+    completeTelegramConnection: async (input) => {
+      set({ loading: true, error: null });
+      try {
+        const connected = redactConnectionPayload(
+          await api.completeTelegramConnection(input),
+        );
+        set((state) => ({
+          connections: [
+            ...state.connections.filter(
+              (item) => item.providerId !== "telegram",
+            ),
+            connected,
+          ],
+          loading: false,
+        }));
+        return null;
+      } catch (error) {
+        const normalized = normalizeIntegrationError(error);
+        set({ loading: false, error: normalized });
+        return normalized;
+      }
+    },
+
+    cancelTelegramPairing: async (pairingSessionId) => {
+      try {
+        await api.cancelTelegramPairing(pairingSessionId);
+      } catch {
+        // Pairing sessions are process-local and expire automatically. Closing
+        // the modal must remain safe even if the backend is already gone.
       }
     },
 

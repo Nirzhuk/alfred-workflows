@@ -204,6 +204,7 @@ fn send_message_descriptor() -> ActionDescriptor {
         fields: vec![conversation_field(), text_field()],
         required_scopes: vec!["chat:write".into(), "channels:read".into()],
         output_schema_version: 1,
+        output_is_untrusted: false,
     }
 }
 
@@ -231,6 +232,7 @@ fn reply_descriptor() -> ActionDescriptor {
         ],
         required_scopes: vec!["chat:write".into(), "channels:read".into()],
         output_schema_version: 1,
+        output_is_untrusted: false,
     }
 }
 

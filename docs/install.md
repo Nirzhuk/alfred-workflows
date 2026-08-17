@@ -8,7 +8,8 @@ There are two supported ways to get it:
 
 | Option | Cost | Intended for |
 | --- | --- | --- |
-| Official installer | Paid | People who want a maintainer-built/tested download and the official update channel; current Windows builds are unsigned beta artifacts |
+| Desktop License | Paid per named user | People who want the maintainer-built/tested download and official update channel; annual/lifetime options are planned |
+| Company member seat | Paid per active member | Includes the Desktop entitlement plus organization/hosted features; current Windows builds are unsigned beta artifacts |
 | [Build from source](building-from-source.md) | Free | People comfortable installing Bun, Rust, and Tauri's platform prerequisites |
 
 No Alfred purchase is needed to compile or run your own source build. Agent
@@ -48,8 +49,9 @@ above works, then fully quit and reopen Alfred so it picks up an updated
 
 ## Install an official build
 
-Official installers will be delivered through Alfred's paid download
-channel when sales open. This public source repository does not publish the
+Official installers will be delivered to either a standalone Desktop License
+holder or an active Company/Enterprise member seat. Every paid member seat
+includes Desktop. This public source repository does not publish the
 maintainer-signed installers as public GitHub Release assets.
 
 Only treat a build as official when it comes from the purchase/download channel

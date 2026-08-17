@@ -53,7 +53,13 @@ export function unknownActionInputKeys(
   data: AppActionNodeData,
   descriptor: ActionDescriptor,
 ): string[] {
-  const known = new Set(descriptor.fields.map((field) => field.key));
+  const known = new Set(
+    descriptor.fields.flatMap((field) =>
+      field.kind === "resource_selector"
+        ? [field.key, `${field.key}__display`]
+        : [field.key],
+    ),
+  );
   return Object.keys(data.input).filter((key) => !known.has(key));
 }
 

@@ -1,6 +1,7 @@
 # ADR 012: Slack connection modes and default UX
 
-- **Status:** Proposed — native user-action decision pending
+- **Status:** Accepted for private bot actions and local Socket Mode;
+  native user-action decision pending
 - **Date:** 2026-08-13
 - **Related plans:** 008, 009, 010, 011, 012
 
@@ -37,11 +38,11 @@ Keep the public bot and HTTP Events API blocked until ADR 011 has named product,
 security, privacy/support, operations, budget, Entra, and CI/DNS approvals and
 the relay passes its production gates.
 
-Local `app_mention` remains a separate reviewable phase. It must use one Socket
-Mode connection per installation, acknowledge envelopes promptly, fan events to
-every matching enabled trigger, and preserve Plan 010's receipt-before-run and
-bounded-overrun behavior. It must not be approximated by multiple competing
-WebSockets or by polling Slack history.
+Local `app_mention` is approved and implemented as a separate phase. It uses one
+Socket Mode connection per installation, acknowledges envelopes before payload
+processing, fans events to every matching enabled trigger, and preserves Plan
+010's receipt-before-run and bounded-overrun behavior. It does not poll Slack
+history or create competing WebSockets per trigger.
 
 ## Consequences
 
@@ -57,6 +58,5 @@ WebSockets or by polling Slack history.
 | Decision | Owner | Result | Date |
 | --- | --- | --- | --- |
 | Native PKCE “Send as you” is an acceptable product mode | **TBD** | Pending | — |
-| Socket Mode local event UX and support boundary | **TBD** | Pending | — |
+| Socket Mode local event UX and support boundary | Product user | Approved | 2026-08-13 |
 | Public bot/relay | See ADR 011 | Blocked | — |
-

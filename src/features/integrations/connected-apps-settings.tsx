@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { ConfirmDialog } from "../../components/confirm-dialog";
+import { GitHubConnect } from "./github-connect";
+import { NotionPrivateConnect } from "./notion-private-connect";
 import { SlackPrivateConnect } from "./slack-private-connect";
+import { TelegramConnect } from "./telegram-connect";
 import { useIntegrationsStore } from "./store";
 import type {
   AppConnection,
@@ -39,6 +42,16 @@ export function ConnectedAppsSettings() {
   const [metadataCleanup, setMetadataCleanup] =
     useState<AppConnection | null>(null);
   const [slackConnectOpen, setSlackConnectOpen] = useState(false);
+  const [telegramConnectOpen, setTelegramConnectOpen] = useState(false);
+  const [notionConnectOpen, setNotionConnectOpen] = useState(false);
+  const [githubConnectOpen, setGithubConnectOpen] = useState(false);
+
+  const connectHandlers: Record<string, () => void> = {
+    slack: () => setSlackConnectOpen(true),
+    telegram: () => setTelegramConnectOpen(true),
+    notion: () => setNotionConnectOpen(true),
+    github: () => setGithubConnectOpen(true),
+  };
 
   useEffect(() => {
     void load();
@@ -137,15 +150,15 @@ export function ConnectedAppsSettings() {
               <button
                 type="button"
                 className="ghost integration-action"
-                disabled={!provider.connectAvailable}
+                disabled={
+                  !provider.connectAvailable || !connectHandlers[provider.id]
+                }
                 title={
                   provider.connectAvailable
                     ? `Connect ${provider.name}`
                     : "Authorization arrives in the provider plan"
                 }
-                onClick={() => {
-                  if (provider.id === "slack") setSlackConnectOpen(true);
-                }}
+                onClick={connectHandlers[provider.id]}
               >
                 {provider.connectAvailable ? "Connect" : "Coming next"}
               </button>
@@ -171,21 +184,18 @@ export function ConnectedAppsSettings() {
                       ) : null}
                     </div>
                     <div className="integration-actions">
-                      <button
-                        type="button"
-                        className="ghost integration-action"
-                        disabled={provider.id !== "slack"}
-                        title={
-                          provider.id === "slack"
-                            ? "Reconnect or add Socket Mode capabilities"
-                            : "Provider management arrives with authorization"
-                        }
-                        onClick={() => {
-                          if (provider.id === "slack") setSlackConnectOpen(true);
-                        }}
-                      >
-                        {provider.id === "slack" ? "Reconnect" : "Manage"}
-                      </button>
+                      {provider.id === "slack" ||
+                      provider.id === "notion" ||
+                      provider.id === "github" ? (
+                        <button
+                          type="button"
+                          className="ghost integration-action"
+                          title={`Reconnect ${provider.name}`}
+                          onClick={connectHandlers[provider.id]}
+                        >
+                          Reconnect
+                        </button>
+                      ) : null}
                       <button
                         type="button"
                         className="ghost danger integration-action"
@@ -218,7 +228,7 @@ export function ConnectedAppsSettings() {
       {pending ? (
         <ConfirmDialog
           title={`Disconnect ${connectionLabel(pending.connection)}?`}
-          message={dependencyMessage(pending.usage)}
+          message={disconnectMessage(pending)}
           confirmLabel="Disconnect"
           danger
           onCancel={() => setPending(null)}
@@ -239,6 +249,15 @@ export function ConnectedAppsSettings() {
 
       {slackConnectOpen ? (
         <SlackPrivateConnect onClose={() => setSlackConnectOpen(false)} />
+      ) : null}
+      {telegramConnectOpen ? (
+        <TelegramConnect onClose={() => setTelegramConnectOpen(false)} />
+      ) : null}
+      {notionConnectOpen ? (
+        <NotionPrivateConnect onClose={() => setNotionConnectOpen(false)} />
+      ) : null}
+      {githubConnectOpen ? (
+        <GitHubConnect onClose={() => setGithubConnectOpen(false)} />
       ) : null}
     </section>
   );
@@ -269,4 +288,10 @@ function dependencyMessage(usage: AppConnectionUsage): string {
   const remaining = allDependencies.length - visible.length;
   const suffix = remaining > 0 ? ` and ${remaining} more` : "";
   return `This connection is used by ${visible.join(", ")}${suffix}. Those automations may stop working. Alfred will revoke it locally before removing its system credential and metadata.`;
+}
+
+function disconnectMessage(pending: PendingDisconnect): string {
+  const dependencies = dependencyMessage(pending.usage);
+  if (pending.connection.providerId !== "telegram") return dependencies;
+  return `${dependencies} Alfred cannot revoke the BotFather token remotely. If the token should stop working, revoke or regenerate it with @BotFather after disconnecting.`;
 }

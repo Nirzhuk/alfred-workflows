@@ -82,6 +82,7 @@ export type ActionDescriptor = {
   fields: ActionFieldDescriptor[];
   requiredScopes: string[];
   outputSchemaVersion: number;
+  outputIsUntrusted: boolean;
 };
 
 export type ActionResourceItem = {
@@ -129,4 +130,37 @@ export type SlackPrivateConnectionInput = {
   webhookUrl?: string | null;
   enablePrivateChannels: boolean;
   enableMentions: boolean;
+};
+
+export type NotionPrivateConnectionInput = {
+  integrationToken: string;
+};
+
+export type GitHubDeviceAuthorization = {
+  pairingSessionId: string;
+  userCode: string;
+  verificationUri: string;
+  installationUrl: string | null;
+  expiresAt: string;
+  intervalSeconds: number;
+};
+
+export type GitHubDevicePollResult =
+  | { status: "pending"; retryAfterSeconds: number }
+  | { status: "connected"; connection: AppConnection };
+
+export type TelegramPrepareInput = {
+  botToken: string;
+};
+
+export type TelegramPairingPrepared = {
+  pairingSessionId: string;
+  botUsername: string;
+  pairingUrl: string;
+  expiresAt: string;
+};
+
+export type TelegramCompleteInput = {
+  pairingSessionId: string;
+  testMessage: string;
 };
