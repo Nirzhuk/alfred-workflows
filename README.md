@@ -6,13 +6,15 @@ Compose workflows as visual graphs: write prompts, route them through agents you
 
 > **Open source, paid official builds.** The complete source is available under
 > [GPL-3.0-or-later](LICENSE). You can inspect, modify, and compile it without
-> buying Alfred. Official maintainer-built downloads will be paid when the
-> sales channel launches; purchases will fund testing, signing, support, and
-> release engineering.
+> buying Alfred. Official maintainer-built downloads will be sold as a Desktop
+> License, while Company subscriptions are billed per active member and include
+> Desktop for every seat. Purchases fund testing, signing, hosted services,
+> support, and release engineering.
 
 | Get Alfred | Alfred fee | What you receive |
 | --- | --- | --- |
-| Official download | Paid | Maintainer-built and tested installer, code signing/notarization where available, and official release support |
+| Desktop License | Paid per named user | Maintainer-built/tested installer, authenticated updates, code signing/notarization where available, and official release support |
+| Company member seat | Paid per active member | Everything in Desktop plus organization and hosted collaboration features as they ship |
 | [Build from source](docs/building-from-source.md) | Free | A local build you compile yourself; it may be unsigned and has no official binary support |
 
 Subscriptions or usage fees charged by Claude, Cursor, OpenAI, or other agent
@@ -26,7 +28,7 @@ source builds, OS requirements, and agent CLI setup.
 
 Short version:
 
-1. Buy the official installer when the download channel launches, or
+1. Buy a Desktop License, use a Company member seat, or
    [compile Alfred from source](docs/building-from-source.md) for free.
 2. Install and sign in to at least one agent CLI you plan to use:
    - Claude Code → `claude`

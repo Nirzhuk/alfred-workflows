@@ -5,6 +5,7 @@ import type {
   AgentProviderId,
   AgentUsageSnapshot,
   ActiveRunInfo,
+  AppTriggerStatus,
   MemoryKind,
   MemorySource,
   OutputMemory,
@@ -153,6 +154,12 @@ export async function listWorkflowTriggers(
   workflowId: string,
 ): Promise<Trigger[]> {
   return invoke("list_workflow_triggers", { workflowId });
+}
+
+export async function listAppTriggerStatuses(
+  workflowId: string,
+): Promise<AppTriggerStatus[]> {
+  return invoke("list_app_trigger_statuses", { workflowId });
 }
 
 export async function upsertWorkflowTrigger(input: {

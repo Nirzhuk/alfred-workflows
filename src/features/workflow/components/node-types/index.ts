@@ -11,6 +11,7 @@ import {
   GitStatusNode,
   HttpNode,
   NotifyNode,
+  ScriptNode,
   ShellNode,
   TemplateNode,
   WriteFileNode,
@@ -28,7 +29,9 @@ export const nodeTypes: NodeTypes = {
   template: TemplateNode,
   fileInject: FileInjectNode,
   gitStatus: GitStatusNode,
+  /** Superseded by `script` in the palette; kept for existing graphs. */
   shell: ShellNode,
+  script: ScriptNode,
   http: HttpNode,
   notify: NotifyNode,
   writeFile: WriteFileNode,

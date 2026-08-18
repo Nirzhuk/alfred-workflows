@@ -79,6 +79,8 @@ pub struct CmdOutput {
     pub stdout: String,
     pub stderr: String,
     pub success: bool,
+    /// `None` when the process was killed by a signal or could not be waited on.
+    pub code: Option<i32>,
     pub duration_ms: u128,
 }
 
@@ -185,7 +187,7 @@ pub fn run_cmd(
     control: Option<&RunControl>,
     on_line: Option<&dyn Fn(&str)>,
 ) -> Result<CmdOutput, String> {
-    run_cmd_inner(bin, args, cwd, timeout, control, on_line, None)
+    run_cmd_inner(bin, args, cwd, timeout, control, on_line, None, &[])
 }
 
 /// Variant used by custom agents that accept their prompt over stdin.
@@ -206,9 +208,35 @@ pub fn run_cmd_with_stdin(
         control,
         on_line,
         Some(stdin_payload),
+        &[],
     )
 }
 
+/// Variant used by Script steps: a stdin payload plus explicit environment
+/// variables. Both carry upstream output without shell interpolation.
+pub fn run_cmd_with_stdin_env(
+    bin: &Path,
+    args: &[String],
+    cwd: Option<&Path>,
+    timeout: Duration,
+    control: Option<&RunControl>,
+    on_line: Option<&dyn Fn(&str)>,
+    stdin_payload: &str,
+    envs: &[(&str, String)],
+) -> Result<CmdOutput, String> {
+    run_cmd_inner(
+        bin,
+        args,
+        cwd,
+        timeout,
+        control,
+        on_line,
+        Some(stdin_payload),
+        envs,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
 fn run_cmd_inner(
     bin: &Path,
     args: &[String],
@@ -217,6 +245,7 @@ fn run_cmd_inner(
     control: Option<&RunControl>,
     on_line: Option<&dyn Fn(&str)>,
     stdin_payload: Option<&str>,
+    envs: &[(&str, String)],
 ) -> Result<CmdOutput, String> {
     let mut command = Command::new(bin);
     command
@@ -232,6 +261,9 @@ fn run_cmd_inner(
     }
     enrich_path(&mut command);
     configure_agent_environment(&mut command, bin);
+    for (key, value) in envs {
+        command.env(key, value);
+    }
 
     let mut child = command
         .spawn()
@@ -358,7 +390,7 @@ fn run_cmd_inner(
     let _ = t_out.join();
     let _ = t_err.join();
 
-    let status_ok = wait_child(control, &local_slot);
+    let (status_ok, exit_code) = wait_child(control, &local_slot);
 
     if let Some(error) = stdin_error {
         return Err(error);
@@ -381,6 +413,7 @@ fn run_cmd_inner(
         stdout,
         stderr,
         success: status_ok,
+        code: exit_code,
         duration_ms: start.elapsed().as_millis(),
     })
 }
@@ -433,23 +466,29 @@ fn child_exited(
     false
 }
 
+/// Returns `(succeeded, exit_code)`. The code is `None` when the child was
+/// signalled or could not be waited on.
 fn wait_child(
     control: Option<&RunControl>,
     local_slot: &Arc<Mutex<Option<std::process::Child>>>,
-) -> bool {
+) -> (bool, Option<i32>) {
+    fn finish(child: Option<std::process::Child>) -> (bool, Option<i32>) {
+        match child {
+            Some(mut child) => match child.wait() {
+                Ok(status) => (status.success(), status.code()),
+                Err(_) => (false, None),
+            },
+            None => (false, None),
+        }
+    }
+
     if let Some(ctrl) = control {
-        return match ctrl.take_child() {
-            Some(mut child) => child.wait().map(|s| s.success()).unwrap_or(false),
-            None => false,
-        };
+        return finish(ctrl.take_child());
     }
     if let Ok(mut slot) = local_slot.lock() {
-        return match slot.take() {
-            Some(mut child) => child.wait().map(|s| s.success()).unwrap_or(false),
-            None => false,
-        };
+        return finish(slot.take());
     }
-    false
+    (false, None)
 }
 
 pub fn cwd_from_request(working_directory: &Option<String>) -> Option<PathBuf> {

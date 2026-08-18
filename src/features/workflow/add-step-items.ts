@@ -7,7 +7,7 @@ import {
   defaultGitStatusNodeData,
   defaultHttpNodeData,
   defaultNotifyNodeData,
-  defaultShellNodeData,
+  defaultScriptNodeData,
   defaultTemplateNodeData,
   defaultWriteFileNodeData,
 } from "./types";
@@ -77,9 +77,9 @@ export const ADD_STEP_GROUPS: AddStepGroup[] = [
       },
       {
         kind: "step",
-        label: "Shell",
-        type: "shell",
-        data: defaultShellNodeData(),
+        label: "Script",
+        type: "script",
+        data: defaultScriptNodeData(),
       },
       {
         kind: "step",

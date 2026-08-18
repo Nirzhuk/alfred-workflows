@@ -14,67 +14,96 @@ impl Default for ProviderCatalog {
                     "Slack",
                     "Messages and channel activity",
                     &["native_oauth", "private_bot"],
+                    true,
+                ),
+                provider(
+                    "telegram",
+                    "Telegram",
+                    "Send plain-text notifications to your paired private chat",
+                    &["private_bot"],
+                    true,
                 ),
                 provider(
                     "microsoft",
                     "Microsoft 365",
                     "Outlook mail and calendar",
                     &["native_oauth"],
+                    false,
                 ),
                 provider(
                     "gmail",
                     "Gmail",
                     "Mail search, reading, and sending",
                     &["native_oauth"],
+                    false,
                 ),
                 provider(
                     "github",
                     "GitHub",
                     "Repositories, issues, and pull requests",
-                    &["native_oauth"],
+                    &["github_app_device"],
+                    super::github::is_configured(),
                 ),
                 provider(
                     "linear",
                     "Linear",
                     "Issues and project updates",
                     &["native_oauth"],
+                    false,
                 ),
                 provider(
                     "sentry",
                     "Sentry",
                     "Errors, projects, and releases",
                     &["native_oauth"],
+                    false,
                 ),
                 provider(
                     "notion",
                     "Notion",
-                    "Pages and workspace knowledge",
-                    &["native_oauth"],
+                    "Selected pages and data sources, fetched on demand",
+                    &["private_bot", "native_oauth"],
+                    true,
+                ),
+                provider(
+                    "obsidian",
+                    "Obsidian",
+                    "Markdown notes from one local vault, read on demand",
+                    &["local_vault"],
+                    true,
                 ),
                 provider(
                     "google_drive",
                     "Google Drive",
                     "Files and document context",
                     &["native_oauth"],
+                    false,
                 ),
                 provider(
                     "sharepoint",
                     "SharePoint",
                     "Sites, files, and organization knowledge",
                     &["native_oauth"],
+                    false,
                 ),
             ],
         }
     }
 }
 
-fn provider(id: &str, name: &str, summary: &str, modes: &[&str]) -> AppProviderDto {
+fn provider(
+    id: &str,
+    name: &str,
+    summary: &str,
+    modes: &[&str],
+    connect_available: bool,
+) -> AppProviderDto {
     AppProviderDto {
         id: id.into(),
         name: name.into(),
         capability_summary: summary.into(),
         connection_modes: modes.iter().map(|mode| (*mode).to_owned()).collect(),
-        connect_available: false,
+        connect_available,
     }
 }
 

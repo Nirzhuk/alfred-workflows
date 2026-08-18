@@ -17,6 +17,24 @@ function dirname(path: string) {
   return parts.join("/") || "/";
 }
 
+// Renders a "summary\n\n{json}" body as prose above the receipt, not one raw JSON dump.
+export function splitSummaryAndJson(
+  body: string,
+): { summary: string; json: string } | null {
+  const separator = body.indexOf("\n\n");
+  if (separator === -1) return null;
+  const summary = body.slice(0, separator).trim();
+  const json = body.slice(separator + 2).trim();
+  if (!summary || summary.includes("\n")) return null;
+  if (!json.startsWith("{") && !json.startsWith("[")) return null;
+  try {
+    JSON.parse(json);
+  } catch {
+    return null;
+  }
+  return { summary, json };
+}
+
 const STATUS_LABEL: Record<ChangedFileStatus, string> = {
   created: "New",
   modified: "Modified",
@@ -114,6 +132,7 @@ export function OutputModal() {
   if (!selectedOutput) return null;
 
   const htmlPreview = createHtmlReportPreview(selectedOutput.body);
+  const structured = htmlPreview ? null : splitSummaryAndJson(selectedOutput.body);
   const stats = selectedOutput.nodeId ? stepStats[selectedOutput.nodeId] : undefined;
   const statsLine = stats ? formatStatsWithSource(stats) : null;
   const filesChanged = stats?.filesChanged ?? [];
@@ -170,6 +189,11 @@ export function OutputModal() {
           referrerPolicy="no-referrer"
           srcDoc={htmlPreview}
         />
+      ) : structured ? (
+        <>
+          <p className="output-modal-summary">{structured.summary}</p>
+          <pre className="output-modal-body">{structured.json}</pre>
+        </>
       ) : (
         <pre className="output-modal-body">{selectedOutput.body}</pre>
       )}

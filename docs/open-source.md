@@ -17,16 +17,22 @@ official, maintainer-signed Alfred release.
 The AI agent tools that Alfred launches are separate products. Their
 providers may require their own subscriptions, accounts, or usage payments.
 
-## What the official purchase pays for
+## What the official products pay for
 
-The maintainers charge for official desktop downloads. A purchase pays for the
-release service around the source code:
+The maintainers sell a Desktop License per named user and a Company subscription
+per active member; every Company seat includes Desktop. These products pay for
+the release and hosted services around the source code:
 
 - maintainer-built and smoke-tested installers;
 - Apple notarization and platform code signing where available;
 - release checksums and, when shipped, an official update channel;
 - the convenience of installing without a local Rust/Tauri toolchain; and
 - continued maintenance and release engineering.
+
+Company/Enterprise seats may additionally fund organization workspaces,
+managed sharing/collaboration, hosted relays, administrative controls, and
+contracted support as those features ship. Prices and billing intervals come
+from the server-side Stripe catalog, not the desktop binary.
 
 Buying an official build does not reduce the rights granted by the GPL,
 including the right to redistribute it. Building from source does not include

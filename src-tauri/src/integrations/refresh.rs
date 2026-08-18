@@ -343,6 +343,7 @@ mod tests {
             connection_mode: "native_oauth".into(),
             identity_key: canonical_identity_key("slack", "native_oauth", &["account"]),
             scopes: vec![],
+            provider_metadata: std::collections::BTreeMap::new(),
             expires_at: None,
             credential_ref: credential_ref.into(),
         })

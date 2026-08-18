@@ -1,8 +1,15 @@
 pub mod actions;
 pub mod catalog;
+pub mod events;
+pub mod github;
+pub mod knowledge;
 pub mod models;
+pub mod notion;
 pub mod oauth_native;
+pub mod obsidian;
 pub mod refresh;
+pub mod slack;
+pub mod telegram;
 pub mod token_store;
 
 use self::actions::ActionRegistry;
@@ -10,6 +17,9 @@ use self::actions::{
     ActionCancellation, ActionDescriptor, ActionRequest, ActionResourcePage, ActionResult,
 };
 use self::catalog::ProviderCatalog;
+use self::events::{
+    AppEventCancellation, AppEventRegistry, AppEventResourcePage, AppTriggerConfig, SyncReport,
+};
 use self::models::IntegrationCommandError;
 use self::refresh::RefreshService;
 use self::token_store::{OsTokenStore, TokenStore, TokenStoreError};
@@ -19,7 +29,10 @@ use std::sync::Arc;
 pub struct IntegrationsState {
     pub actions: ActionRegistry,
     pub catalog: ProviderCatalog,
+    pub events: AppEventRegistry,
     pub refresh: RefreshService,
+    pub github: Arc<github::GitHubService>,
+    pub telegram: Arc<telegram::TelegramService>,
     token_store: Arc<dyn TokenStore>,
 }
 
@@ -31,12 +44,30 @@ impl Default for IntegrationsState {
 
 impl IntegrationsState {
     pub fn new(token_store: Arc<dyn TokenStore>) -> Self {
-        Self {
+        let github = Arc::new(github::GitHubService::default());
+        let telegram = Arc::new(telegram::TelegramService::default());
+        let state = Self {
             actions: ActionRegistry::default(),
             catalog: ProviderCatalog::default(),
+            events: AppEventRegistry::default(),
             refresh: RefreshService::new(token_store.clone()),
+            github: github.clone(),
+            telegram: telegram.clone(),
             token_store,
-        }
+        };
+        slack::register(&state.actions, &state.events)
+            .expect("Slack action and event descriptors must be valid");
+        github::register(&state.actions, &state.events, github.clone())
+            .expect("GitHub action and event descriptors must be valid");
+        state
+            .refresh
+            .register("github", github.refresh_handler())
+            .expect("GitHub refresh handler must be valid");
+        telegram::register(&state.actions, telegram)
+            .expect("Telegram action descriptor must be valid");
+        notion::register(&state.actions).expect("Notion action descriptors must be valid");
+        obsidian::register(&state.actions).expect("Obsidian action descriptors must be valid");
+        state
     }
 
     pub fn action_descriptors(&self, provider_id: Option<&str>) -> Vec<ActionDescriptor> {
@@ -56,6 +87,50 @@ impl IntegrationsState {
                 self.token_store.clone(),
                 request,
                 cancellation,
+            )
+            .await
+    }
+
+    pub async fn sync_app_trigger(
+        &self,
+        db: &Db,
+        trigger: &crate::db::Trigger,
+        cancellation: AppEventCancellation,
+    ) -> Result<SyncReport, events::AppEventError> {
+        self.events
+            .sync_trigger_cancellable(db, self.token_store.clone(), trigger, cancellation)
+            .await
+    }
+
+    pub fn validate_app_trigger(
+        &self,
+        db: &Db,
+        config: &AppTriggerConfig,
+    ) -> Result<(), events::AppEventError> {
+        self.events.validate_trigger(db, config)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn list_app_event_resources(
+        &self,
+        db: &Db,
+        connection_id: &str,
+        provider_id: &str,
+        event_type: &str,
+        field_key: &str,
+        query: &str,
+        page_token: Option<&str>,
+    ) -> Result<AppEventResourcePage, events::AppEventError> {
+        self.events
+            .list_resources(
+                db,
+                self.token_store.clone(),
+                connection_id,
+                provider_id,
+                event_type,
+                field_key,
+                query,
+                page_token,
             )
             .await
     }
@@ -108,6 +183,7 @@ impl IntegrationsState {
             .ok_or_else(IntegrationCommandError::not_found)?;
         db.mark_app_connection_revoked(connection_id)
             .map_err(|_| database_error())?;
+        self.events.reset();
 
         if !metadata_only {
             let store = self.token_store.clone();
@@ -129,6 +205,72 @@ impl IntegrationsState {
 
         db.delete_app_connection_metadata(connection_id)
             .map_err(|_| database_error())
+    }
+
+    pub async fn connect_slack_private(
+        &self,
+        db: &Db,
+        input: slack::SlackPrivateConnectionInput,
+    ) -> Result<models::AppConnectionDto, IntegrationCommandError> {
+        slack::connect_private(db, self.token_store.clone(), input).await
+    }
+
+    pub async fn prepare_github_connection(
+        &self,
+    ) -> Result<github::GitHubDeviceAuthorization, IntegrationCommandError> {
+        self.github.prepare_device_authorization().await
+    }
+
+    pub async fn poll_github_connection(
+        &self,
+        db: &Db,
+        pairing_session_id: &str,
+    ) -> Result<github::GitHubDevicePollResult, IntegrationCommandError> {
+        self.github
+            .poll_device_authorization(db, self.token_store.clone(), pairing_session_id)
+            .await
+    }
+
+    pub fn cancel_github_pairing(&self, pairing_session_id: &str) {
+        self.github.cancel_device_authorization(pairing_session_id);
+    }
+
+    pub async fn connect_notion_private(
+        &self,
+        db: &Db,
+        input: notion::NotionPrivateConnectionInput,
+    ) -> Result<models::AppConnectionDto, IntegrationCommandError> {
+        notion::connect_private(db, self.token_store.clone(), input).await
+    }
+
+    pub async fn connect_obsidian_vault(
+        &self,
+        db: &Db,
+        input: obsidian::ObsidianVaultConnectionInput,
+    ) -> Result<models::AppConnectionDto, IntegrationCommandError> {
+        obsidian::connect_vault(db, self.token_store.clone(), input).await
+    }
+
+    pub async fn prepare_telegram_connection(
+        &self,
+        db: &Db,
+        input: telegram::TelegramPrepareInput,
+    ) -> Result<telegram::TelegramPairingPrepared, IntegrationCommandError> {
+        self.telegram.prepare(db, input).await
+    }
+
+    pub async fn complete_telegram_connection(
+        &self,
+        db: &Db,
+        input: telegram::TelegramCompleteInput,
+    ) -> Result<models::AppConnectionDto, IntegrationCommandError> {
+        self.telegram
+            .complete(db, self.token_store.clone(), input)
+            .await
+    }
+
+    pub fn cancel_telegram_pairing(&self, pairing_session_id: &str) {
+        self.telegram.cancel(pairing_session_id);
     }
 }
 
@@ -180,6 +322,7 @@ mod tests {
                 connection_mode: "native_oauth".into(),
                 identity_key: canonical_identity_key("slack", "native_oauth", &["workspace"]),
                 scopes: vec![],
+                provider_metadata: std::collections::BTreeMap::new(),
                 expires_at: None,
                 credential_ref: "credential".into(),
             })
@@ -216,6 +359,7 @@ mod tests {
                 connection_mode: "native_oauth".into(),
                 identity_key: canonical_identity_key("slack", "native_oauth", &["workspace"]),
                 scopes: vec![],
+                provider_metadata: std::collections::BTreeMap::new(),
                 expires_at: None,
                 credential_ref: "missing".into(),
             })

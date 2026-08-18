@@ -18,6 +18,11 @@
 - **Depends on**: Plans 008, 009; Plan 010 for events; Plan 011 for public OAuth/webhooks
 - **Category**: integration roadmap
 - **Planned at**: 2026-08-11
+- **Implementation status**: IN PROGRESS — Stage A local GitHub App device
+  authorization, repository-scoped actions, and local event polling are
+  implemented and automated gates pass. A publisher-owned GitHub App client ID
+  and live packaged smoke test remain before the Stage A go/no-go. Linear and
+  Sentry have not started, as required by the staged rollout.
 
 ## Why these apps
 

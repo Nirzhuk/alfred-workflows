@@ -10,13 +10,14 @@ import type { AppActionNodeData } from "../workflow/types";
 export function selectAppActionProvider(
   data: AppActionNodeData,
   providerId: string,
+  connections: AppConnection[],
 ): AppActionNodeData {
   if (providerId === data.providerId) return data;
   return {
     ...data,
     providerId,
     actionId: "",
-    connectionId: "",
+    connectionId: defaultConnectionId(connections, providerId),
     input: {},
   };
 }
@@ -24,6 +25,7 @@ export function selectAppActionProvider(
 export function selectAppAction(
   data: AppActionNodeData,
   descriptor: ActionDescriptor | null,
+  connections: AppConnection[],
 ): AppActionNodeData {
   const actionId = descriptor?.actionId ?? "";
   if (actionId === data.actionId) return data;
@@ -35,7 +37,7 @@ export function selectAppAction(
   return {
     ...data,
     actionId,
-    connectionId: "",
+    connectionId: defaultConnectionId(connections, data.providerId),
     input,
   };
 }
@@ -49,11 +51,28 @@ export function compatibleConnections(
   );
 }
 
+// Blank when zero or multiple connected accounts exist; unambiguous otherwise.
+export function defaultConnectionId(
+  connections: AppConnection[],
+  providerId: string,
+): string {
+  const connected = compatibleConnections(connections, providerId).filter(
+    (connection) => connection.status === "connected",
+  );
+  return connected.length === 1 ? connected[0].id : "";
+}
+
 export function unknownActionInputKeys(
   data: AppActionNodeData,
   descriptor: ActionDescriptor,
 ): string[] {
-  const known = new Set(descriptor.fields.map((field) => field.key));
+  const known = new Set(
+    descriptor.fields.flatMap((field) =>
+      field.kind === "resource_selector"
+        ? [field.key, `${field.key}__display`]
+        : [field.key],
+    ),
+  );
   return Object.keys(data.input).filter((key) => !known.has(key));
 }
 

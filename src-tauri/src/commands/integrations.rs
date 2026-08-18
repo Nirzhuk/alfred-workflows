@@ -1,7 +1,15 @@
 use crate::db::Db;
 use crate::integrations::actions::{ActionDescriptor, ActionError, ActionResourcePage};
+use crate::integrations::events::{AppEventDescriptor, AppEventError, AppEventResourcePage};
+use crate::integrations::github::{GitHubDeviceAuthorization, GitHubDevicePollResult};
 use crate::integrations::models::{
     AppConnectionDto, AppConnectionUsage, AppProviderDto, IntegrationCommandError,
+};
+use crate::integrations::notion::NotionPrivateConnectionInput;
+use crate::integrations::obsidian::ObsidianVaultConnectionInput;
+use crate::integrations::slack::SlackPrivateConnectionInput;
+use crate::integrations::telegram::{
+    TelegramCompleteInput, TelegramPairingPrepared, TelegramPrepareInput,
 };
 use crate::integrations::IntegrationsState;
 use tauri::State;
@@ -17,6 +25,39 @@ pub fn list_app_action_descriptors(
     provider_id: Option<String>,
 ) -> Vec<ActionDescriptor> {
     state.action_descriptors(provider_id.as_deref())
+}
+
+#[tauri::command]
+pub fn list_app_event_descriptors(
+    state: State<'_, IntegrationsState>,
+    provider_id: Option<String>,
+) -> Vec<AppEventDescriptor> {
+    state.events.descriptors(provider_id.as_deref())
+}
+
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn list_app_event_resources(
+    db: State<'_, Db>,
+    state: State<'_, IntegrationsState>,
+    connection_id: String,
+    provider_id: String,
+    event_type: String,
+    field_key: String,
+    query: String,
+    page_token: Option<String>,
+) -> Result<AppEventResourcePage, AppEventError> {
+    state
+        .list_app_event_resources(
+            db.inner(),
+            &connection_id,
+            &provider_id,
+            &event_type,
+            &field_key,
+            &query,
+            page_token.as_deref(),
+        )
+        .await
 }
 
 #[tauri::command]
@@ -94,6 +135,79 @@ pub async fn disconnect_app_connection(
     state.disconnect(db.inner(), &id, metadata_only).await
 }
 
+#[tauri::command]
+pub async fn connect_slack_private(
+    db: State<'_, Db>,
+    state: State<'_, IntegrationsState>,
+    input: SlackPrivateConnectionInput,
+) -> Result<AppConnectionDto, IntegrationCommandError> {
+    state.connect_slack_private(db.inner(), input).await
+}
+
+#[tauri::command]
+pub async fn prepare_github_connection(
+    state: State<'_, IntegrationsState>,
+) -> Result<GitHubDeviceAuthorization, IntegrationCommandError> {
+    state.prepare_github_connection().await
+}
+
+#[tauri::command]
+pub async fn poll_github_connection(
+    db: State<'_, Db>,
+    state: State<'_, IntegrationsState>,
+    pairing_session_id: String,
+) -> Result<GitHubDevicePollResult, IntegrationCommandError> {
+    state
+        .poll_github_connection(db.inner(), &pairing_session_id)
+        .await
+}
+
+#[tauri::command]
+pub fn cancel_github_pairing(state: State<'_, IntegrationsState>, pairing_session_id: String) {
+    state.cancel_github_pairing(&pairing_session_id);
+}
+
+#[tauri::command]
+pub async fn connect_notion_private(
+    db: State<'_, Db>,
+    state: State<'_, IntegrationsState>,
+    input: NotionPrivateConnectionInput,
+) -> Result<AppConnectionDto, IntegrationCommandError> {
+    state.connect_notion_private(db.inner(), input).await
+}
+
+#[tauri::command]
+pub async fn connect_obsidian_vault(
+    db: State<'_, Db>,
+    state: State<'_, IntegrationsState>,
+    input: ObsidianVaultConnectionInput,
+) -> Result<AppConnectionDto, IntegrationCommandError> {
+    state.connect_obsidian_vault(db.inner(), input).await
+}
+
+#[tauri::command]
+pub async fn prepare_telegram_connection(
+    db: State<'_, Db>,
+    state: State<'_, IntegrationsState>,
+    input: TelegramPrepareInput,
+) -> Result<TelegramPairingPrepared, IntegrationCommandError> {
+    state.prepare_telegram_connection(db.inner(), input).await
+}
+
+#[tauri::command]
+pub async fn complete_telegram_connection(
+    db: State<'_, Db>,
+    state: State<'_, IntegrationsState>,
+    input: TelegramCompleteInput,
+) -> Result<AppConnectionDto, IntegrationCommandError> {
+    state.complete_telegram_connection(db.inner(), input).await
+}
+
+#[tauri::command]
+pub fn cancel_telegram_pairing(state: State<'_, IntegrationsState>, pairing_session_id: String) {
+    state.cancel_telegram_pairing(&pairing_session_id);
+}
+
 fn metadata_read_error() -> IntegrationCommandError {
     IntegrationCommandError::new(
         "connection_store_failed",
@@ -130,6 +244,7 @@ mod tests {
             connection_mode: "native_oauth".into(),
             identity_key: "identity-secret-fixture".into(),
             scopes: vec!["read".into()],
+            provider_metadata: std::collections::BTreeMap::new(),
             status: ConnectionStatus::Connected,
             expires_at: None,
             last_checked_at: None,
@@ -158,6 +273,7 @@ mod tests {
             }],
             required_scopes: vec!["chat:write".into()],
             output_schema_version: 1,
+            output_is_untrusted: false,
         };
         let resources = ActionResourcePage {
             items: vec![ActionResourceItem {
@@ -194,6 +310,7 @@ mod tests {
                 connection_mode: "native_oauth".into(),
                 identity_key: canonical_identity_key("slack", "native_oauth", &["account"]),
                 scopes: vec![],
+                provider_metadata: std::collections::BTreeMap::new(),
                 expires_at: None,
                 credential_ref: "credential-secret-fixture".into(),
             })

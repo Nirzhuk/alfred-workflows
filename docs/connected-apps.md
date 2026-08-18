@@ -20,6 +20,13 @@ provider-specific fields required for refresh. Alfred uses the service name
 Authorization codes, PKCE verifiers, OAuth state and nonce values exist only in
 memory for the lifetime of one authorization attempt.
 
+Provider setup and capability details:
+
+- [Slack](slack.md)
+- [GitHub](github.md)
+- [Telegram personal notifications](telegram.md)
+- [Notion and the knowledge-source boundary](knowledge-connectors.md)
+
 The provider-specific plans add authorization endpoints and API calls. The
 foundation does not embed confidential OAuth client secrets or provide a field
 for pasting OAuth tokens into the web interface.
@@ -64,3 +71,26 @@ metadata remains.
 Keychain access can differ between development and signed/package identities.
 Release testing must verify create, read, overwrite, and delete behavior in the
 packaged app on every shipping operating system.
+
+## Adding a provider
+
+Every new provider must have a stable snake_case catalog ID, a narrow
+capability summary, explicit connection modes, and a dedicated recovery path.
+Build provider calls in the Rust process; validate credentials before storage
+and persist them only in the operating-system credential store. React state,
+workflow JSON, logs, errors, descriptors, and report output must contain only
+redacted metadata. Add the provider's scopes, disconnect dependencies, and
+reconnect/revoke behavior to automated tests before enabling Connect.
+
+Every catalog provider also needs an entry in `APP_LOGOS` and an optimized SVG
+in `src/assets/apps/`. The UI must not fetch brand images at runtime or embed
+Logo.dev keys. Import the local SVG with `?no-inline`; this keeps it out of the
+JavaScript bundle and maintains offline operation. SVGs must contain no
+scripts, raster images, or remote references, and must be at most 5 KiB raw.
+
+Transparent artwork is the default. Recolor an insufficiently legible mark for
+Alfred's light and dark themes when possible (Sentry is the example). Set
+`requiresSurface: true` only when a mark cannot meet a 3:1 non-text contrast
+ratio safely without altering its identity; GitHub, Linear, and Notion are the
+current exceptions. Unknown stored/future providers must retain the accessible
+initial fallback until a reviewed local logo is added.

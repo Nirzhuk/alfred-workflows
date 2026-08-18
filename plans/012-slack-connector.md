@@ -19,6 +19,11 @@
 - **Depends on**: Plans 008, 009; Plan 010 for events; Plan 011 for public bot OAuth
 - **Category**: integration
 - **Planned at**: 2026-08-11
+- **Implementation status**: IN PROGRESS — private/BYO bot connection,
+  conversation selector, send/reply actions, shared Socket Mode `app_mention`,
+  docs, and automated provider contract tests pass; manual private-workspace
+  smoke, the native-PKCE product decision, Incoming Webhooks, and relay-backed
+  public bot phases remain pending
 
 ## Product outcome
 

@@ -9,7 +9,8 @@ source code only.
 This is the launch gate. The detailed implementation notes remain in
 [plan 004](../plans/004-release-signing-secrets.md),
 [plan 005](../plans/005-homebrew-cask.md), and
-[plan 006](../plans/006-in-app-updater-dmg-exe.md).
+[plan 006](../plans/006-in-app-updater-dmg-exe.md), and the commercial
+[entitlement/update gateway plan](../plans/022-commercial-entitlement-update-gateway.md).
 
 ## What already works
 
@@ -56,9 +57,16 @@ GitHub Actions enabled, and default workflow permissions set to read/write.
 
 - [x] Distribution decision: official maintainer-built binaries are paid;
   source is GPL-3.0-or-later and may be compiled without an Alfred purchase.
-- [ ] Reconcile freemium/license plans `001`–`003` with free source builds
-  before executing them. GPL licensing does not itself enforce payment and
-  users may modify the source, including entitlement code.
+- [x] Replace the old Free/Pro usage-limit plans with the Cap-style product
+  shape: one Desktop License per named user and Company billing per active
+  member seat, with every Company seat including Desktop.
+- [ ] Create Stripe catalog entries for Desktop annual/lifetime and Company
+  monthly/annual, plus server-side stable product-key mappings. Do not hard-code
+  Stripe Price IDs in Alfred.
+- [ ] Complete legal review before claiming paid permission is required for
+  commercial use. GPL licensing itself permits commercial source use; the
+  current paid boundary is official builds, updates, hosted features, and
+  support.
 - [ ] Freeze the features included in v0.5.0; connected apps (`008`–`017`),
   authenticated updates, and other planned work should not silently expand the
   first release.
@@ -70,14 +78,15 @@ GitHub Actions enabled, and default workflow permissions set to read/write.
 - [x] Replace the unsupported `includeUpdaterJson` action input. The current
   `tauri-apps/tauri-action@v1` input is `uploadUpdaterJson`.
 - [ ] Decide the update policy for v0.5.0:
-  - If automatic updates ship, complete plan 006, configure the updater public
-    key and endpoint, generate signed updater artifacts, and keep
-    `uploadUpdaterJson: true`.
+  - If automatic updates ship, complete plans 022 and 006, configure the
+    authenticated Alfred gateway backed by CrabNebula, configure the updater
+    public key, and publish signed updater artifacts to a release channel.
   - If updates are deferred, keep `uploadUpdaterJson: false` and remove or
     replace the current **Check for Updates** stub so the shipped UI does not
     promise a feature that is unavailable.
-- [x] The staging workflow currently uses `uploadUpdaterJson: false`; an
-  authenticated paid update service is deferred.
+- [x] The staging workflow currently uses `uploadUpdaterJson: false`; the
+  authenticated paid update service is specified in Plan 022 and remains
+  disabled until Plans 022 and 006 pass their gates.
 - [ ] Run the workflow once as an unsigned draft to prove all matrix jobs and
   artifact uploads work before adding signing complexity.
 - [x] Pin/freeze the release ref and rerun the workflow from that exact commit.
@@ -165,6 +174,10 @@ below remains open until the shortcut itself is exercised manually.
   open/tray-running.
 - [ ] Configure the official storefront/download service and add its purchase
   link to the README/install guide.
+- [ ] Complete one standalone Desktop License checkout/activation and one
+  Company checkout with at least two assigned member seats.
+- [ ] Verify Company purchased/assigned/available seat counts, invitation
+  acceptance, seat removal, and Stripe quantity reconciliation.
 - [ ] Upload accepted draft artifacts and SHA-256 checksums to that service;
   never publish the staging GitHub Release.
 - [ ] Tag the exact release commit and provide its Corresponding Source beside
@@ -178,8 +191,11 @@ below remains open until the shortcut itself is exercised manually.
 
 ## P1 — may follow the first paid release
 
-- [ ] Design authenticated signed updates that preserve paid download access
-  before implementing plan 006.
+- [ ] Keep the public Homebrew cask plan blocked unless an authenticated/private
+  tap is approved; a public cask would bypass the paid binary boundary.
+- [ ] Deploy the authenticated signed-update path (Plans 022 + 006) if it was
+  not included in the first paid release. The gateway must preserve paid
+  download access while keeping source builds independently usable.
 - [ ] Improve authentication-error feedback (plan 007) if not pulled into P0.
 - [x] Add automated clean-install/smoke coverage for release artifacts.
 - [ ] Decide whether Linux packages are fully supported or best-effort, and

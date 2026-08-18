@@ -19,11 +19,18 @@ duplicate action IDs and unsafe descriptors.
   `resource_selector`.
 - A resource selector names an executor-owned option source. Its browser-facing
   command receives a connection ID and returns bounded `{id, label}` entries;
-  it never receives a credential.
+  it never receives a credential. The node persists the immutable ID plus a
+  UI-only `<field>__display` snapshot so renamed or temporarily unavailable
+  resources remain understandable. Rust validates but does not authorize by
+  the snapshot; providers always recheck the ID at execution time.
 - Mark interpolation only on string fields that intentionally support
   `{{context}}`, `{{output}}`, and `{{cwd}}`.
 - Set provider-specific output limits only when they are tighter than the
   framework defaults: 64 KiB serialized and JSON depth 8.
+- Set `outputIsUntrusted` for knowledge, mail, message, or other externally
+  authored text that will become downstream agent context. The runner then
+  labels it as external data and explicitly denies instruction/authorization
+  semantics.
 
 Descriptors are serialized to React, so they must never contain access tokens,
 refresh tokens, authorization headers, client secrets, tenant-specific secret
@@ -75,3 +82,6 @@ Every provider action should cover:
 Provider-specific actions should live in their provider module. The only core
 registration change should be the provider's startup registration call; the
 generic runner and React node remain unchanged.
+
+Knowledge providers also follow the extraction, citation, and retention rules
+in [`knowledge-connectors.md`](knowledge-connectors.md).

@@ -1,5 +1,6 @@
 use rusqlite::Connection;
 
+use super::history::{index_memory, index_run_step};
 use super::DbError;
 
 /// Apply additive migrations for databases created with earlier schemas.
@@ -67,6 +68,8 @@ pub fn apply_migrations(conn: &Connection) -> Result<(), DbError> {
          CREATE INDEX IF NOT EXISTS idx_memory_links_workflow_id ON memory_links(workflow_id);
          CREATE INDEX IF NOT EXISTS idx_memory_links_memory_id ON memory_links(memory_id);",
     )?;
+    create_search_indexes(conn)?;
+    rebuild_search_indexes(conn)?;
     conn.execute_batch(
         "CREATE INDEX IF NOT EXISTS idx_triggers_workflow_id ON triggers(workflow_id);
          CREATE INDEX IF NOT EXISTS idx_triggers_enabled ON triggers(enabled);",
@@ -81,6 +84,7 @@ pub fn apply_migrations(conn: &Connection) -> Result<(), DbError> {
            connection_mode TEXT NOT NULL,
            identity_key TEXT NOT NULL,
            scopes_json TEXT NOT NULL DEFAULT '[]',
+           provider_metadata_json TEXT NOT NULL DEFAULT '{}',
            status TEXT NOT NULL DEFAULT 'connected' CHECK (status IN ('connected', 'expired', 'error', 'revoked')),
            expires_at TEXT,
            last_checked_at TEXT,
@@ -94,7 +98,150 @@ pub fn apply_migrations(conn: &Connection) -> Result<(), DbError> {
          CREATE INDEX IF NOT EXISTS idx_app_connections_provider_id
            ON app_connections(provider_id);",
     )?;
+    ensure_column(
+        conn,
+        "app_connections",
+        "provider_metadata_json",
+        "TEXT NOT NULL DEFAULT '{}'",
+    )?;
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS app_trigger_state (
+           trigger_id TEXT PRIMARY KEY NOT NULL REFERENCES triggers(id) ON DELETE CASCADE,
+           cursor TEXT,
+           subscription_id TEXT,
+           expires_at TEXT,
+           last_polled_at TEXT,
+           last_success_at TEXT,
+           last_error_code TEXT,
+           next_attempt_at TEXT,
+           retry_count INTEGER NOT NULL DEFAULT 0,
+           overrun_count INTEGER NOT NULL DEFAULT 0,
+           updated_at TEXT NOT NULL
+         );
+         CREATE TABLE IF NOT EXISTS app_event_receipts (
+           trigger_id TEXT NOT NULL REFERENCES triggers(id) ON DELETE CASCADE,
+           external_event_id TEXT NOT NULL,
+           received_at TEXT NOT NULL,
+           disposition TEXT NOT NULL CHECK (disposition IN ('queued', 'enqueued', 'dropped_overrun', 'rejected_invalid')),
+           run_id TEXT,
+           reason_code TEXT,
+           PRIMARY KEY (trigger_id, external_event_id)
+         );
+         CREATE TABLE IF NOT EXISTS app_event_queue (
+           id TEXT PRIMARY KEY NOT NULL,
+           trigger_id TEXT NOT NULL REFERENCES triggers(id) ON DELETE CASCADE,
+           external_event_id TEXT NOT NULL,
+           normalized_event_json TEXT NOT NULL,
+           enqueued_at TEXT NOT NULL,
+           started_at TEXT,
+           UNIQUE (trigger_id, external_event_id)
+         );
+         CREATE INDEX IF NOT EXISTS idx_app_event_queue_trigger
+           ON app_event_queue(trigger_id, enqueued_at);
+         CREATE INDEX IF NOT EXISTS idx_app_event_receipts_received
+           ON app_event_receipts(received_at);",
+    )?;
 
+    Ok(())
+}
+
+fn create_search_indexes(conn: &Connection) -> Result<(), DbError> {
+    conn.execute_batch(
+        "CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(
+           memory_id UNINDEXED,
+           workflow_id UNINDEXED,
+           title,
+           body,
+           tokenize = 'unicode61 remove_diacritics 2'
+         );
+         CREATE VIRTUAL TABLE IF NOT EXISTS run_step_fts USING fts5(
+           step_id UNINDEXED,
+           run_id UNINDEXED,
+           workflow_id UNINDEXED,
+           node_id UNINDEXED,
+           input_text,
+           output_text,
+           error_text,
+           tokenize = 'unicode61 remove_diacritics 2'
+         );",
+    )?;
+    Ok(())
+}
+
+pub(crate) fn rebuild_search_indexes(conn: &Connection) -> Result<(), DbError> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS schema_meta (
+           key TEXT PRIMARY KEY NOT NULL,
+           value TEXT NOT NULL
+         );",
+    )?;
+    let already_backfilled: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM schema_meta WHERE key = 'search_fts_backfill_v1')",
+        [],
+        |row| row.get(0),
+    )?;
+    if already_backfilled {
+        return Ok(());
+    }
+
+    let transaction = conn.unchecked_transaction()?;
+    transaction.execute("DELETE FROM memory_fts", [])?;
+    transaction.execute("DELETE FROM run_step_fts", [])?;
+
+    let memory_ids = {
+        let mut statement =
+            transaction.prepare("SELECT id FROM memories ORDER BY created_at, id")?;
+        let rows = statement
+            .query_map([], |row| row.get::<_, String>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        rows
+    };
+    for memory_id in memory_ids {
+        index_memory(&transaction, &memory_id)?;
+    }
+
+    let run_steps = {
+        let mut statement = transaction.prepare(
+            "SELECT rs.id, rs.run_id, r.workflow_id, rs.node_id,
+                    rs.input_json, rs.output_json, rs.error
+             FROM run_steps rs
+             JOIN runs r ON r.id = rs.run_id
+             ORDER BY rs.created_at, rs.id",
+        )?;
+        let rows = statement
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, String>(5)?,
+                    row.get::<_, Option<String>>(6)?,
+                ))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        rows
+    };
+    for (step_id, run_id, workflow_id, node_id, input_json, output_json, error) in run_steps {
+        let input = serde_json::from_str(&input_json).unwrap_or_else(|_| serde_json::json!({}));
+        let output = serde_json::from_str(&output_json).unwrap_or_else(|_| serde_json::json!({}));
+        index_run_step(
+            &transaction,
+            &step_id,
+            &run_id,
+            &workflow_id,
+            &node_id,
+            &input,
+            &output,
+            error.as_deref(),
+        )?;
+    }
+    transaction.execute(
+        "INSERT INTO schema_meta(key, value) VALUES ('search_fts_backfill_v1', 'complete')",
+        [],
+    )?;
+    transaction.commit()?;
     Ok(())
 }
 
@@ -237,5 +384,50 @@ mod tests {
         apply_migrations(&conn).expect("upgrade fixture");
 
         assert!(columns(&conn, "app_connections").contains(&"identity_key".to_owned()));
+        assert!(columns(&conn, "app_connections").contains(&"provider_metadata_json".to_owned()));
+    }
+
+    #[test]
+    fn initializes_app_event_delivery_tables() {
+        let conn = Connection::open_in_memory().expect("open database");
+        conn.execute_batch(include_str!("schema.sql"))
+            .expect("initialize schema");
+        apply_migrations(&conn).expect("apply migrations");
+
+        assert!(columns(&conn, "app_trigger_state").contains(&"cursor".to_owned()));
+        assert!(columns(&conn, "app_event_receipts").contains(&"disposition".to_owned()));
+        assert!(columns(&conn, "app_event_queue").contains(&"normalized_event_json".to_owned()));
+    }
+
+    #[test]
+    fn initializes_search_indexes() {
+        let conn = Connection::open_in_memory().expect("open database");
+        let fts5_enabled: i64 = conn
+            .query_row(
+                "SELECT sqlite_compileoption_used('ENABLE_FTS5')",
+                [],
+                |row| row.get(0),
+            )
+            .expect("check FTS5 compile option");
+        assert_eq!(fts5_enabled, 1, "bundled SQLite must include FTS5");
+
+        conn.execute_batch(include_str!("schema.sql"))
+            .expect("initialize schema");
+        apply_migrations(&conn).expect("apply migrations");
+        conn.execute(
+            "INSERT INTO memory_fts(memory_id, workflow_id, title, body)
+             VALUES ('memory-1', 'workflow-1', 'Café notes', 'local search')",
+            [],
+        )
+        .expect("insert search fixture");
+
+        let hit: String = conn
+            .query_row(
+                "SELECT memory_id FROM memory_fts WHERE memory_fts MATCH '\"cafe\"*'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("query FTS5 fixture");
+        assert_eq!(hit, "memory-1");
     }
 }

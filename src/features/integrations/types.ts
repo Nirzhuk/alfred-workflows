@@ -82,6 +82,7 @@ export type ActionDescriptor = {
   fields: ActionFieldDescriptor[];
   requiredScopes: string[];
   outputSchemaVersion: number;
+  outputIsUntrusted: boolean;
 };
 
 export type ActionResourceItem = {
@@ -92,4 +93,78 @@ export type ActionResourceItem = {
 export type ActionResourcePage = {
   items: ActionResourceItem[];
   nextPageToken: string | null;
+};
+
+export type AppEventDeliveryMode = "polling" | "socket" | "subscription";
+
+export type AppEventDescriptor = {
+  providerId: string;
+  eventType: string;
+  label: string;
+  description: string;
+  requiredScopes: string[];
+  deliveryModes: AppEventDeliveryMode[];
+  filterFields: ActionFieldDescriptor[];
+  fetchesResourceContent: boolean;
+  descriptorVersion: number;
+  externalEventIdRequired: boolean;
+  allowedAttributeKeys: string[];
+  pollIntervalSeconds: number;
+  pendingCap: number;
+};
+
+export type AppEventResourceItem = {
+  id: string;
+  label: string;
+};
+
+export type AppEventResourcePage = {
+  items: AppEventResourceItem[];
+  nextPageToken: string | null;
+};
+
+export type SlackPrivateConnectionInput = {
+  mode: "bot" | "incoming_webhook";
+  botToken: string;
+  appToken?: string | null;
+  webhookUrl?: string | null;
+  enablePrivateChannels: boolean;
+  enableMentions: boolean;
+};
+
+export type NotionPrivateConnectionInput = {
+  integrationToken: string;
+};
+
+export type ObsidianVaultConnectionInput = {
+  vaultPath: string;
+};
+
+export type GitHubDeviceAuthorization = {
+  pairingSessionId: string;
+  userCode: string;
+  verificationUri: string;
+  installationUrl: string | null;
+  expiresAt: string;
+  intervalSeconds: number;
+};
+
+export type GitHubDevicePollResult =
+  | { status: "pending"; retryAfterSeconds: number }
+  | { status: "connected"; connection: AppConnection };
+
+export type TelegramPrepareInput = {
+  botToken: string;
+};
+
+export type TelegramPairingPrepared = {
+  pairingSessionId: string;
+  botUsername: string;
+  pairingUrl: string;
+  expiresAt: string;
+};
+
+export type TelegramCompleteInput = {
+  pairingSessionId: string;
+  testMessage: string;
 };

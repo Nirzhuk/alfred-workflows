@@ -80,7 +80,11 @@ export function AppActionSettings({ data, onUpdate }: Props) {
           disabled={loading}
           onChange={(event) =>
             replaceData(
-              selectAppActionProvider(data, event.currentTarget.value),
+              selectAppActionProvider(
+                data,
+                event.currentTarget.value,
+                connections,
+              ),
             )
           }
         >
@@ -103,7 +107,7 @@ export function AppActionSettings({ data, onUpdate }: Props) {
               providerActions.find(
                 (candidate) => candidate.actionId === event.currentTarget.value,
               ) ?? null;
-            replaceData(selectAppAction(data, selected));
+            replaceData(selectAppAction(data, selected, connections));
           }}
         >
           <option value="">Choose an action…</option>
@@ -155,7 +159,11 @@ export function AppActionSettings({ data, onUpdate }: Props) {
               descriptor={descriptor}
               connectionId={data.connectionId}
               value={data.input[field.key]}
+              displaySnapshot={data.input[`${field.key}__display`]}
               onChange={(value) => updateInput(field.key, value)}
+              onDisplayChange={(value) =>
+                updateInput(`${field.key}__display`, value)
+              }
             />
           ))}
         </>
@@ -190,13 +198,17 @@ function DescriptorField({
   descriptor,
   connectionId,
   value,
+  displaySnapshot,
   onChange,
+  onDisplayChange,
 }: {
   field: ActionFieldDescriptor;
   descriptor: ActionDescriptor;
   connectionId: string;
   value: unknown;
+  displaySnapshot: unknown;
   onChange: (value: unknown) => void;
+  onDisplayChange: (value: string) => void;
 }) {
   const description = [
     field.description,
@@ -249,7 +261,11 @@ function DescriptorField({
         descriptor={descriptor}
         connectionId={connectionId}
         value={typeof value === "string" ? value : ""}
+        displaySnapshot={
+          typeof displaySnapshot === "string" ? displaySnapshot : ""
+        }
         onChange={onChange}
+        onDisplayChange={onDisplayChange}
       />
     );
   }
@@ -282,13 +298,17 @@ function ResourceSelector({
   descriptor,
   connectionId,
   value,
+  displaySnapshot,
   onChange,
+  onDisplayChange,
 }: {
   field: ActionFieldDescriptor;
   descriptor: ActionDescriptor;
   connectionId: string;
   value: string;
+  displaySnapshot: string;
   onChange: (value: string) => void;
+  onDisplayChange: (value: string) => void;
 }) {
   const [query, setQuery] = useState("");
   const [items, setItems] = useState<ActionResourceItem[]>([]);
@@ -360,10 +380,18 @@ function ResourceSelector({
         value={value}
         disabled={!connectionId}
         required={field.required}
-        onChange={(event) => onChange(event.currentTarget.value)}
+        onChange={(event) => {
+          const nextId = event.currentTarget.value;
+          onChange(nextId);
+          onDisplayChange(
+            items.find((item) => item.id === nextId)?.label ?? "",
+          );
+        }}
       >
         <option value="">Choose…</option>
-        {value && !selectedPresent ? <option value={value}>{value}</option> : null}
+        {value && !selectedPresent ? (
+          <option value={value}>{displaySnapshot || value}</option>
+        ) : null}
         {items.map((item) => (
           <option key={item.id} value={item.id}>
             {item.label}

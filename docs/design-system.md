@@ -121,6 +121,9 @@ at least 28px in dense chrome and 32px for ordinary controls.
 
 ## Iconography
 
+- Icons are Phosphor Icons (regular weight) rendered through the shared
+  `Icon` component; see `docs/iconography.md` for the rules, the add-an-icon
+  workflow, and the mapping of legacy inline icons.
 - Use one outline icon language per surface with consistent optical stroke.
 - Standard interface icons are `--icon-size-default` / 18px.
 - `--icon-size-compact` / 16px is for dense secondary controls only.
@@ -172,11 +175,12 @@ Workflow navigation, Settings navigation, folders, and workflow rows share:
 | --- | --- | --- |
 | Item text | `--sidebar-item-font-size` | 14px |
 | Item weight | `--sidebar-item-font-weight` | 400 |
-| Item icon | `--sidebar-icon-size` | 18px square |
+| Item color | `--sidebar-item-color` | theme ink; `#dce5e1` in dark mode |
+| Item icon | `--sidebar-icon-size` | 16px square |
 | Section text | `--sidebar-section-font-size` | 16px |
 | Section weight | `--sidebar-section-font-weight` | 600 |
-| Item minimum height | `--sidebar-item-min-height` | 38px |
-| Icon-to-label gap | `--sidebar-item-gap` | 10px |
+| Item minimum height | `--sidebar-item-min-height` | 32px |
+| Icon-to-label gap | `--sidebar-item-gap` | 4px |
 | Row-to-row gap | `--sidebar-item-stack-gap` | 2px |
 | Item inline padding | `--sidebar-item-inline-padding` | 8px |
 

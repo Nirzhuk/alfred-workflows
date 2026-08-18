@@ -17,6 +17,7 @@ use integrations::IntegrationsState;
 use std::sync::Mutex;
 use std::time::Duration;
 use tauri::{Emitter, Manager, State, WindowEvent};
+use triggers::app::AppEventRuntime;
 use triggers::TriggerRuntime;
 
 #[cfg(desktop)]
@@ -92,7 +93,8 @@ pub fn run() {
         .manage(IntegrationsState::default())
         .manage(notifications::NotificationPreferences::default())
         .manage(GlobalShortcutPreference::default())
-        .manage(TriggerRuntime::default());
+        .manage(TriggerRuntime::default())
+        .manage(AppEventRuntime::default());
 
     #[cfg(desktop)]
     {
@@ -199,6 +201,23 @@ pub fn run() {
                     tray::refresh(&handle);
                 }
             });
+
+            let app_event_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let mut ticker = tokio::time::interval(Duration::from_secs(1));
+                loop {
+                    ticker.tick().await;
+                    if app_event_handle
+                        .try_state::<AppEventRuntime>()
+                        .is_some_and(|runtime| runtime.is_stopped())
+                    {
+                        break;
+                    }
+                    if let Err(error) = triggers::app::tick(&app_event_handle).await {
+                        eprintln!("app event runtime tick error: {error}");
+                    }
+                }
+            });
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -212,10 +231,21 @@ pub fn run() {
             commands::integrations::list_app_providers,
             commands::integrations::list_app_action_descriptors,
             commands::integrations::list_app_action_resources,
+            commands::integrations::list_app_event_descriptors,
+            commands::integrations::list_app_event_resources,
             commands::integrations::list_app_connections,
             commands::integrations::get_app_connection,
             commands::integrations::get_app_connection_usage,
             commands::integrations::disconnect_app_connection,
+            commands::integrations::connect_slack_private,
+            commands::integrations::prepare_github_connection,
+            commands::integrations::poll_github_connection,
+            commands::integrations::cancel_github_pairing,
+            commands::integrations::connect_notion_private,
+            commands::integrations::connect_obsidian_vault,
+            commands::integrations::prepare_telegram_connection,
+            commands::integrations::complete_telegram_connection,
+            commands::integrations::cancel_telegram_pairing,
             commands::list_workflows,
             commands::get_workflow,
             commands::create_workflow,
@@ -240,6 +270,7 @@ pub fn run() {
             commands::upsert_workflow_schedule,
             commands::delete_workflow_schedule,
             commands::list_workflow_triggers,
+            commands::list_app_trigger_statuses,
             commands::upsert_workflow_trigger,
             commands::delete_workflow_trigger,
             commands::test_workflow_trigger,
@@ -252,6 +283,7 @@ pub fn run() {
             commands::update_memory,
             commands::delete_memory,
             commands::clear_memories,
+            quick_access::show_quick_access,
             quick_access::set_quick_access_expanded,
             quick_access::set_quick_access_enabled,
             quick_access::set_quick_access_mode,
@@ -263,6 +295,17 @@ pub fn run() {
             notifications::notify_run_finished_cmd,
             set_global_shortcut,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            // macOS dock-icon click while the window is hidden sends Reopen,
+            // not a fresh launch, so single-instance's re-show never fires.
+            if let tauri::RunEvent::Reopen { .. } = event {
+                if let Some(window) = app_handle.get_webview_window("main") {
+                    let _ = window.unminimize();
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            }
+        });
 }

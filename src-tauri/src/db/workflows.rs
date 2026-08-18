@@ -196,16 +196,21 @@ impl Db {
 
     pub fn delete_workflow(&self, id: &str) -> Result<(), DbError> {
         let changed = self.with_conn(|conn| {
+            let transaction = conn.unchecked_transaction()?;
             // Explicit cleanup so delete still works if CASCADE isn't active
             // on an older database connection.
-            let _ = conn.execute("DELETE FROM memories WHERE workflow_id = ?1", params![id]);
-            let _ = conn.execute("DELETE FROM schedules WHERE workflow_id = ?1", params![id]);
-            let _ = conn.execute(
+            transaction.execute("DELETE FROM memory_fts WHERE workflow_id = ?1", params![id])?;
+            transaction.execute("DELETE FROM run_step_fts WHERE workflow_id = ?1", params![id])?;
+            transaction.execute("DELETE FROM memories WHERE workflow_id = ?1", params![id])?;
+            transaction.execute("DELETE FROM schedules WHERE workflow_id = ?1", params![id])?;
+            transaction.execute(
                 "DELETE FROM run_steps WHERE run_id IN (SELECT id FROM runs WHERE workflow_id = ?1)",
                 params![id],
-            );
-            let _ = conn.execute("DELETE FROM runs WHERE workflow_id = ?1", params![id]);
-            Ok(conn.execute("DELETE FROM workflows WHERE id = ?1", params![id])?)
+            )?;
+            transaction.execute("DELETE FROM runs WHERE workflow_id = ?1", params![id])?;
+            let changed = transaction.execute("DELETE FROM workflows WHERE id = ?1", params![id])?;
+            transaction.commit()?;
+            Ok(changed)
         })?;
 
         if changed == 0 {

@@ -18,6 +18,10 @@
 - **Depends on**: Plan 008; Plan 010 before provider event delivery
 - **Category**: product direction / cloud architecture
 - **Planned at**: 2026-08-11; reconciled with repository history, 2026-08-13
+- **Implementation status**: BLOCKED — the proposed architecture/threat-model
+  gate is recorded in `docs/adr/011-cloud-relay-architecture-gate.md`; named
+  product, security, privacy/support, operations, budget, Entra, and CI/DNS
+  approvals are required before service implementation
 
 ## Why this matters
 

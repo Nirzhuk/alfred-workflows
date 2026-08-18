@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { ConfirmDialog } from "../../components/confirm-dialog";
+import { AppLogo } from "./app-logo";
+import { GitHubConnect } from "./github-connect";
+import { NotionPrivateConnect } from "./notion-private-connect";
+import { ObsidianVaultConnect } from "./obsidian-vault-connect";
+import { SlackPrivateConnect } from "./slack-private-connect";
+import { TelegramConnect } from "./telegram-connect";
 import { useIntegrationsStore } from "./store";
 import type {
   AppConnection,
@@ -37,6 +43,19 @@ export function ConnectedAppsSettings() {
   const [pending, setPending] = useState<PendingDisconnect | null>(null);
   const [metadataCleanup, setMetadataCleanup] =
     useState<AppConnection | null>(null);
+  const [slackConnectOpen, setSlackConnectOpen] = useState(false);
+  const [telegramConnectOpen, setTelegramConnectOpen] = useState(false);
+  const [notionConnectOpen, setNotionConnectOpen] = useState(false);
+  const [obsidianConnectOpen, setObsidianConnectOpen] = useState(false);
+  const [githubConnectOpen, setGithubConnectOpen] = useState(false);
+
+  const connectHandlers: Record<string, () => void> = {
+    slack: () => setSlackConnectOpen(true),
+    telegram: () => setTelegramConnectOpen(true),
+    notion: () => setNotionConnectOpen(true),
+    obsidian: () => setObsidianConnectOpen(true),
+    github: () => setGithubConnectOpen(true),
+  };
 
   useEffect(() => {
     void load();
@@ -128,19 +147,28 @@ export function ConnectedAppsSettings() {
         {rows.map(({ provider, connections: providerConnections }) => (
           <div className="settings-row integration-provider-row" key={provider.id}>
             <div className="integration-provider-copy">
-              <p className="settings-label">{provider.name}</p>
-              <p className="settings-value">{provider.capabilitySummary}</p>
+              <AppLogo
+                providerId={provider.id}
+                providerName={provider.name}
+              />
+              <div className="integration-provider-text">
+                <p className="settings-label">{provider.name}</p>
+                <p className="settings-value">{provider.capabilitySummary}</p>
+              </div>
             </div>
             {providerConnections.length === 0 ? (
               <button
                 type="button"
                 className="ghost integration-action"
-                disabled={!provider.connectAvailable}
+                disabled={
+                  !provider.connectAvailable || !connectHandlers[provider.id]
+                }
                 title={
                   provider.connectAvailable
                     ? `Connect ${provider.name}`
                     : "Authorization arrives in the provider plan"
                 }
+                onClick={connectHandlers[provider.id]}
               >
                 {provider.connectAvailable ? "Connect" : "Coming next"}
               </button>
@@ -149,16 +177,25 @@ export function ConnectedAppsSettings() {
                 {providerConnections.map((connection) => (
                   <div className="integration-connection" key={connection.id}>
                     <div className="integration-connection-copy">
-                      <span
-                        className={`integration-status is-${connection.status}`}
-                      >
-                        {STATUS_LABELS[connection.status]}
-                      </span>
-                      <p className="integration-account">
-                        {connection.displayName ??
-                          connection.externalAccountId ??
-                          "Connected account"}
-                      </p>
+                      <div className="integration-connection-identity">
+                        <span
+                          className={`integration-status is-${connection.status}`}
+                        >
+                          {STATUS_LABELS[connection.status]}
+                        </span>
+                        <p
+                          className="integration-account"
+                          title={
+                            connection.displayName ??
+                            connection.externalAccountId ??
+                            undefined
+                          }
+                        >
+                          {connection.displayName ??
+                            connection.externalAccountId ??
+                            "Connected account"}
+                        </p>
+                      </div>
                       {connection.scopes.length > 0 ? (
                         <p className="settings-hint">
                           Access: {connection.scopes.join(", ")}
@@ -166,14 +203,19 @@ export function ConnectedAppsSettings() {
                       ) : null}
                     </div>
                     <div className="integration-actions">
-                      <button
-                        type="button"
-                        className="ghost integration-action"
-                        disabled
-                        title="Provider management arrives with authorization"
-                      >
-                        Manage
-                      </button>
+                      {provider.id === "slack" ||
+                      provider.id === "notion" ||
+                      provider.id === "obsidian" ||
+                      provider.id === "github" ? (
+                        <button
+                          type="button"
+                          className="ghost integration-action"
+                          title={`Reconnect ${provider.name}`}
+                          onClick={connectHandlers[provider.id]}
+                        >
+                          Reconnect
+                        </button>
+                      ) : null}
                       <button
                         type="button"
                         className="ghost danger integration-action"
@@ -206,7 +248,7 @@ export function ConnectedAppsSettings() {
       {pending ? (
         <ConfirmDialog
           title={`Disconnect ${connectionLabel(pending.connection)}?`}
-          message={dependencyMessage(pending.usage)}
+          message={disconnectMessage(pending)}
           confirmLabel="Disconnect"
           danger
           onCancel={() => setPending(null)}
@@ -223,6 +265,22 @@ export function ConnectedAppsSettings() {
           onCancel={() => setMetadataCleanup(null)}
           onConfirm={() => void confirmMetadataCleanup()}
         />
+      ) : null}
+
+      {slackConnectOpen ? (
+        <SlackPrivateConnect onClose={() => setSlackConnectOpen(false)} />
+      ) : null}
+      {telegramConnectOpen ? (
+        <TelegramConnect onClose={() => setTelegramConnectOpen(false)} />
+      ) : null}
+      {notionConnectOpen ? (
+        <NotionPrivateConnect onClose={() => setNotionConnectOpen(false)} />
+      ) : null}
+      {obsidianConnectOpen ? (
+        <ObsidianVaultConnect onClose={() => setObsidianConnectOpen(false)} />
+      ) : null}
+      {githubConnectOpen ? (
+        <GitHubConnect onClose={() => setGithubConnectOpen(false)} />
       ) : null}
     </section>
   );
@@ -253,4 +311,10 @@ function dependencyMessage(usage: AppConnectionUsage): string {
   const remaining = allDependencies.length - visible.length;
   const suffix = remaining > 0 ? ` and ${remaining} more` : "";
   return `This connection is used by ${visible.join(", ")}${suffix}. Those automations may stop working. Alfred will revoke it locally before removing its system credential and metadata.`;
+}
+
+function disconnectMessage(pending: PendingDisconnect): string {
+  const dependencies = dependencyMessage(pending.usage);
+  if (pending.connection.providerId !== "telegram") return dependencies;
+  return `${dependencies} Alfred cannot revoke the BotFather token remotely. If the token should stop working, revoke or regenerate it with @BotFather after disconnecting.`;
 }
