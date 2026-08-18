@@ -1,3 +1,4 @@
+use super::history::{delete_memory_index, index_memory};
 use super::{app_data_dir, Db, DbError};
 use chrono::Utc;
 use rusqlite::{params, OptionalExtension};
@@ -224,7 +225,8 @@ impl Db {
         };
 
         self.with_conn(|conn| {
-            conn.execute(
+            let transaction = conn.unchecked_transaction()?;
+            transaction.execute(
                 "INSERT INTO memories
                  (id, workflow_id, run_id, node_id, kind, source, title, body,
                   artifact_path, pinned, created_at, updated_at)
@@ -243,6 +245,8 @@ impl Db {
                     created_at,
                 ],
             )?;
+            index_memory(&transaction, &id)?;
+            transaction.commit()?;
             Ok(())
         })?;
 
@@ -294,7 +298,8 @@ impl Db {
 
         let updated_at = now();
         self.with_conn(|conn| {
-            conn.execute(
+            let transaction = conn.unchecked_transaction()?;
+            transaction.execute(
                 "UPDATE memories
                  SET title = ?1, body = ?2, artifact_path = ?3, pinned = ?4,
                      kind = ?5, updated_at = ?6
@@ -309,6 +314,8 @@ impl Db {
                     input.id,
                 ],
             )?;
+            index_memory(&transaction, &input.id)?;
+            transaction.commit()?;
             Ok(())
         })?;
 
@@ -319,7 +326,11 @@ impl Db {
     pub fn delete_memory(&self, id: &str) -> Result<(), DbError> {
         let existing = self.get_memory(id)?;
         let changed = self.with_conn(|conn| {
-            Ok(conn.execute("DELETE FROM memories WHERE id = ?1", params![id])?)
+            let transaction = conn.unchecked_transaction()?;
+            delete_memory_index(&transaction, id)?;
+            let changed = transaction.execute("DELETE FROM memories WHERE id = ?1", params![id])?;
+            transaction.commit()?;
+            Ok(changed)
         })?;
         if changed == 0 {
             return Err(DbError::Other(format!("memory not found: {id}")));
@@ -341,10 +352,17 @@ impl Db {
         })?;
 
         let changed = self.with_conn(|conn| {
-            Ok(conn.execute(
+            let transaction = conn.unchecked_transaction()?;
+            transaction.execute(
+                "DELETE FROM memory_fts WHERE workflow_id = ?1",
+                params![workflow_id],
+            )?;
+            let changed = transaction.execute(
                 "DELETE FROM memories WHERE workflow_id = ?1",
                 params![workflow_id],
-            )?)
+            )?;
+            transaction.commit()?;
+            Ok(changed)
         })?;
 
         for path in paths {

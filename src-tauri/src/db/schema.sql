@@ -108,6 +108,32 @@ CREATE TABLE IF NOT EXISTS memory_links (
   UNIQUE (workflow_id, memory_id)
 );
 
+CREATE TABLE IF NOT EXISTS schema_meta (
+  key TEXT PRIMARY KEY NOT NULL,
+  value TEXT NOT NULL
+);
+
+-- Disposable local search indexes. Canonical text remains in memories and
+-- run_steps; these tables can be cleared and rebuilt at any time.
+CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(
+  memory_id UNINDEXED,
+  workflow_id UNINDEXED,
+  title,
+  body,
+  tokenize = 'unicode61 remove_diacritics 2'
+);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS run_step_fts USING fts5(
+  step_id UNINDEXED,
+  run_id UNINDEXED,
+  workflow_id UNINDEXED,
+  node_id UNINDEXED,
+  input_text,
+  output_text,
+  error_text,
+  tokenize = 'unicode61 remove_diacritics 2'
+);
+
 -- Connected-app metadata only. OAuth credentials live in the OS credential
 -- store and are addressed by the opaque `credential_ref`.
 CREATE TABLE IF NOT EXISTS app_connections (

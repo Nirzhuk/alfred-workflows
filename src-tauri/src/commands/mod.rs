@@ -2,9 +2,9 @@ pub mod integrations;
 
 use crate::agents;
 use crate::db::{
-    CreateMemoryInput, CreateWorkflowInput, Db, Memory, MemoryWithOrigin, Schedule,
-    ScheduleListItem, Trigger, UpdateMemoryInput, UpdateWorkflowInput, UpsertTriggerInput,
-    Workflow, WorkflowFolder,
+    CreateMemoryInput, CreateWorkflowInput, Db, HistorySearchHit, HistorySearchInput, Memory,
+    MemoryWithOrigin, RunHistoryDetail, RunHistoryItem, Schedule, ScheduleListItem, Trigger,
+    UpdateMemoryInput, UpdateWorkflowInput, UpsertTriggerInput, Workflow, WorkflowFolder,
 };
 use crate::integrations::events::{
     AppTriggerConfig, NormalizedAppEvent, NORMALIZED_APP_EVENT_SCHEMA_VERSION,
@@ -144,6 +144,38 @@ pub fn cancel_run(app: AppHandle, db: State<'_, Db>, run_id: String) -> Result<b
 #[tauri::command]
 pub fn list_active_runs() -> Vec<agents::active::ActiveRun> {
     agents::active::list_active()
+}
+
+#[tauri::command]
+pub fn list_run_history(
+    db: State<'_, Db>,
+    workflow_id: Option<String>,
+    limit: Option<usize>,
+    offset: Option<usize>,
+) -> Result<Vec<RunHistoryItem>, String> {
+    db.list_run_history(
+        workflow_id.as_deref(),
+        limit.unwrap_or(25),
+        offset.unwrap_or(0),
+    )
+    .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn get_run_history(
+    db: State<'_, Db>,
+    run_id: String,
+) -> Result<Option<RunHistoryDetail>, String> {
+    db.get_run_history(&run_id)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn search_history(
+    db: State<'_, Db>,
+    input: HistorySearchInput,
+) -> Result<Vec<HistorySearchHit>, String> {
+    db.search_history(input).map_err(|error| error.to_string())
 }
 
 #[tauri::command]
