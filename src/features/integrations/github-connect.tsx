@@ -1,6 +1,8 @@
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useRef, useState } from "react";
 import { Modal, ModalHeader } from "../../components/modal";
+import { ConnectedAppTutorialLayout } from "./components/connected-app-tutorial-layout";
+import { ExternalLinkIcon } from "./components/external-link-icon";
 import { useIntegrationsStore } from "./store";
 import type { GitHubDeviceAuthorization } from "./types";
 
@@ -79,8 +81,13 @@ export function GitHubConnect({ onClose }: { onClose: () => void }) {
     onClose();
   }
 
-  return (
-    <Modal size="md" onClose={() => void close()} labelledBy="github-title">
+  return pairing ? (
+    <Modal
+      size="lg"
+      className="connection-tutorial-modal"
+      onClose={() => void close()}
+      labelledBy="github-title"
+    >
       <ModalHeader
         eyebrow="Developer workflows"
         title="Connect GitHub"
@@ -92,117 +99,149 @@ export function GitHubConnect({ onClose }: { onClose: () => void }) {
         }
       />
       <div className="schedule-modal-body">
-        {!pairing ? (
-          <>
-            <p className="muted">
-              Alfred uses a GitHub App device authorization. Access is limited
-              to the repositories selected for the app installation and to the
-              permissions of your GitHub account.
+        {pairing.installationUrl ? (
+          <div className="github-pairing-card">
+            <p className="settings-label">1. Select repositories</p>
+            <p className="settings-value">
+              Install or configure the Alfred GitHub App for only the
+              repositories you want available to workflows.
             </p>
-            <ul className="github-connection-notes">
-              <li>Repository metadata: read</li>
-              <li>Issues and pull requests: read and write</li>
-              <li>No repository contents, administration, or code-push access</li>
-            </ul>
-            <p className="hint">
-              Tokens are saved only in your system credential store. Existing
-              Git Host nodes continue to use your separate <code>gh</code> CLI login.
-            </p>
-            {error ? (
-              <p className="app-action-warning" role="alert">
-                {error.message}
-              </p>
-            ) : null}
-            <div className="schedule-actions">
-              <button
-                type="button"
-                className="primary"
-                disabled={loading}
-                onClick={() => void start()}
-              >
-                {loading ? "Starting…" : "Start GitHub authorization"}
-              </button>
-            </div>
-          </>
-        ) : (
-          <>
-            {pairing.installationUrl ? (
-              <div className="github-pairing-card">
-                <p className="settings-label">1. Select repositories</p>
-                <p className="settings-value">
-                  Install or configure the Alfred GitHub App for only the
-                  repositories you want available to workflows.
-                </p>
-                <button
-                  type="button"
-                  className="ghost"
-                  disabled={loading}
-                  onClick={() =>
-                    void openExternal(pairing.installationUrl!, "GitHub App installation")
-                  }
-                >
-                  Select repositories on GitHub
-                </button>
-              </div>
-            ) : null}
-            <div className="github-pairing-card">
-              <p className="settings-label">
-                {pairing.installationUrl ? "2. Authorize Alfred" : "Authorize Alfred"}
-              </p>
-              <p className="settings-value">
-                Enter this one-time code on GitHub before {" "}
-                {new Date(pairing.expiresAt).toLocaleTimeString([], {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}
-                .
-              </p>
-              <div className="github-device-code-row">
-                <code aria-label="GitHub device code">{pairing.userCode}</code>
-                <button type="button" className="ghost" onClick={() => void copyCode()}>
-                  {copied ? "Copied" : "Copy code"}
-                </button>
-              </div>
-              <button
-                type="button"
-                className="ghost"
-                disabled={loading}
-                onClick={() => void openExternal(pairing.verificationUri, "GitHub")}
-              >
-                {opened ? "Open GitHub again" : "Open GitHub"}
-              </button>
-              <p className="hint">
-                If the button does not open, visit <code>{pairing.verificationUri}</code>.
-              </p>
-            </div>
-            <p className="hint">
-              Organization repositories can require administrator approval or
-              an active SAML SSO session. Alfred never receives your GitHub password.
-            </p>
-            {openError ? (
-              <p className="app-action-warning" role="alert">
-                {openError}
-              </p>
-            ) : null}
-            {pendingMessage ? <p className="hint" role="status">{pendingMessage}</p> : null}
-            {error ? (
-              <p className="app-action-warning" role="alert">
-                {error.message}
-              </p>
-            ) : null}
-            <div className="schedule-actions">
-              <button
-                type="button"
-                className="primary"
-                disabled={loading}
-                onClick={() => void checkAuthorization()}
-              >
-                {loading ? "Checking…" : "I've authorized — connect"}
-              </button>
-            </div>
-          </>
-        )}
+            <button
+              type="button"
+              className="ghost tutorial-wizard-step-link"
+              disabled={loading}
+              onClick={() =>
+                void openExternal(pairing.installationUrl!, "GitHub App installation")
+              }
+            >
+              Select repositories on GitHub <ExternalLinkIcon />
+            </button>
+          </div>
+        ) : null}
+        <div className="github-pairing-card">
+          <p className="settings-label">
+            {pairing.installationUrl ? "2. Authorize Alfred" : "Authorize Alfred"}
+          </p>
+          <p className="settings-value">
+            Enter this one-time code on GitHub before{" "}
+            {new Date(pairing.expiresAt).toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+            })}
+            .
+          </p>
+          <div className="github-device-code-row">
+            <code aria-label="GitHub device code">{pairing.userCode}</code>
+            <button type="button" className="ghost" onClick={() => void copyCode()}>
+              {copied ? "Copied" : "Copy code"}
+            </button>
+          </div>
+          <button
+            type="button"
+            className="ghost tutorial-wizard-step-link"
+            disabled={loading}
+            onClick={() => void openExternal(pairing.verificationUri, "GitHub")}
+          >
+            {opened ? "Open GitHub again" : "Open GitHub"} <ExternalLinkIcon />
+          </button>
+          <p className="hint">
+            If the button does not open, visit <code>{pairing.verificationUri}</code>.
+          </p>
+        </div>
+        <p className="hint">
+          Organization repositories can require administrator approval or an
+          active SAML SSO session. Alfred never receives your GitHub password.
+        </p>
+        {openError ? (
+          <p className="app-action-warning" role="alert">
+            {openError}
+          </p>
+        ) : null}
+        {pendingMessage ? (
+          <p className="hint" role="status">
+            {pendingMessage}
+          </p>
+        ) : null}
+        {error ? (
+          <p className="app-action-warning" role="alert">
+            {error.message}
+          </p>
+        ) : null}
+        <div className="schedule-actions">
+          <button
+            type="button"
+            className="primary"
+            disabled={loading}
+            onClick={() => void checkAuthorization()}
+          >
+            {loading ? "Checking…" : "I've authorized. Connect"}
+          </button>
+        </div>
       </div>
     </Modal>
+  ) : (
+    <ConnectedAppTutorialLayout
+      providerId="github"
+      providerName="GitHub"
+      title="Connect GitHub"
+      titleId="github-title"
+      description={
+        <p>
+          Alfred uses GitHub App device authorization. Access is limited to the
+          repositories selected for the app installation.
+        </p>
+      }
+      badge="Scoped access"
+      formLabel="Then authorize it in GitHub"
+      steps={[
+        {
+          title: "Select repositories",
+          description: (
+            <p>
+              Choose only the repositories you want available to workflows.
+              Repository metadata is read; no repository contents are requested.
+            </p>
+          ),
+        },
+        {
+          title: "Authorize Alfred",
+          description: (
+            <p>
+              Alfred starts a device authorization and gives you a one-time code
+              to enter on GitHub.
+            </p>
+          ),
+        },
+        {
+          title: "Review the boundary",
+          description: (
+            <p>
+              Issues and pull requests are read and write. No repository contents, administration, or code-push access is granted.
+            </p>
+          ),
+        },
+      ]}
+      onClose={() => void close()}
+    >
+      <p className="connection-tutorial-form-note">
+        Tokens are saved only in your system credential store. Existing Git Host
+        nodes continue to use your separate <code>gh</code> CLI login.
+      </p>
+      {error ? (
+        <p className="app-action-warning" role="alert">
+          {error.message}
+        </p>
+      ) : null}
+      <div className="schedule-actions">
+        <button
+          type="button"
+          className="primary"
+          disabled={loading}
+          onClick={() => void start()}
+        >
+          {loading ? "Starting…" : "Start GitHub authorization"}
+        </button>
+      </div>
+    </ConnectedAppTutorialLayout>
   );
 }

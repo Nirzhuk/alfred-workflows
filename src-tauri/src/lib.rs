@@ -242,6 +242,7 @@ pub fn run() {
             commands::integrations::poll_github_connection,
             commands::integrations::cancel_github_pairing,
             commands::integrations::connect_notion_private,
+            commands::integrations::connect_obsidian_vault,
             commands::integrations::prepare_telegram_connection,
             commands::integrations::complete_telegram_connection,
             commands::integrations::cancel_telegram_pairing,

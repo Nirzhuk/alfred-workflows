@@ -6,6 +6,7 @@ use crate::integrations::models::{
     AppConnectionDto, AppConnectionUsage, AppProviderDto, IntegrationCommandError,
 };
 use crate::integrations::notion::NotionPrivateConnectionInput;
+use crate::integrations::obsidian::ObsidianVaultConnectionInput;
 use crate::integrations::slack::SlackPrivateConnectionInput;
 use crate::integrations::telegram::{
     TelegramCompleteInput, TelegramPairingPrepared, TelegramPrepareInput,
@@ -173,6 +174,15 @@ pub async fn connect_notion_private(
     input: NotionPrivateConnectionInput,
 ) -> Result<AppConnectionDto, IntegrationCommandError> {
     state.connect_notion_private(db.inner(), input).await
+}
+
+#[tauri::command]
+pub async fn connect_obsidian_vault(
+    db: State<'_, Db>,
+    state: State<'_, IntegrationsState>,
+    input: ObsidianVaultConnectionInput,
+) -> Result<AppConnectionDto, IntegrationCommandError> {
+    state.connect_obsidian_vault(db.inner(), input).await
 }
 
 #[tauri::command]

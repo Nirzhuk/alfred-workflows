@@ -72,6 +72,12 @@ function api(overrides: Partial<IntegrationsApi> = {}): IntegrationsApi {
       connectionMode: "private_bot",
       scopes: ["search", "read_content"],
     }),
+    connectObsidianVault: async () => ({
+      ...connection("Knowledge"),
+      providerId: "obsidian",
+      connectionMode: "local_vault",
+      scopes: ["vault:search_notes", "vault:read_notes"],
+    }),
     prepareTelegramConnection: async () => ({
       pairingSessionId: "pairing-session",
       botUsername: "alfred_fixture_bot",
@@ -237,6 +243,35 @@ describe("Connected Apps store", () => {
     expect(submittedToken).toBe("ntn_notion-token-secret-fixture");
     expect(JSON.stringify(store.getState())).not.toContain(
       "notion-token-secret-fixture",
+    );
+  });
+
+  test("submits an Obsidian path without retaining it in store state", async () => {
+    let submittedPath = "";
+    const store = createStore(
+      createIntegrationsState(
+        api({
+          connectObsidianVault: async (input) => {
+            submittedPath = input.vaultPath;
+            return {
+              ...connection("Knowledge"),
+              providerId: "obsidian",
+              connectionMode: "local_vault",
+              scopes: ["vault:search_notes", "vault:read_notes"],
+            };
+          },
+        }),
+      ),
+    );
+
+    expect(
+      await store.getState().connectObsidianVault({
+        vaultPath: "/private/example/Knowledge",
+      }),
+    ).toBeNull();
+    expect(submittedPath).toBe("/private/example/Knowledge");
+    expect(JSON.stringify(store.getState())).not.toContain(
+      "/private/example/Knowledge",
     );
   });
 

@@ -80,7 +80,11 @@ export function AppActionSettings({ data, onUpdate }: Props) {
           disabled={loading}
           onChange={(event) =>
             replaceData(
-              selectAppActionProvider(data, event.currentTarget.value),
+              selectAppActionProvider(
+                data,
+                event.currentTarget.value,
+                connections,
+              ),
             )
           }
         >
@@ -103,7 +107,7 @@ export function AppActionSettings({ data, onUpdate }: Props) {
               providerActions.find(
                 (candidate) => candidate.actionId === event.currentTarget.value,
               ) ?? null;
-            replaceData(selectAppAction(data, selected));
+            replaceData(selectAppAction(data, selected, connections));
           }}
         >
           <option value="">Choose an action…</option>

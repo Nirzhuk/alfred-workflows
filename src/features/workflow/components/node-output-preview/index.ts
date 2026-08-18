@@ -1,1 +1,1 @@
-export { NodeOutputPreview } from "./node-output-preview";
+export { NodeOutputPreview, previewText } from "./node-output-preview";

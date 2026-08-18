@@ -10,6 +10,7 @@ import {
   mergeAttachments,
   pickFileAttachments,
   pickFolderAttachments,
+  shortAttachmentPath,
 } from "../../attachments";
 import { useWorkflowStore } from "../../store";
 import type { PromptNodeData } from "../../types";
@@ -191,6 +192,27 @@ export function PromptNode({ id, data, selected }: NodeProps<InputFlowNode>) {
           readOnly={blocked}
           variant="compact"
         />
+        {data.script ? (
+          <ul className="wf-input-attach-list">
+            <li
+              className="wf-input-attach-chip"
+              title={
+                data.script.source === "file"
+                  ? data.script.path
+                  : "Saved inline script"
+              }
+            >
+              <span className="wf-input-attach-kind">
+                {data.script.run ? "Script · run" : "Script"}
+              </span>
+              <span className="wf-input-attach-path">
+                {data.script.source === "file"
+                  ? shortAttachmentPath(data.script.path) || "No file"
+                  : "Inline script"}
+              </span>
+            </li>
+          </ul>
+        ) : null}
       </div>
 
       <NodeOutputPreview nodeId={id} title={title} />

@@ -18,8 +18,8 @@
 - **Depends on**: Plans 008, 009; Plan 010 for change events; Plan 011 for public OAuth/webhooks
 - **Category**: integration roadmap
 - **Planned at**: 2026-08-11
-- **Implementation status**: IN PROGRESS — Stage A private Notion connection
-  and bounded retrieval actions are implemented and automated gates pass;
+- **Implementation status**: IN PROGRESS — Stage A private Notion and a local,
+  read-only Obsidian vault slice are implemented with bounded retrieval actions;
   public Notion OAuth remains behind Plan 011. Stage B is blocked on Plan 014's
   Google account/scope approval path. Stage C is deferred pending Plan 013,
   tenant policy, and demonstrated enterprise demand.
@@ -37,6 +37,8 @@ Priority:
 2. Google Drive/Docs for general workspace documents.
 3. SharePoint/OneDrive for Microsoft enterprise tenants, reusing Microsoft
    identity concepts without coupling to Outlook actions.
+4. Obsidian for local-first Markdown knowledge without an OAuth or relay
+   dependency (added during execution).
 
 ## Commands you will need
 
@@ -205,6 +207,9 @@ restricted download, sensitivity-label behavior, delta reset, and revoked user.
   truncation, unsupported-block markers, and no embed/media URL fetching.
 - [x] Added prompt-injection, pagination, recursive depth, unshared/revoked,
   rate-limit, property allow-list, identity, redaction, and token-store tests.
+- [x] Added a read-only local Obsidian vault connection plus bounded
+  `obsidian.search_notes` and `obsidian.read_note` actions. Vault paths stay in
+  the OS credential store; hidden folders, traversal, and symlinks are rejected.
 - [x] `bun test`, `bun run build:frontend`, Rust tests, and Rust check pass for
   this slice (Rust network fixtures require localhost binding permission).
 - [ ] Public Notion OAuth/webhooks: blocked by Plan 011's unapproved relay ADR.

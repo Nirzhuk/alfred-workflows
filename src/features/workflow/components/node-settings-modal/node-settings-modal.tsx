@@ -18,8 +18,11 @@ import {
   pickFileAttachments,
   pickFolderAttachments,
 } from "../../attachments";
+import { SelectControl } from "../../../../components/select-control";
 import {
   agentSkillNames,
+  DEFAULT_SCRIPT_MESSAGE,
+  defaultInputScript,
   isAppActionNodeData,
   isAgentNodeData,
   isCustomAgentNodeData,
@@ -31,15 +34,18 @@ import {
   isNotifyNodeData,
   isOutputNodeData,
   isPromptNodeData,
+  isScriptNodeData,
   isShellNodeData,
   isTemplateNodeData,
   isWriteFileNodeData,
   titleForNodeType,
   type AgentProviderId,
   type InputAttachment,
+  type InputScript,
   type OutputMemory,
   type OutputNodeData,
   type PromptNodeData,
+  type ScriptRef,
   type Skill,
 } from "../../types";
 import { InputAttachmentList } from "../input-attachment-list";
@@ -51,6 +57,8 @@ import {
   GitStatusSettings,
   HttpSettings,
   NotifySettings,
+  ScriptRefFields,
+  ScriptSettings,
   ShellSettings,
   TemplateSettings,
   WriteFileSettings,
@@ -130,6 +138,7 @@ export function NodeSettingsModal({ nodeId, onClose }: Props) {
             prompt={node.data.prompt}
             blocked={Boolean(node.data.blocked)}
             attachments={node.data.attachments ?? []}
+            script={node.data.script}
             onUpdate={(patch) => updateNodeData(node.id, patch)}
           />
         ) : null}
@@ -210,6 +219,13 @@ export function NodeSettingsModal({ nodeId, onClose }: Props) {
           />
         ) : null}
 
+        {isScriptNodeData(node.data) ? (
+          <ScriptSettings
+            data={node.data}
+            onUpdate={(patch) => updateNodeData(node.id, patch)}
+          />
+        ) : null}
+
         {isHttpNodeData(node.data) ? (
           <HttpSettings
             data={node.data}
@@ -247,6 +263,7 @@ type InputSettingsProps = {
   prompt: string;
   blocked: boolean;
   attachments: InputAttachment[];
+  script?: InputScript;
   onUpdate: (patch: Partial<PromptNodeData>) => void;
 };
 
@@ -255,6 +272,7 @@ function InputSettings({
   prompt,
   blocked,
   attachments,
+  script,
   onUpdate,
 }: InputSettingsProps) {
   const addFiles = async () => {
@@ -353,6 +371,73 @@ function InputSettings({
           readOnly={blocked}
           variant="modal"
         />
+      </div>
+      <div className="field wf-attach-field">
+        <div className="wf-attach-field-header">
+          <span>Script</span>
+        </div>
+        <label className="field">
+          <span>Use a script</span>
+          <SelectControl
+            value={script ? script.source : "none"}
+            disabled={blocked}
+            onChange={(e) => {
+              const next = e.target.value;
+              if (next === "none") {
+                onUpdate({ script: undefined });
+                return;
+              }
+              const source = next as ScriptRef["source"];
+              onUpdate({
+                script: script
+                  ? { ...script, source }
+                  : defaultInputScript(source),
+              });
+            }}
+          >
+            <option value="none">No script</option>
+            <option value="file">File on disk</option>
+            <option value="inline">Saved script</option>
+          </SelectControl>
+        </label>
+        {script ? (
+          <>
+            <ScriptRefFields
+              data={script}
+              disabled={blocked}
+              onUpdate={(patch) => onUpdate({ script: { ...script, ...patch } })}
+            />
+            <label className="field">
+              <span>Message</span>
+              <textarea
+                rows={2}
+                value={script.message}
+                disabled={blocked}
+                placeholder={DEFAULT_SCRIPT_MESSAGE}
+                onChange={(e) =>
+                  onUpdate({ script: { ...script, message: e.target.value } })
+                }
+              />
+            </label>
+            <label className="field checkbox-field">
+              <input
+                type="checkbox"
+                checked={script.run}
+                disabled={blocked}
+                onChange={(e) =>
+                  onUpdate({ script: { ...script, run: e.target.checked } })
+                }
+              />
+              <span>Run it before the agent</span>
+            </label>
+            <p className="hint">
+              By default the agent is only told about the script and decides
+              when to run it. When run here, the output is appended under “Script
+              output” — a non-zero exit does not stop the run, the agent gets the
+              failure instead.
+            </p>
+          </>
+        ) : null}
       </div>
     </>
   );

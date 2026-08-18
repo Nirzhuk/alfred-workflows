@@ -24,7 +24,26 @@
 - **Does not depend on**: Connected Apps plans 008–023, release-money track
 - **Category**: workflow
 - **Planned at**: 2026-08-17
-- **Implementation status**: TODO
+- **Implementation status**: DONE (2026-08-17). All five phases shipped.
+  `bun test` 97 pass, `bun run build:frontend` clean, `cargo test` 154 pass
+  (6 new script tests), `cargo fmt --check` and `git diff --check` clean.
+  Live smoke on the running app is still unrun.
+
+## Deviations from the plan as written
+
+- `src/platform.ts` already exports `detectDesktopPlatform()`, so
+  `defaultInterpreter()` uses it instead of the sketched `navigator` sniff.
+  There is no `@/` path alias in this repo — imports are relative.
+- `CmdOutput` had no exit code, only `success: bool`. Added `code: Option<i32>`
+  and changed `wait_child` to return `(bool, Option<i32>)` so `(exit N)` is
+  real rather than inferred.
+- Shebang handling was widened from inline-only to any script whose first two
+  bytes are `#!`. A user's own file is run directly only when it is already
+  executable; Alfred chmods only the temp file it created itself.
+- `ScriptRefFields` was extracted so the Script node and the Input node option
+  render identical source/path/body/interpreter controls.
+- The canvas chip reuses `wf-input-attach-chip`, so no new CSS beyond adding
+  `.wf-node-script` to the existing `.wf-node-shell` rule.
 
 ## Product decisions
 

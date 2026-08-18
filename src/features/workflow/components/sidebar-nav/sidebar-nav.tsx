@@ -22,14 +22,14 @@ function NewWorkflowIcon() {
       <path
         d="M11.75 3.25H5.5A2.25 2.25 0 0 0 3.25 5.5v9A2.25 2.25 0 0 0 5.5 16.75h9a2.25 2.25 0 0 0 2.25-2.25V8.25"
         stroke="currentColor"
-        strokeWidth="1.55"
+        strokeWidth="1.35"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
       <path
         d="m9 11 1.05-3.05 4.7-4.7a1.42 1.42 0 0 1 2 2l-4.7 4.7L9 11Z"
         stroke="currentColor"
-        strokeWidth="1.55"
+        strokeWidth="1.35"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
@@ -43,7 +43,7 @@ function ActivityIcon() {
       <path
         d="M3.25 15.75v-4.5M7.75 15.75v-9M12.25 15.75v-6.5M16.75 15.75v-12"
         stroke="currentColor"
-        strokeWidth="1.55"
+        strokeWidth="1.35"
         strokeLinecap="round"
       />
     </svg>
@@ -56,13 +56,13 @@ function MemoriesIcon() {
       <path
         d="M4.25 3.25h11.5v13.5L13 14.9l-3 1.85-3-1.85-2.75 1.85V3.25Z"
         stroke="currentColor"
-        strokeWidth="1.55"
+        strokeWidth="1.35"
         strokeLinejoin="round"
       />
       <path
         d="M7 7h6M7 10h4"
         stroke="currentColor"
-        strokeWidth="1.55"
+        strokeWidth="1.35"
         strokeLinecap="round"
       />
     </svg>
@@ -72,11 +72,11 @@ function MemoriesIcon() {
 function ClockIcon() {
   return (
     <svg viewBox="0 0 20 20" fill="none" aria-hidden>
-      <circle cx="10" cy="10" r="7" stroke="currentColor" strokeWidth="1.55" />
+      <circle cx="10" cy="10" r="7" stroke="currentColor" strokeWidth="1.35" />
       <path
         d="M10 6.25V10l2.65 1.75"
         stroke="currentColor"
-        strokeWidth="1.55"
+        strokeWidth="1.35"
         strokeLinecap="round"
       />
     </svg>
@@ -89,7 +89,7 @@ function ConnectedAppsIcon() {
       <path
         d="M7.4 12.6 5.8 14.2a2.83 2.83 0 0 1-4-4l2.45-2.45a2.83 2.83 0 0 1 4 0M12.6 7.4l1.6-1.6a2.83 2.83 0 1 1 4 4l-2.45 2.45a2.83 2.83 0 0 1-4 0M7.25 12.75l5.5-5.5"
         stroke="currentColor"
-        strokeWidth="1.55"
+        strokeWidth="1.35"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
@@ -103,7 +103,7 @@ function SettingsIcon() {
       <path
         d="M8.05 2.3h3.9l.4 2.15c.55.2 1.06.47 1.5.83l2.08-.75 1.9 3.3-1.68 1.4c.1.48.14.98.14 1.49s-.05 1.01-.14 1.49l1.68 1.4-1.9 3.3-2.08-.75c-.44.36-.95.63-1.5.83l-.4 2.15h-3.9l-.4-2.15a6 6 0 0 1-1.5-.83l-2.08.75-1.9-3.3 1.68-1.4a6.4 6.4 0 0 1 0-2.98l-1.68-1.4 1.9-3.3 2.08.75c.44-.36.95-.63 1.5-.83l.4-2.15Z"
         stroke="currentColor"
-        strokeWidth="1.45"
+        strokeWidth="1.35"
         strokeLinejoin="round"
       />
       <circle
@@ -111,7 +111,7 @@ function SettingsIcon() {
         cy="10.72"
         r="2.45"
         stroke="currentColor"
-        strokeWidth="1.45"
+        strokeWidth="1.35"
       />
     </svg>
   );

@@ -6,6 +6,7 @@ import type {
   GitStatusNodeData,
   HttpNodeData,
   NotifyNodeData,
+  ScriptNodeData,
   ShellNodeData,
   TemplateNodeData,
   WriteFileNodeData,
@@ -83,6 +84,25 @@ export function ShellNode({
       className="wf-node-shell"
       title={data.label || "Shell"}
       body={previewLine(data.command, "No command")}
+      meta={data.appendOutput ? "Append stdout to context" : "Run only"}
+    />
+  );
+}
+
+export function ScriptNode({
+  id,
+  data,
+}: NodeProps<Node<ScriptNodeData, "script">>) {
+  const body =
+    data.source === "file"
+      ? previewLine(data.path, "No script file")
+      : previewLine(data.body, "Empty script");
+  return (
+    <SimpleStepNode
+      id={id}
+      className="wf-node-script"
+      title={data.label || "Script"}
+      body={body}
       meta={data.appendOutput ? "Append stdout to context" : "Run only"}
     />
   );

@@ -6,6 +6,7 @@ pub mod knowledge;
 pub mod models;
 pub mod notion;
 pub mod oauth_native;
+pub mod obsidian;
 pub mod refresh;
 pub mod slack;
 pub mod telegram;
@@ -65,6 +66,7 @@ impl IntegrationsState {
         telegram::register(&state.actions, telegram)
             .expect("Telegram action descriptor must be valid");
         notion::register(&state.actions).expect("Notion action descriptors must be valid");
+        obsidian::register(&state.actions).expect("Obsidian action descriptors must be valid");
         state
     }
 
@@ -239,6 +241,14 @@ impl IntegrationsState {
         input: notion::NotionPrivateConnectionInput,
     ) -> Result<models::AppConnectionDto, IntegrationCommandError> {
         notion::connect_private(db, self.token_store.clone(), input).await
+    }
+
+    pub async fn connect_obsidian_vault(
+        &self,
+        db: &Db,
+        input: obsidian::ObsidianVaultConnectionInput,
+    ) -> Result<models::AppConnectionDto, IntegrationCommandError> {
+        obsidian::connect_vault(db, self.token_store.clone(), input).await
     }
 
     pub async fn prepare_telegram_connection(

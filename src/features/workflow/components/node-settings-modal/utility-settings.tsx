@@ -1,4 +1,5 @@
 import { open } from "@tauri-apps/plugin-dialog";
+import { SelectControl } from "../../../../components/select-control";
 import type {
   CustomAgentNodeData,
   FileInjectNodeData,
@@ -6,10 +7,13 @@ import type {
   GitStatusNodeData,
   HttpNodeData,
   NotifyNodeData,
+  ScriptNodeData,
+  ScriptRef,
   ShellNodeData,
   TemplateNodeData,
   WriteFileNodeData,
 } from "../../types";
+import { defaultInterpreter } from "../../types";
 
 function LabelField({
   value,
@@ -249,6 +253,135 @@ export function ShellSettings({
         />
         <span>Append stdout/stderr to context</span>
       </label>
+    </>
+  );
+}
+
+async function pickScriptFile(): Promise<string | null> {
+  try {
+    const picked = await open({
+      multiple: false,
+      directory: false,
+      title: "Choose a script",
+    });
+    return typeof picked === "string" ? picked : null;
+  } catch (e) {
+    console.warn("File picker unavailable", e);
+    return null;
+  }
+}
+
+/**
+ * Source, path/body, and interpreter controls. Shared by the Script node and
+ * the Input node's "use this script" option so both stay identical.
+ */
+export function ScriptRefFields({
+  data,
+  onUpdate,
+  disabled = false,
+}: {
+  data: ScriptRef;
+  onUpdate: (patch: Partial<ScriptRef>) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <>
+      <label className="field">
+        <span>Source</span>
+        <SelectControl
+          value={data.source}
+          disabled={disabled}
+          onChange={(e) =>
+            onUpdate({ source: e.target.value as ScriptRef["source"] })
+          }
+        >
+          <option value="file">File on disk</option>
+          <option value="inline">Saved script</option>
+        </SelectControl>
+      </label>
+
+      {data.source === "file" ? (
+        <div className="field">
+          <div className="wf-attach-field-header">
+            <span>Path</span>
+            <button
+              type="button"
+              className="ghost wf-input-attach-btn"
+              disabled={disabled}
+              onClick={() => {
+                void pickScriptFile().then((path) => {
+                  if (path) onUpdate({ path });
+                });
+              }}
+            >
+              Browse…
+            </button>
+          </div>
+          <input
+            type="text"
+            value={data.path}
+            disabled={disabled}
+            placeholder="e.g. ./scripts/run-tests.sh"
+            onChange={(e) => onUpdate({ path: e.target.value })}
+          />
+        </div>
+      ) : (
+        <label className="field">
+          <span>Script</span>
+          <textarea
+            className="wf-script-body"
+            rows={8}
+            spellCheck={false}
+            value={data.body}
+            disabled={disabled}
+            placeholder={"#!/usr/bin/env bash\nbun test"}
+            onChange={(e) => onUpdate({ body: e.target.value })}
+          />
+        </label>
+      )}
+
+      <label className="field">
+        <span>Run with</span>
+        <input
+          type="text"
+          value={data.interpreter}
+          disabled={disabled}
+          placeholder={defaultInterpreter()}
+          onChange={(e) => onUpdate({ interpreter: e.target.value })}
+        />
+      </label>
+    </>
+  );
+}
+
+export function ScriptSettings({
+  data,
+  onUpdate,
+}: {
+  data: ScriptNodeData;
+  onUpdate: (patch: Partial<ScriptNodeData>) => void;
+}) {
+  return (
+    <>
+      <LabelField
+        value={data.label}
+        onChange={(label) => onUpdate({ label })}
+      />
+      <ScriptRefFields data={data} onUpdate={onUpdate} />
+      <label className="field checkbox-field">
+        <input
+          type="checkbox"
+          checked={data.appendOutput}
+          onChange={(e) => onUpdate({ appendOutput: e.target.checked })}
+        />
+        <span>Append stdout/stderr to context</span>
+      </label>
+      <p className="hint">
+        The previous step’s output arrives on stdin and as{" "}
+        <code>$ALFRED_OUTPUT</code>; the accumulated context is{" "}
+        <code>$ALFRED_CONTEXT</code>. On macOS and Linux a leading{" "}
+        <code>#!</code> line overrides “Run with”. A non-zero exit stops the run.
+      </p>
     </>
   );
 }

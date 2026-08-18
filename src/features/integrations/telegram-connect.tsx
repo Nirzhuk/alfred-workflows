@@ -1,6 +1,8 @@
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useRef, useState } from "react";
 import { Modal, ModalHeader } from "../../components/modal";
+import { ConnectedAppTutorialLayout } from "./components/connected-app-tutorial-layout";
+import { ExternalLinkIcon } from "./components/external-link-icon";
 import { TelegramSetupProgress } from "./components/telegram-setup-progress";
 import { useIntegrationsStore } from "./store";
 import type { TelegramPairingPrepared } from "./types";
@@ -111,138 +113,173 @@ export function TelegramConnect({ onClose }: { onClose: () => void }) {
     onClose();
   }
 
-  return (
-    <Modal size="md" onClose={() => void close()} labelledBy="telegram-title">
-      <ModalHeader
-        eyebrow="Personal notifications"
+  return pairing ? (
+      <Modal
+        size="lg"
+        className="connection-tutorial-modal"
+        onClose={() => void close()}
+        labelledBy="telegram-title"
+      >
+        <ModalHeader
+          eyebrow="Personal notifications"
+          title="Connect Telegram"
+          titleId="telegram-title"
+          actions={
+            <button type="button" className="ghost" onClick={() => void close()}>
+              Close
+            </button>
+          }
+        />
+        <div className="schedule-modal-body">
+          <TelegramSetupProgress pairingStarted />
+          <div className="telegram-pairing-card">
+            <p className="settings-label">@{pairing.botUsername}</p>
+            <p className="settings-value">
+              Open this bot, press <strong>Start</strong>, then return to
+              Alfred. The one-use link expires at{" "}
+              {new Date(pairing.expiresAt).toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+              .
+            </p>
+            <button
+              type="button"
+              className="ghost telegram-open-button"
+              disabled={loading}
+              onClick={() => void openTelegram()}
+            >
+              {telegramOpened ? "Open Telegram again" : "Open Telegram"}
+            </button>
+          </div>
+          {openError ? (
+            <p className="app-action-warning" role="alert">
+              {openError}
+            </p>
+          ) : null}
+          <label className="field">
+            <span>Test notification</span>
+            <textarea
+              value={testMessage}
+              maxLength={4096}
+              rows={3}
+              onChange={(event) => setTestMessage(event.currentTarget.value)}
+            />
+            <span className="hint">
+              Pairing is saved only after Telegram accepts this explicit test.
+            </span>
+          </label>
+          {error ? (
+            <p className="app-action-warning" role="alert">
+              {error.message}
+            </p>
+          ) : null}
+          <div className="schedule-actions">
+            <button
+              type="button"
+              className="primary"
+              disabled={loading || !telegramOpened || !testMessage.trim()}
+              onClick={() => void finishPairing()}
+            >
+              {loading ? "Checking and sending…" : "Finish pairing and send test"}
+            </button>
+          </div>
+        </div>
+      </Modal>
+    ) : (
+      <ConnectedAppTutorialLayout
+        providerId="telegram"
+        providerName="Telegram"
         title="Connect Telegram"
         titleId="telegram-title"
-        actions={
-          <button type="button" className="ghost" onClick={() => void close()}>
-            Close
-          </button>
+        description={
+          <p>
+            Create a fresh bot dedicated to Alfred. It sends plain-text
+            notifications only to your private Telegram chat.
+          </p>
         }
-      />
-      <div className="schedule-modal-body">
-        <TelegramSetupProgress pairingStarted={Boolean(pairing)} />
-        {!pairing ? (
-          <>
-            <p className="muted">
-              Create a fresh bot dedicated to Alfred. This connection sends
-              plain-text notifications only to your private Telegram chat.
-            </p>
-            <ol className="telegram-setup-steps">
-              <li>
-                Open{" "}
+        badge="Private chat"
+        steps={[
+          {
+            title: "Create a dedicated bot",
+            description: (
+              <>
+                <p>
+                  Use <code>/newbot</code> in Telegram and keep this bot
+                  separate from other automations.
+                </p>
                 <button
                   type="button"
-                  className="link-button"
+                  className="ghost tutorial-wizard-step-link"
                   onClick={() => void openBotFather()}
                 >
-                  @BotFather
-                </button>{" "}
-                in Telegram and create a new bot with <code>/newbot</code>.
-              </li>
-              <li>Copy the bot token BotFather gives you.</li>
-              <li>
-                Do not reuse a bot with a webhook or other automation. Alfred
-                rejects it so pairing cannot consume another app&apos;s updates.
-              </li>
-            </ol>
-            {openError ? (
-              <p className="app-action-warning" role="alert">
-                {openError}
+                  Open @BotFather <ExternalLinkIcon />
+                </button>
+              </>
+            ),
+          },
+          {
+            title: "Paste the BotFather token",
+            description: (
+              <p>
+                Copy the token BotFather gives you and validate it below.
+                Alfred rejects bots that already have a webhook.
               </p>
-            ) : null}
-            <p className="hint">
-              The token goes directly to Rust, is validated with Telegram, and
-              is cleared from this form after every attempt. It is saved only
-              after the mandatory test succeeds.
-            </p>
-            <label className="field">
-              <span>BotFather token</span>
-              <input
-                type="password"
-                value={botToken}
-                autoComplete="off"
-                spellCheck={false}
-                placeholder="123456789:AA…"
-                onChange={(event) => setBotToken(event.currentTarget.value)}
-              />
-            </label>
-            {error ? (
-              <p className="app-action-warning" role="alert">
-                {error.message}
+            ),
+          },
+          {
+            title: "Start the bot and send a test",
+            description: (
+              <p>
+                After validation, open the one-use pairing link, press
+                <strong> Start</strong>, then return to Alfred.
               </p>
-            ) : null}
-            <div className="schedule-actions">
-              <button
-                type="button"
-                className="primary"
-                disabled={loading || !botToken.trim()}
-                onClick={() => void validateToken()}
-              >
-                {loading ? "Validating…" : "Validate bot"}
-              </button>
-            </div>
-          </>
-        ) : (
-          <>
-            <div className="telegram-pairing-card">
-              <p className="settings-label">@{pairing.botUsername}</p>
-              <p className="settings-value">
-                Open this bot, press <strong>Start</strong>, then return to
-                Alfred. The one-use link expires at{" "}
-                {new Date(pairing.expiresAt).toLocaleTimeString([], {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}
-                .
-              </p>
-              <button
-                type="button"
-                className="ghost telegram-open-button"
-                disabled={loading}
-                onClick={() => void openTelegram()}
-              >
-                {telegramOpened ? "Open Telegram again" : "Open Telegram"}
-              </button>
-            </div>
-            {openError ? (
-              <p className="app-action-warning" role="alert">
-                {openError}
-              </p>
-            ) : null}
-            <label className="field">
-              <span>Test notification</span>
-              <textarea
-                value={testMessage}
-                maxLength={4096}
-                rows={3}
-                onChange={(event) => setTestMessage(event.currentTarget.value)}
-              />
-              <span className="hint">
-                Pairing is saved only after Telegram accepts this explicit test.
-              </span>
-            </label>
-            {error ? (
-              <p className="app-action-warning" role="alert">
-                {error.message}
-              </p>
-            ) : null}
-            <div className="schedule-actions">
-              <button
-                type="button"
-                className="primary"
-                disabled={loading || !telegramOpened || !testMessage.trim()}
-                onClick={() => void finishPairing()}
-              >
-                {loading ? "Checking and sending…" : "Finish pairing and send test"}
-              </button>
-            </div>
-          </>
-        )}
-      </div>
-    </Modal>
+            ),
+          },
+        ]}
+        onClose={() => void close()}
+      >
+        {openError ? (
+          <p className="connection-tutorial-inline-error" role="alert">
+            {openError}
+          </p>
+        ) : null}
+        <label className="field">
+          <span className="connection-tutorial-field-label">
+            <span>BotFather token</span>
+            <span className="connection-tutorial-required">required</span>
+          </span>
+          <input
+            type="password"
+            value={botToken}
+            autoComplete="off"
+            spellCheck={false}
+            placeholder="123456789:AA…"
+            onChange={(event) => setBotToken(event.currentTarget.value)}
+          />
+          <span className="connection-tutorial-input-hint">
+            Validated with Telegram before it is saved.
+          </span>
+        </label>
+        {error ? (
+          <p className="app-action-warning" role="alert">
+            {error.message}
+          </p>
+        ) : null}
+        <p className="connection-tutorial-security-copy">
+          The token goes directly to Rust, is cleared from this form after
+          every attempt, and is saved only after the mandatory test succeeds.
+        </p>
+        <div className="schedule-actions">
+          <button
+            type="button"
+            className="primary"
+            disabled={loading || !botToken.trim()}
+            onClick={() => void validateToken()}
+          >
+            {loading ? "Validating…" : "Validate bot"}
+          </button>
+        </div>
+      </ConnectedAppTutorialLayout>
   );
 }

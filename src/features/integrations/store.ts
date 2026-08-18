@@ -11,6 +11,7 @@ import type {
   GitHubDevicePollResult,
   IntegrationError,
   NotionPrivateConnectionInput,
+  ObsidianVaultConnectionInput,
   SlackPrivateConnectionInput,
   TelegramCompleteInput,
   TelegramPairingPrepared,
@@ -57,6 +58,10 @@ const ERROR_MESSAGES: Record<string, string> = {
     "Notion did not return a valid workspace and integration identity.",
   notion_connection_failed:
     "Notion could not validate or securely save this internal integration.",
+  obsidian_vault_invalid:
+    "Choose a readable Obsidian vault folder containing .obsidian.",
+  obsidian_connection_failed:
+    "The local Obsidian vault connection could not be saved securely.",
   telegram_token_invalid: "Use a valid token from BotFather.",
   telegram_identity_invalid:
     "Telegram did not return a valid bot identity for this token.",
@@ -164,6 +169,9 @@ export type IntegrationsState = {
   cancelGithubPairing: (pairingSessionId: string) => Promise<void>;
   connectNotionPrivate: (
     input: NotionPrivateConnectionInput,
+  ) => Promise<IntegrationError | null>;
+  connectObsidianVault: (
+    input: ObsidianVaultConnectionInput,
   ) => Promise<IntegrationError | null>;
   prepareTelegramConnection: (
     input: TelegramPrepareInput,
@@ -334,6 +342,27 @@ export function createIntegrationsState(
       try {
         const connected = redactConnectionPayload(
           await api.connectNotionPrivate(input),
+        );
+        set((state) => ({
+          connections: [
+            ...state.connections.filter((item) => item.id !== connected.id),
+            connected,
+          ],
+          loading: false,
+        }));
+        return null;
+      } catch (error) {
+        const normalized = normalizeIntegrationError(error);
+        set({ loading: false, error: normalized });
+        return normalized;
+      }
+    },
+
+    connectObsidianVault: async (input) => {
+      set({ loading: true, error: null });
+      try {
+        const connected = redactConnectionPayload(
+          await api.connectObsidianVault(input),
         );
         set((state) => ({
           connections: [

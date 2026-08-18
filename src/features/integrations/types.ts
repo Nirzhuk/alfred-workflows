@@ -136,6 +136,10 @@ export type NotionPrivateConnectionInput = {
   integrationToken: string;
 };
 
+export type ObsidianVaultConnectionInput = {
+  vaultPath: string;
+};
+
 export type GitHubDeviceAuthorization = {
   pairingSessionId: string;
   userCode: string;

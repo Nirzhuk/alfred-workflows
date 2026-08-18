@@ -10,6 +10,7 @@ import type {
   GitHubDeviceAuthorization,
   GitHubDevicePollResult,
   NotionPrivateConnectionInput,
+  ObsidianVaultConnectionInput,
   SlackPrivateConnectionInput,
   TelegramCompleteInput,
   TelegramPairingPrepared,
@@ -51,6 +52,9 @@ export type IntegrationsApi = {
   connectNotionPrivate: (
     input: NotionPrivateConnectionInput,
   ) => Promise<AppConnection>;
+  connectObsidianVault: (
+    input: ObsidianVaultConnectionInput,
+  ) => Promise<AppConnection>;
   prepareTelegramConnection: (
     input: TelegramPrepareInput,
   ) => Promise<TelegramPairingPrepared>;
@@ -90,6 +94,8 @@ export const integrationsApi: IntegrationsApi = {
     invoke("cancel_github_pairing", { pairingSessionId }),
   connectNotionPrivate: (input) =>
     invoke("connect_notion_private", { input }),
+  connectObsidianVault: (input) =>
+    invoke("connect_obsidian_vault", { input }),
   prepareTelegramConnection: (input) =>
     invoke("prepare_telegram_connection", { input }),
   completeTelegramConnection: (input) =>

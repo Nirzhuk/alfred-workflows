@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { ConfirmDialog } from "../../components/confirm-dialog";
+import { AppLogo } from "./app-logo";
 import { GitHubConnect } from "./github-connect";
 import { NotionPrivateConnect } from "./notion-private-connect";
+import { ObsidianVaultConnect } from "./obsidian-vault-connect";
 import { SlackPrivateConnect } from "./slack-private-connect";
 import { TelegramConnect } from "./telegram-connect";
 import { useIntegrationsStore } from "./store";
@@ -44,12 +46,14 @@ export function ConnectedAppsSettings() {
   const [slackConnectOpen, setSlackConnectOpen] = useState(false);
   const [telegramConnectOpen, setTelegramConnectOpen] = useState(false);
   const [notionConnectOpen, setNotionConnectOpen] = useState(false);
+  const [obsidianConnectOpen, setObsidianConnectOpen] = useState(false);
   const [githubConnectOpen, setGithubConnectOpen] = useState(false);
 
   const connectHandlers: Record<string, () => void> = {
     slack: () => setSlackConnectOpen(true),
     telegram: () => setTelegramConnectOpen(true),
     notion: () => setNotionConnectOpen(true),
+    obsidian: () => setObsidianConnectOpen(true),
     github: () => setGithubConnectOpen(true),
   };
 
@@ -143,8 +147,14 @@ export function ConnectedAppsSettings() {
         {rows.map(({ provider, connections: providerConnections }) => (
           <div className="settings-row integration-provider-row" key={provider.id}>
             <div className="integration-provider-copy">
-              <p className="settings-label">{provider.name}</p>
-              <p className="settings-value">{provider.capabilitySummary}</p>
+              <AppLogo
+                providerId={provider.id}
+                providerName={provider.name}
+              />
+              <div className="integration-provider-text">
+                <p className="settings-label">{provider.name}</p>
+                <p className="settings-value">{provider.capabilitySummary}</p>
+              </div>
             </div>
             {providerConnections.length === 0 ? (
               <button
@@ -167,16 +177,25 @@ export function ConnectedAppsSettings() {
                 {providerConnections.map((connection) => (
                   <div className="integration-connection" key={connection.id}>
                     <div className="integration-connection-copy">
-                      <span
-                        className={`integration-status is-${connection.status}`}
-                      >
-                        {STATUS_LABELS[connection.status]}
-                      </span>
-                      <p className="integration-account">
-                        {connection.displayName ??
-                          connection.externalAccountId ??
-                          "Connected account"}
-                      </p>
+                      <div className="integration-connection-identity">
+                        <span
+                          className={`integration-status is-${connection.status}`}
+                        >
+                          {STATUS_LABELS[connection.status]}
+                        </span>
+                        <p
+                          className="integration-account"
+                          title={
+                            connection.displayName ??
+                            connection.externalAccountId ??
+                            undefined
+                          }
+                        >
+                          {connection.displayName ??
+                            connection.externalAccountId ??
+                            "Connected account"}
+                        </p>
+                      </div>
                       {connection.scopes.length > 0 ? (
                         <p className="settings-hint">
                           Access: {connection.scopes.join(", ")}
@@ -186,6 +205,7 @@ export function ConnectedAppsSettings() {
                     <div className="integration-actions">
                       {provider.id === "slack" ||
                       provider.id === "notion" ||
+                      provider.id === "obsidian" ||
                       provider.id === "github" ? (
                         <button
                           type="button"
@@ -255,6 +275,9 @@ export function ConnectedAppsSettings() {
       ) : null}
       {notionConnectOpen ? (
         <NotionPrivateConnect onClose={() => setNotionConnectOpen(false)} />
+      ) : null}
+      {obsidianConnectOpen ? (
+        <ObsidianVaultConnect onClose={() => setObsidianConnectOpen(false)} />
       ) : null}
       {githubConnectOpen ? (
         <GitHubConnect onClose={() => setGithubConnectOpen(false)} />

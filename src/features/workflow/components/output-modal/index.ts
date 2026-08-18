@@ -1,1 +1,1 @@
-export { OutputModal } from "./output-modal";
+export { OutputModal, splitSummaryAndJson } from "./output-modal";

@@ -93,12 +93,9 @@ pub fn structured_result(
 }
 
 fn validate_source(source: &KnowledgeSource) -> Result<(), ActionError> {
-    let valid_url = Url::parse(&source.url).ok().is_some_and(|url| {
-        url.scheme() == "https"
-            && url.username().is_empty()
-            && url.password().is_none()
-            && url.host_str().is_some()
-    });
+    let valid_url = Url::parse(&source.url)
+        .ok()
+        .is_some_and(|url| valid_knowledge_url(&url));
     if source.provider.trim().is_empty()
         || source.provider.len() > 80
         || source.id.trim().is_empty()
@@ -115,6 +112,32 @@ fn validate_source(source: &KnowledgeSource) -> Result<(), ActionError> {
         return Err(ActionError::new(ActionErrorCode::OutputInvalid));
     }
     Ok(())
+}
+
+fn valid_knowledge_url(url: &Url) -> bool {
+    if url.scheme() == "https" {
+        return url.username().is_empty() && url.password().is_none() && url.host_str().is_some();
+    }
+    if url.scheme() != "obsidian"
+        || url.host_str() != Some("open")
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.port().is_some()
+        || !matches!(url.path(), "" | "/")
+        || url.fragment().is_some()
+    {
+        return false;
+    }
+    let mut vault = None;
+    let mut file = None;
+    for (key, value) in url.query_pairs() {
+        match key.as_ref() {
+            "vault" if vault.is_none() && !value.is_empty() => vault = Some(value),
+            "file" if file.is_none() && !value.is_empty() => file = Some(value),
+            _ => return false,
+        }
+    }
+    vault.is_some() && file.is_some()
 }
 
 #[derive(Debug)]
@@ -257,5 +280,44 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(error.code, ActionErrorCode::OutputInvalid);
+    }
+
+    #[test]
+    fn accepts_only_bounded_obsidian_open_citations() {
+        let result = document_result(
+            "Retrieved note",
+            KnowledgeSource {
+                provider: "obsidian".into(),
+                id: "Projects/Plan.md".into(),
+                title: "Plan".into(),
+                url: "obsidian://open?vault=Knowledge&file=Projects%2FPlan.md".into(),
+                updated_at: None,
+            },
+            "text".into(),
+            false,
+        )
+        .expect("Obsidian citation");
+        assert_eq!(result.artifacts[0].kind, "source");
+
+        for invalid in [
+            "obsidian://new?vault=Knowledge&file=Plan.md",
+            "obsidian://open?path=%2Ftmp%2Fvault%2FPlan.md",
+            "obsidian://open?vault=Knowledge&file=Plan.md&append=1",
+        ] {
+            let error = document_result(
+                "Retrieved note",
+                KnowledgeSource {
+                    provider: "obsidian".into(),
+                    id: "Plan.md".into(),
+                    title: "Plan".into(),
+                    url: invalid.into(),
+                    updated_at: None,
+                },
+                "text".into(),
+                false,
+            )
+            .unwrap_err();
+            assert_eq!(error.code, ActionErrorCode::OutputInvalid);
+        }
     }
 }

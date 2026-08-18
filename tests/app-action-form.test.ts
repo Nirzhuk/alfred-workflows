@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { IntegrationsApi } from "../src/features/integrations/api";
 import {
   compatibleConnections,
+  defaultConnectionId,
   loadActionResourceOptions,
   selectAppAction,
   selectAppActionProvider,
@@ -101,7 +102,7 @@ function api(
 }
 
 describe("app action configuration", () => {
-  test("provider and action changes reset dependent selections", () => {
+  test("provider and action changes default the connection when exactly one account is connected", () => {
     const configured: AppActionNodeData = {
       ...defaultAppActionNodeData(),
       providerId: "gmail",
@@ -109,18 +110,50 @@ describe("app action configuration", () => {
       connectionId: "old",
       input: { body: "old" },
     };
-    const providerChanged = selectAppActionProvider(configured, "slack");
+    const providerChanged = selectAppActionProvider(configured, "slack", [
+      connected,
+    ]);
     expect(providerChanged).toMatchObject({
       providerId: "slack",
       actionId: "",
-      connectionId: "",
+      connectionId: connected.id,
       input: {},
     });
 
-    const actionChanged = selectAppAction(providerChanged, descriptor);
+    const actionChanged = selectAppAction(providerChanged, descriptor, [
+      connected,
+    ]);
     expect(actionChanged.actionId).toBe("slack.send_message");
-    expect(actionChanged.connectionId).toBe("");
+    expect(actionChanged.connectionId).toBe(connected.id);
     expect(actionChanged.input).toEqual({ message: "{{output}}" });
+  });
+
+  test("leaves the connection blank when zero or multiple accounts are connected", () => {
+    const configured: AppActionNodeData = {
+      ...defaultAppActionNodeData(),
+      providerId: "gmail",
+      actionId: "gmail.send",
+      connectionId: "old",
+      input: { body: "old" },
+    };
+    expect(
+      selectAppActionProvider(configured, "slack", []).connectionId,
+    ).toBe("");
+
+    const second: AppConnection = { ...connected, id: "slack-connection-2" };
+    expect(
+      selectAppActionProvider(configured, "slack", [connected, second])
+        .connectionId,
+    ).toBe("");
+
+    expect(defaultConnectionId([connected], "slack")).toBe(connected.id);
+    expect(defaultConnectionId([connected], "gmail")).toBe("");
+    expect(
+      defaultConnectionId(
+        [connected, { ...connected, status: "expired" }],
+        "slack",
+      ),
+    ).toBe(connected.id);
   });
 
   test("filters connections by provider without hiding unhealthy metadata", () => {

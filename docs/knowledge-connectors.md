@@ -24,6 +24,30 @@ sync database.
   external embeds, hidden/unlisted properties, and organization-wide crawls
   are excluded.
 
+## Obsidian: local vault
+
+Status: implemented as a read-only local connector.
+
+Open **Settings → Connected Apps → Obsidian**, choose a vault folder containing
+`.obsidian`, and connect it. Alfred stores the canonical vault path in the
+operating-system credential store. After the folder-picker attempt, the path is
+cleared from React state; the backend never returns it, writes it to workflow
+JSON, or includes it in action output. There is no Obsidian account, token,
+network request, background watcher, or local content index.
+
+Available actions:
+
+- `obsidian.search_notes` searches Markdown note paths and up to 1 MiB of text
+  per note, returning at most 10 or 25 matches with bounded snippets.
+- `obsidian.read_note` reads one selected `.md` note and returns at most 48 KiB
+  with an explicit truncation marker and an `obsidian://open` citation.
+
+The connector ignores hidden directories (including `.obsidian`), non-Markdown
+files, non-UTF-8 paths, and all symlinks. Note identifiers are vault-relative;
+absolute paths and `..` traversal are rejected. A scan visits no more than
+20,000 notes or 100,000 directory entries. Note contents use the same untrusted
+external-document prompt boundary as cloud knowledge sources.
+
 ## Notion: private internal integration
 
 Status: implemented for the local/private stage.
@@ -85,4 +109,6 @@ the local Notion stage.
 Automated tests cover descriptor secrecy, prompt-injection labeling, UTF-8-safe
 byte truncation, property allow-lists, unsupported block representations,
 external URL omission, pagination, recursive depth, revoked/unshared/rate-limit
-mapping, validated connection identity, and token/metadata separation.
+mapping, validated connection identity, token/metadata separation, Obsidian
+path traversal, symlink exclusion, hidden-folder exclusion, and absolute-path
+redaction.

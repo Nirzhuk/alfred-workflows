@@ -1,7 +1,8 @@
 import { useWorkflowStore } from "../../store";
 
-function previewText(text: string, max = 140) {
-  const flat = text.replace(/\s+/g, " ").trim();
+export function previewText(text: string, max = 140) {
+  const [firstParagraph = ""] = text.trim().split(/\n\s*\n/, 1);
+  const flat = firstParagraph.replace(/\s+/g, " ").trim();
   if (flat.length <= max) return flat;
   return `${flat.slice(0, max)}…`;
 }

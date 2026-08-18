@@ -66,6 +66,13 @@ impl Default for ProviderCatalog {
                     true,
                 ),
                 provider(
+                    "obsidian",
+                    "Obsidian",
+                    "Markdown notes from one local vault, read on demand",
+                    &["local_vault"],
+                    true,
+                ),
+                provider(
                     "google_drive",
                     "Google Drive",
                     "Files and document context",

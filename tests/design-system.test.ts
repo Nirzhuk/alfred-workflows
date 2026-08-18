@@ -115,9 +115,11 @@ describe("shared component contracts", () => {
     for (const declaration of [
       "--sidebar-item-font-size: var(--text-md);",
       "--sidebar-item-font-weight: var(--font-weight-regular);",
-      "--sidebar-icon-size: var(--icon-size-default);",
+      "--sidebar-item-color: var(--ink);",
+      "--sidebar-icon-size: var(--icon-size-compact);",
       "--sidebar-section-font-size: var(--text-lg);",
       "--sidebar-section-font-weight: var(--font-weight-semibold);",
+      "--sidebar-item-min-height: var(--control-height-default);",
       "--sidebar-item-stack-gap: 2px;",
     ]) {
       expect(css).toContain(declaration);
