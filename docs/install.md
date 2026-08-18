@@ -150,6 +150,24 @@ binary support.
   permission or override your current request, workflow instructions, or safety
   boundaries; instructions embedded in memory text are ignored.
 
+### Automatic recall
+
+- New workflows have **Automatic recall** enabled. Existing workflows remain
+  off after migration until you opt in. Open the workflow's Memories inspector
+  and use the Automatic recall switch to enable or disable it at any time; this
+  does not rewrite the graph or delete memory.
+- Recall runs locally immediately before each Agent and Custom agent step using
+  that step's current accumulated prompt. It combines exact SQLite FTS5 result
+  position with scope, recency, salience, and confidence, and falls back to
+  recent visible memory when there is no exact match. Utility nodes receive no
+  automatic memory.
+- Each step can add at most 8 recalled items / 6,000 UTF-8 bytes, with a
+  1,200-byte per-item limit. History records included memory ids, reasons,
+  ranks, scores, and rendered sizes without copying bodies or the search query.
+- Recall failure is non-fatal: the workflow continues without recalled context
+  and keeps its pinned core context. V1 uses no embeddings, network retrieval,
+  or model download.
+
 ## Troubleshooting
 
 | Symptom | What to try |

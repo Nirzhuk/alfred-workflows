@@ -47,6 +47,22 @@ pub struct RunHistoryStep {
 pub struct RunHistoryDetail {
     pub run: RunHistoryItem,
     pub steps: Vec<RunHistoryStep>,
+    pub memory_uses: Vec<RunHistoryMemoryUse>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RunHistoryMemoryUse {
+    pub node_id: String,
+    pub memory_id: String,
+    pub memory_title: String,
+    pub scope_type: String,
+    pub memory_type: String,
+    pub rank: i64,
+    pub score: f64,
+    pub reason: String,
+    pub rendered_bytes: i64,
+    pub created_at: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -186,7 +202,36 @@ impl super::Db {
                     })
                 })?
                 .collect::<Result<Vec<_>, _>>()?;
-            Ok(Some(RunHistoryDetail { run, steps }))
+            let mut memory_statement = conn.prepare(
+                "SELECT u.node_id, u.memory_id, m.title, m.scope_type, m.memory_type,
+                        u.rank, u.score, u.reason, u.rendered_bytes, u.created_at
+                 FROM run_memory_uses u
+                 JOIN memories m ON m.id = u.memory_id
+                 WHERE u.run_id = ?1
+                 ORDER BY u.created_at ASC, u.node_id ASC, u.rank ASC, u.memory_id ASC",
+            )?;
+            let memory_uses = memory_statement
+                .query_map(params![run_id], |row| {
+                    let score: f64 = row.get(6)?;
+                    Ok(RunHistoryMemoryUse {
+                        node_id: row.get(0)?,
+                        memory_id: row.get(1)?,
+                        memory_title: row.get(2)?,
+                        scope_type: row.get(3)?,
+                        memory_type: row.get(4)?,
+                        rank: row.get(5)?,
+                        score: (score * 100.0).round() / 100.0,
+                        reason: row.get(7)?,
+                        rendered_bytes: row.get(8)?,
+                        created_at: row.get(9)?,
+                    })
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(Some(RunHistoryDetail {
+                run,
+                steps,
+                memory_uses,
+            }))
         })
     }
 

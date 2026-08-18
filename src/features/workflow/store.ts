@@ -305,6 +305,7 @@ type WorkflowStore = {
   ) => Promise<void>;
   renameWorkflow: (id: string, name: string) => Promise<void>;
   setWorkingDirectory: (id: string, workingDirectory: string) => Promise<void>;
+  setMemoryRetrievalEnabled: (id: string, enabled: boolean) => Promise<void>;
   reorderWorkflows: (orderedIds: string[]) => Promise<void>;
   deleteWorkflow: (id: string) => Promise<void>;
   saveActiveWorkflow: () => Promise<void>;
@@ -886,6 +887,31 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
       }));
     } catch (e) {
       set({ error: String(e) });
+    }
+  },
+
+  setMemoryRetrievalEnabled: async (id, enabled) => {
+    const previous = get().workflows;
+    set({
+      error: null,
+      workflows: previous.map((workflow) =>
+        workflow.id === id
+          ? { ...workflow, memoryRetrievalEnabled: enabled }
+          : workflow,
+      ),
+    });
+    try {
+      const workflow = await api.updateWorkflow({
+        id,
+        memoryRetrievalEnabled: enabled,
+      });
+      set((state) => ({
+        workflows: state.workflows.map((item) =>
+          item.id === workflow.id ? workflow : item,
+        ),
+      }));
+    } catch (e) {
+      set({ workflows: previous, error: String(e) });
     }
   },
 

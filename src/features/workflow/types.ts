@@ -425,6 +425,8 @@ export type Workflow = {
   workingDirectory?: string;
   /** Sidebar organization folder. Null/empty means Unfiled. */
   folderId?: string | null;
+  /** Host-side local memory retrieval before agent and custom-agent steps. */
+  memoryRetrievalEnabled?: boolean;
   graph: WorkflowGraph;
   createdAt: string;
   updatedAt: string;
@@ -481,6 +483,20 @@ export type RunHistoryStep = {
 export type RunHistoryDetail = {
   run: RunHistoryItem;
   steps: RunHistoryStep[];
+  memoryUses: RunHistoryMemoryUse[];
+};
+
+export type RunHistoryMemoryUse = {
+  nodeId: string;
+  memoryId: string;
+  memoryTitle: string;
+  scopeType: MemoryScopeType;
+  memoryType: MemoryType;
+  rank: number;
+  score: number;
+  reason: "lexical" | "recent" | "pinned";
+  renderedBytes: number;
+  createdAt: string;
 };
 
 export type HistorySearchInput = {

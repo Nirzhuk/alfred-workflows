@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS workflows (
   working_directory TEXT NOT NULL DEFAULT '',
   folder_id TEXT,
   sort_order INTEGER NOT NULL DEFAULT 0,
+  memory_retrieval_enabled INTEGER NOT NULL DEFAULT 0,
   graph_json TEXT NOT NULL DEFAULT '{"nodes":[],"edges":[]}',
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
@@ -130,6 +131,19 @@ CREATE TABLE IF NOT EXISTS memory_links (
   UNIQUE (workflow_id, memory_id)
 );
 
+CREATE TABLE IF NOT EXISTS run_memory_uses (
+  id TEXT PRIMARY KEY NOT NULL,
+  run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+  node_id TEXT NOT NULL,
+  memory_id TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+  rank INTEGER NOT NULL,
+  score REAL NOT NULL,
+  reason TEXT NOT NULL CHECK (reason IN ('lexical', 'recent', 'pinned')),
+  rendered_bytes INTEGER NOT NULL,
+  created_at TEXT NOT NULL,
+  UNIQUE (run_id, node_id, memory_id)
+);
+
 CREATE TABLE IF NOT EXISTS schema_meta (
   key TEXT PRIMARY KEY NOT NULL,
   value TEXT NOT NULL
@@ -223,6 +237,9 @@ CREATE INDEX IF NOT EXISTS idx_memories_workflow_id ON memories(workflow_id);
 CREATE INDEX IF NOT EXISTS idx_memories_workflow_pinned ON memories(workflow_id, pinned);
 CREATE INDEX IF NOT EXISTS idx_memory_links_workflow_id ON memory_links(workflow_id);
 CREATE INDEX IF NOT EXISTS idx_memory_links_memory_id ON memory_links(memory_id);
+CREATE INDEX IF NOT EXISTS idx_run_memory_uses_run_node_rank
+  ON run_memory_uses(run_id, node_id, rank);
+CREATE INDEX IF NOT EXISTS idx_run_memory_uses_memory_id ON run_memory_uses(memory_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_app_connections_identity
   ON app_connections(provider_id, connection_mode, identity_key);
 CREATE INDEX IF NOT EXISTS idx_app_connections_provider_id ON app_connections(provider_id);

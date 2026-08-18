@@ -10,6 +10,8 @@ import {
   formatHistoryWhen,
   historyHitLabel,
   historyMode,
+  memoryUseReasonLabel,
+  openHistoryMemory,
   historyWorkflowId,
   isCurrentHistoryGeneration,
   literalHistorySnippet,
@@ -453,6 +455,7 @@ function RunDetail({
   detail: RunHistoryDetail;
   onBack: () => void;
 }) {
+  const memoryUses = detail.memoryUses ?? [];
   return (
     <article className="history-detail">
       <button type="button" className="ghost history-detail-back" onClick={onBack}>
@@ -471,6 +474,53 @@ function RunDetail({
       {detail.run.error ? (
         <pre className="history-error-text">{detail.run.error}</pre>
       ) : null}
+      <section className="history-memory-context" aria-labelledby="history-memory-title">
+        <div className="history-section-heading">
+          <h3 id="history-memory-title">Memory context</h3>
+          <span>{memoryUses.length}</span>
+        </div>
+        {memoryUses.length === 0 ? (
+          <p className="muted">No pinned or recalled memory was recorded for this run.</p>
+        ) : (
+          <div className="history-memory-groups">
+            {detail.steps.map((step, index) => {
+              const uses = memoryUses.filter(
+                (memoryUse) => memoryUse.nodeId === step.nodeId,
+              );
+              if (uses.length === 0) return null;
+              return (
+                <section key={step.id} className="history-memory-group">
+                  <h4>
+                    Step {index + 1} · {step.skillName || step.agentProvider || step.nodeId}
+                  </h4>
+                  <ul>
+                    {uses.map((memoryUse) => (
+                      <li key={`${step.id}:${memoryUse.memoryId}`}>
+                        <button
+                          type="button"
+                          className="history-memory-link"
+                          onClick={() => openHistoryMemory(memoryUse.memoryId)}
+                        >
+                          {memoryUse.memoryTitle || "[deleted memory]"}
+                        </button>
+                        <span className="history-memory-reason">
+                          {memoryUseReasonLabel(memoryUse.reason)}
+                        </span>
+                        <span className="history-memory-meta">
+                          {memoryUse.memoryId} · {memoryUse.scopeType} · {memoryUse.memoryType}
+                          {" · "}rank {memoryUse.rank} · score {memoryUse.score.toFixed(2)}
+                          {" · "}{memoryUse.renderedBytes.toLocaleString()} bytes
+                          {" · "}{formatHistoryWhen(memoryUse.createdAt)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              );
+            })}
+          </div>
+        )}
+      </section>
       {detail.steps.length === 0 ? (
         <div className="history-message">This run has no persisted steps.</div>
       ) : (

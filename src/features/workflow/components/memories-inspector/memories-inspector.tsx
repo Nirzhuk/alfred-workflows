@@ -69,6 +69,9 @@ export function MemoriesInspector({
   const togglePinMemory = useWorkflowStore((s) => s.togglePinMemory);
   const removeMemory = useWorkflowStore((s) => s.removeMemory);
   const clearMemories = useWorkflowStore((s) => s.clearMemories);
+  const setMemoryRetrievalEnabled = useWorkflowStore(
+    (s) => s.setMemoryRetrievalEnabled,
+  );
 
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
@@ -91,10 +94,12 @@ export function MemoriesInspector({
   const [linkable, setLinkable] = useState<OutputMemory[]>([]);
   const [showLinker, setShowLinker] = useState(false);
   const [viewSource, setViewSource] = useState(false);
+  const [recallSaving, setRecallSaving] = useState(false);
   const htmlPreviewRef = useRef<HTMLIFrameElement>(null);
 
   const htmlPreview = useMemo(() => createHtmlReportPreview(body), [body]);
   const activeWorkflow = workflows.find(({ id }) => id === activeWorkflowId);
+  const automaticRecall = activeWorkflow?.memoryRetrievalEnabled ?? false;
   const hasWorkingDirectory = workspaceScopeAvailable(
     activeWorkflow?.workingDirectory,
   );
@@ -336,6 +341,34 @@ export function MemoriesInspector({
           </>
         }
       />
+
+      <div className="memory-recall-control">
+        <div>
+          <strong>Automatic recall</strong>
+          <p>
+            Relevant local memories may be added to agent prompts for this workflow.
+            Uses local exact FTS5 search + recency, not an embedding service.
+          </p>
+          <span>Fixed limit: 8 items / 6,000 bytes per agent or custom-agent step.</span>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={automaticRecall}
+          aria-label="Automatic recall"
+          className={`settings-toggle${automaticRecall ? " is-on" : ""}`}
+          disabled={!activeWorkflowId || recallSaving}
+          onClick={() => {
+            if (!activeWorkflowId) return;
+            setRecallSaving(true);
+            void setMemoryRetrievalEnabled(activeWorkflowId, !automaticRecall).finally(
+              () => setRecallSaving(false),
+            );
+          }}
+        >
+          <span className="settings-toggle-knob" />
+        </button>
+      </div>
 
       <div className="memories-inspector-body">
         <aside className="memories-inspector-list">

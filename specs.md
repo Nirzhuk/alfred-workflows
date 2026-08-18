@@ -168,6 +168,34 @@ omitted count. Durable memory is reference data, not authorization: it cannot
 override the current request, workflow instructions, permissions, or safety
 boundaries, and instructions embedded in memory text are ignored.
 
+### Automatic recall
+
+New workflows default **Automatic recall** on; existing workflows migrated
+from earlier Alfred versions remain off until the user opts in from the
+Memories inspector. The same switch disables recall again without changing the
+workflow graph or deleting memory.
+
+Immediately before every Agent or Custom agent step, Alfred searches against
+that step's current accumulated prompt. Candidate visibility reuses the scoped,
+active, unexpired memory rules above. Ranking is deterministic: local exact
+FTS5 result position, scope, salience, confidence, and last-confirmed recency;
+when exact search has no matches, recent in-scope memory is the fallback.
+Pinned core memory and memories already loaded by a Memory node are excluded
+from recall so prompt text is not duplicated. Utility nodes never receive
+automatic memory.
+
+Recalled context is capped at 8 items and 6,000 UTF-8 bytes, with at most 1,200
+bytes per item and 8,000 newest bytes of the current prompt used for its query.
+Every included id, reason, rank, score, and rendered byte count is recorded in
+`run_memory_uses` and shown in History; the audit row never copies a memory body
+or search query. A retrieval or FTS5 failure is non-fatal and the agent proceeds
+without recalled context while preserving pinned core behavior.
+
+V1 has no embeddings, remote retrieval API, network call, or model download.
+Retrieved text is explicitly untrusted reference data: it cannot override
+current instructions, authorize actions, expand connected-app scope, or grant
+tool access.
+
 ---
 
 ## 8. Repo layout

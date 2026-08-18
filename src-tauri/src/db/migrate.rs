@@ -38,6 +38,12 @@ pub fn apply_migrations(conn: &Connection) -> Result<(), DbError> {
         "INTEGER NOT NULL DEFAULT 0",
     )?;
     ensure_column(conn, "workflows", "folder_id", "TEXT")?;
+    ensure_column(
+        conn,
+        "workflows",
+        "memory_retrieval_enabled",
+        "INTEGER NOT NULL DEFAULT 0",
+    )?;
     backfill_workflow_sort_order(conn)?;
 
     // Drop legacy column name if an early schema used `trigger`.
@@ -66,6 +72,7 @@ pub fn apply_migrations(conn: &Connection) -> Result<(), DbError> {
     )?;
     create_search_indexes(conn)?;
     migrate_scoped_memories(conn)?;
+    create_memory_retrieval_schema(conn)?;
     rebuild_search_indexes(conn)?;
     conn.execute_batch(
         "CREATE INDEX IF NOT EXISTS idx_triggers_workflow_id ON triggers(workflow_id);
@@ -139,6 +146,28 @@ pub fn apply_migrations(conn: &Connection) -> Result<(), DbError> {
            ON app_event_receipts(received_at);",
     )?;
 
+    Ok(())
+}
+
+fn create_memory_retrieval_schema(conn: &Connection) -> Result<(), DbError> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS run_memory_uses (
+           id TEXT PRIMARY KEY NOT NULL,
+           run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+           node_id TEXT NOT NULL,
+           memory_id TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+           rank INTEGER NOT NULL,
+           score REAL NOT NULL,
+           reason TEXT NOT NULL CHECK (reason IN ('lexical', 'recent', 'pinned')),
+           rendered_bytes INTEGER NOT NULL,
+           created_at TEXT NOT NULL,
+           UNIQUE (run_id, node_id, memory_id)
+         );
+         CREATE INDEX IF NOT EXISTS idx_run_memory_uses_run_node_rank
+           ON run_memory_uses(run_id, node_id, rank);
+         CREATE INDEX IF NOT EXISTS idx_run_memory_uses_memory_id
+           ON run_memory_uses(memory_id);",
+    )?;
     Ok(())
 }
 
@@ -596,13 +625,105 @@ mod tests {
         let conn = Connection::open_in_memory().expect("open database");
         conn.execute_batch(include_str!("schema.sql"))
             .expect("initialize legacy fixture");
-        conn.execute_batch("DROP TABLE app_connections;")
-            .expect("remove new table from fixture");
+        conn.execute_batch(
+            "DROP TABLE app_connections;
+             ALTER TABLE workflows DROP COLUMN memory_retrieval_enabled;",
+        )
+        .expect("remove new table from fixture");
+
+        conn.execute(
+            "INSERT INTO workflows
+               (id, name, description, working_directory, sort_order, graph_json, created_at, updated_at)
+             VALUES ('legacy-workflow', 'Legacy', '', '', 0, '{}', 'now', 'now')",
+            [],
+        )
+        .expect("insert existing workflow before recall migration");
 
         apply_migrations(&conn).expect("upgrade fixture");
 
         assert!(columns(&conn, "app_connections").contains(&"identity_key".to_owned()));
         assert!(columns(&conn, "app_connections").contains(&"provider_metadata_json".to_owned()));
+        let enabled: i64 = conn
+            .query_row(
+                "SELECT memory_retrieval_enabled FROM workflows WHERE id = 'legacy-workflow'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("load migrated recall default");
+        assert_eq!(enabled, 0, "existing workflows must remain recall-off");
+    }
+
+    #[test]
+    fn initializes_memory_retrieval_rollout_and_audit_cascades() {
+        let conn = Connection::open_in_memory().expect("open database");
+        conn.execute_batch("PRAGMA foreign_keys = ON;")
+            .expect("enable foreign keys");
+        conn.execute_batch(include_str!("schema.sql"))
+            .expect("initialize schema");
+        apply_migrations(&conn).expect("apply migrations");
+
+        assert!(columns(&conn, "workflows").contains(&"memory_retrieval_enabled".to_owned()));
+        for expected in [
+            "run_id",
+            "node_id",
+            "memory_id",
+            "rank",
+            "score",
+            "reason",
+            "rendered_bytes",
+            "created_at",
+        ] {
+            assert!(
+                columns(&conn, "run_memory_uses").contains(&expected.to_owned()),
+                "missing {expected}"
+            );
+        }
+        let indexes = {
+            let mut statement = conn
+                .prepare("SELECT name FROM pragma_index_list('run_memory_uses')")
+                .expect("prepare audit indexes");
+            statement
+                .query_map([], |row| row.get::<_, String>(0))
+                .expect("query audit indexes")
+                .collect::<Result<Vec<_>, _>>()
+                .expect("collect audit indexes")
+        };
+        assert!(indexes.contains(&"idx_run_memory_uses_run_node_rank".to_owned()));
+        assert!(indexes.contains(&"idx_run_memory_uses_memory_id".to_owned()));
+
+        conn.execute_batch(
+            "INSERT INTO workflows
+               (id, name, description, graph_json, created_at, updated_at)
+             VALUES ('workflow-1', 'One', '', '{}', 'now', 'now');
+             INSERT INTO runs (id, workflow_id, created_at)
+             VALUES ('run-1', 'workflow-1', 'now'), ('run-2', 'workflow-1', 'now');
+             INSERT INTO memories
+               (id, workflow_id, scope_type, scope_key, title, body, created_at, updated_at)
+             VALUES ('memory-1', 'workflow-1', 'workflow', 'workflow-1', 'One', 'Body', 'now', 'now'),
+                    ('memory-2', 'workflow-1', 'workflow', 'workflow-1', 'Two', 'Body', 'now', 'now');
+             INSERT INTO run_memory_uses
+               (id, run_id, node_id, memory_id, rank, score, reason, rendered_bytes, created_at)
+             VALUES ('use-run', 'run-1', 'agent', 'memory-1', 1, 100.0, 'lexical', 100, 'now'),
+                    ('use-memory', 'run-2', 'agent', 'memory-2', 1, 20.0, 'recent', 80, 'now');",
+        )
+        .expect("insert audit fixtures");
+        assert!(conn
+            .execute(
+                "INSERT INTO run_memory_uses
+                   (id, run_id, node_id, memory_id, rank, score, reason, rendered_bytes, created_at)
+                 VALUES ('bad-reason', 'run-1', 'other', 'memory-1', 1, 0, 'semantic', 0, 'now')",
+                [],
+            )
+            .is_err());
+
+        conn.execute("DELETE FROM runs WHERE id = 'run-1'", [])
+            .expect("delete run");
+        conn.execute("DELETE FROM memories WHERE id = 'memory-2'", [])
+            .expect("delete memory");
+        let remaining: i64 = conn
+            .query_row("SELECT COUNT(*) FROM run_memory_uses", [], |row| row.get(0))
+            .expect("count audit rows");
+        assert_eq!(remaining, 0);
     }
 
     #[test]

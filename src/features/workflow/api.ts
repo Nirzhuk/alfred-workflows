@@ -50,6 +50,7 @@ export async function updateWorkflow(input: {
   name?: string;
   description?: string;
   workingDirectory?: string;
+  memoryRetrievalEnabled?: boolean;
   graph?: WorkflowGraph;
 }): Promise<Workflow> {
   return invoke("update_workflow", { input });

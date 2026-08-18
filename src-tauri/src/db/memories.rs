@@ -23,7 +23,7 @@ pub enum MemoryScopeType {
 }
 
 impl MemoryScopeType {
-    fn as_str(self) -> &'static str {
+    pub(crate) fn as_str(self) -> &'static str {
         match self {
             Self::User => "user",
             Self::Workspace => "workspace",
@@ -61,7 +61,7 @@ pub enum MemoryType {
 }
 
 impl MemoryType {
-    fn as_str(self) -> &'static str {
+    pub(crate) fn as_str(self) -> &'static str {
         match self {
             Self::Preference => "preference",
             Self::Fact => "fact",
@@ -291,8 +291,16 @@ pub struct MemoryWithOrigin {
 pub struct FormattedMemoryContext {
     pub markdown: String,
     pub included_ids: Vec<String>,
+    pub included_items: Vec<FormattedMemoryItem>,
     pub omitted_count: usize,
     pub bytes: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FormattedMemoryItem {
+    pub id: String,
+    pub rendered_bytes: usize,
 }
 
 fn now() -> String {
@@ -384,7 +392,7 @@ fn scope_label(scope_type: MemoryScopeType, scope_key: &str) -> String {
     }
 }
 
-fn is_expired(memory: &Memory) -> bool {
+pub(crate) fn is_expired(memory: &Memory) -> bool {
     memory
         .expires_at
         .as_deref()
@@ -1151,6 +1159,7 @@ impl Db {
         let allocations = [1_500usize, 2_000, 2_500];
         let mut carry = 0usize;
         let mut included_ids = Vec::new();
+        let mut included_items = Vec::new();
         let mut omitted_count = 0usize;
         // Leave room for the count-only overflow note whenever candidates may overflow.
         const OMIT_NOTE_RESERVE: usize = 80;
@@ -1172,6 +1181,10 @@ impl Db {
                     continue;
                 }
                 group_used += rendered.len();
+                included_items.push(FormattedMemoryItem {
+                    id: item.memory.id.clone(),
+                    rendered_bytes: rendered.len(),
+                });
                 markdown.push_str(&rendered);
                 included_ids.push(item.memory.id);
             }
@@ -1189,6 +1202,7 @@ impl Db {
         Ok(FormattedMemoryContext {
             markdown,
             included_ids,
+            included_items,
             omitted_count,
             bytes,
         })

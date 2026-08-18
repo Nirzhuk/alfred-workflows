@@ -1,4 +1,4 @@
-import type { HistorySearchHit } from "../../types";
+import type { HistorySearchHit, RunHistoryMemoryUse } from "../../types";
 
 export type HistoryMode = "browse" | "search";
 export type HistoryScope = "current" | "all";
@@ -33,6 +33,20 @@ export function historyWorkflowId(
 
 export function historyHitLabel(kind: HistorySearchHit["kind"]): string {
   return kind === "run_step" ? "Run step" : "Memory";
+}
+
+export function memoryUseReasonLabel(
+  reason: RunHistoryMemoryUse["reason"],
+): string {
+  if (reason === "pinned") return "Pinned core";
+  if (reason === "lexical") return "Matched this step's prompt";
+  return "Recent fallback";
+}
+
+export function openHistoryMemory(memoryId: string): void {
+  window.dispatchEvent(
+    new CustomEvent("alfred:open-memories", { detail: { memoryId } }),
+  );
 }
 
 export function isCurrentHistoryGeneration(
