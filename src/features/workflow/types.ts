@@ -450,6 +450,57 @@ export type RunSummary = {
   createdAt: string;
 };
 
+export type RunHistoryItem = {
+  id: string;
+  workflowId: string;
+  workflowName: string;
+  trigger: string;
+  status: string;
+  error: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  createdAt: string;
+  stepCount: number;
+  finalOutputPreview: string;
+};
+
+export type RunHistoryStep = {
+  id: string;
+  nodeId: string;
+  agentProvider: string | null;
+  skillName: string | null;
+  status: string;
+  input: unknown;
+  output: unknown;
+  error: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  createdAt: string;
+};
+
+export type RunHistoryDetail = {
+  run: RunHistoryItem;
+  steps: RunHistoryStep[];
+};
+
+export type HistorySearchInput = {
+  query: string;
+  workflowId?: string | null;
+  limit?: number;
+};
+
+export type HistorySearchHit = {
+  kind: "run_step" | "memory";
+  sourceId: string;
+  runId: string | null;
+  workflowId: string;
+  workflowName: string;
+  title: string;
+  snippet: string;
+  timestamp: string;
+  rank: number;
+};
+
 export type ActiveRunInfo = {
   runId: string;
   workflowId: string;

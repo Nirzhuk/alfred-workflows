@@ -114,6 +114,12 @@ binary support.
 - **Local data** — workflows, runs, schedules, and memories live in an on-disk
   SQLite database under the app’s application-support directory. Nothing is
   uploaded to an Alfred cloud.
+- **Local history search** — searchable run history covers persisted run steps
+  and saved memories using SQLite FTS5. It uses no embeddings or remote search
+  service. The search tables are a derived index that Alfred can rebuild from
+  canonical local rows; deleting canonical runs or memories removes them from
+  search. History may include prompts and agent/tool results, so treat it as
+  private local data.
 - **Schedules & triggers** — cron, file watchers, and local webhooks only fire
   while Alfred is running (including when the window is closed but the app
   stays in the menu bar / tray). Fully quitting the app pauses automations.

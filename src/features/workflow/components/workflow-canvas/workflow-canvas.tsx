@@ -10,6 +10,7 @@ import {
   type SettingsSectionId,
 } from "../../../settings/components/settings-sidebar";
 import { SchedulesPage } from "../schedules-page";
+import { HistoryPage } from "../history-page";
 import { SidebarBottomBar } from "../sidebar-bottom-bar";
 import { SidebarNav, type SidebarView } from "../sidebar-nav";
 import { AgentUsageBar } from "../agent-usage-bar";
@@ -589,6 +590,11 @@ export function WorkflowCanvas() {
 
         {view === "settings" ? (
           <SettingsPage activeSection={settingsSection} />
+        ) : view === "history" ? (
+          <HistoryPage
+            activeWorkflowId={activeWorkflowId}
+            onClose={() => setView("canvas")}
+          />
         ) : view === "schedules" ? (
           <SchedulesPage
             key={schedulesTick}

@@ -91,7 +91,7 @@ workflow graph and can be reversed from the node, its context menu, or settings.
 
 ## 5. Main surfaces (UI)
 
-- **Sidebar** — Schedules / Settings nav; workflow list (+ create, reorder, context menu)
+- **Sidebar** — History / Schedules / Settings nav; workflow list (+ create, reorder, context menu)
 - **Canvas** — React Flow editor, add-step panel, toolbar (cwd, run/save, etc.)
 - **Activity panel** — This run / Result / Library / Live log
 - **Schedules page** — All cron schedules across workflows
@@ -124,6 +124,19 @@ Primary entities (see `src-tauri/src/db/schema.sql`):
 - `triggers` — file / webhook configs
 - `memories` / `memory_links` — library + cross-workflow links
 - `app_connections` — non-secret provider/account/scopes/health metadata; credentials are never stored in SQLite
+
+### Local history search
+
+Alfred provides searchable run history across persisted run steps and saved
+memories. Search stays on the machine and uses SQLite FTS5 only—there is no
+embedding model, remote search service, or network request. The FTS tables are a
+derived index that can be rebuilt from canonical `runs`, `run_steps`, and
+`memories` rows. Creating, updating, or deleting canonical data updates or
+removes the corresponding search documents transactionally.
+
+Run history can contain prompts, agent/tool results, errors, and saved memory
+text. Treat it as private local data with the same sensitivity as the workflows
+that produced it.
 
 ---
 

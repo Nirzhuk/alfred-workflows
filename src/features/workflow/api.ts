@@ -6,9 +6,13 @@ import type {
   AgentUsageSnapshot,
   ActiveRunInfo,
   AppTriggerStatus,
+  HistorySearchHit,
+  HistorySearchInput,
   MemoryKind,
   MemorySource,
   OutputMemory,
+  RunHistoryDetail,
+  RunHistoryItem,
   RunSummary,
   Schedule,
   ScheduleListItem,
@@ -120,6 +124,36 @@ export async function cancelRun(runId: string): Promise<boolean> {
 /** In-flight runs survive window reloads and can include several workflows. */
 export async function listActiveRuns(): Promise<ActiveRunInfo[]> {
   return invoke("list_active_runs");
+}
+
+export async function listRunHistory(input: {
+  workflowId?: string | null;
+  limit?: number;
+  offset?: number;
+} = {}): Promise<RunHistoryItem[]> {
+  return invoke("list_run_history", {
+    workflowId: input.workflowId ?? null,
+    limit: input.limit ?? 25,
+    offset: input.offset ?? 0,
+  });
+}
+
+export async function getRunHistory(
+  runId: string,
+): Promise<RunHistoryDetail | null> {
+  return invoke("get_run_history", { runId });
+}
+
+export async function searchHistory(
+  input: HistorySearchInput,
+): Promise<HistorySearchHit[]> {
+  return invoke("search_history", {
+    input: {
+      query: input.query,
+      workflowId: input.workflowId ?? null,
+      limit: input.limit ?? 25,
+    },
+  });
 }
 
 export async function listSchedules(): Promise<ScheduleListItem[]> {
