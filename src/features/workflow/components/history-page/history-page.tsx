@@ -20,11 +20,15 @@ const PAGE_SIZE = 25;
 
 type Props = {
   activeWorkflowId: string | null;
+  initialRunId?: string | null;
+  onSelectedRunIdChange?: (runId: string | null) => void;
   onClose: () => void;
 };
 
 export function HistoryPage({
   activeWorkflowId,
+  initialRunId = null,
+  onSelectedRunIdChange,
   onClose,
 }: Props) {
   const [query, setQuery] = useState("");
@@ -34,6 +38,9 @@ export function HistoryPage({
   );
   const [runs, setRuns] = useState<RunHistoryItem[]>([]);
   const [hits, setHits] = useState<HistorySearchHit[]>([]);
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(
+    initialRunId,
+  );
   const [detail, setDetail] = useState<RunHistoryDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -52,6 +59,10 @@ export function HistoryPage({
     if (!activeWorkflowId && scope === "current") setScope("all");
   }, [activeWorkflowId, scope]);
 
+  useEffect(() => {
+    setSelectedRunId(initialRunId);
+  }, [initialRunId]);
+
   useEffect(
     () => () => {
       requestGeneration.current += 1;
@@ -65,13 +76,10 @@ export function HistoryPage({
 
   useEffect(() => {
     const generation = ++requestGeneration.current;
-    detailGeneration.current += 1;
     let cancelled = false;
     setLoading(true);
     setLoadingMore(false);
-    setLoadingDetail(false);
     setError(false);
-    setDetail(null);
 
     const request =
       mode === "browse"
@@ -162,18 +170,42 @@ export function HistoryPage({
     }
   };
 
-  const openRun = async (runId: string) => {
+  useEffect(() => {
+    if (!selectedRunId) {
+      detailGeneration.current += 1;
+      setLoadingDetail(false);
+      setDetail(null);
+      return;
+    }
     const generation = ++detailGeneration.current;
+    let cancelled = false;
     setLoadingDetail(true);
     setError(false);
-    try {
-      const next = await api.getRunHistory(runId);
-      if (generation === detailGeneration.current) setDetail(next);
-    } catch {
-      if (generation === detailGeneration.current) setError(true);
-    } finally {
-      if (generation === detailGeneration.current) setLoadingDetail(false);
-    }
+    void api
+      .getRunHistory(selectedRunId)
+      .then((next) => {
+        if (!cancelled && generation === detailGeneration.current) {
+          setDetail(next);
+        }
+      })
+      .catch(() => {
+        if (!cancelled && generation === detailGeneration.current) {
+          setError(true);
+        }
+      })
+      .finally(() => {
+        if (!cancelled && generation === detailGeneration.current) {
+          setLoadingDetail(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedRunId]);
+
+  const openRun = (runId: string) => {
+    setSelectedRunId(runId);
+    onSelectedRunIdChange?.(runId);
   };
 
   const groupedHits = useMemo(
@@ -237,7 +269,13 @@ export function HistoryPage({
         ) : null}
 
         {detail ? (
-          <RunDetail detail={detail} onBack={() => setDetail(null)} />
+          <RunDetail
+            detail={detail}
+            onBack={() => {
+              setSelectedRunId(null);
+              onSelectedRunIdChange?.(null);
+            }}
+          />
         ) : loadingDetail ? (
           <div className="history-message" role="status">
             Loading run detail…

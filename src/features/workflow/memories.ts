@@ -101,6 +101,17 @@ export function canPinMemory(memory: OutputMemory): boolean {
   return memory.status === "active" && memory.origin !== "linked";
 }
 
+export function isMemoryPromptEligible(
+  memory: OutputMemory,
+  now: Date | number = Date.now(),
+): boolean {
+  if (memory.status !== "active") return false;
+  if (!memory.expiresAt) return true;
+  const expiresAt = Date.parse(memory.expiresAt);
+  const nowMs = typeof now === "number" ? now : now.getTime();
+  return Number.isFinite(expiresAt) && expiresAt > nowMs;
+}
+
 export function workspaceScopeAvailable(workingDirectory?: string): boolean {
   return Boolean(workingDirectory?.trim());
 }

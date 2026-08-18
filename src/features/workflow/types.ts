@@ -493,7 +493,7 @@ export type HistorySearchHit = {
   kind: "run_step" | "memory";
   sourceId: string;
   runId: string | null;
-  workflowId: string;
+  workflowId: string | null;
   workflowName: string;
   title: string;
   snippet: string;

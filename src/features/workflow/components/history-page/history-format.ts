@@ -2,6 +2,23 @@ import type { HistorySearchHit } from "../../types";
 
 export type HistoryMode = "browse" | "search";
 export type HistoryScope = "current" | "all";
+export type HistoryNavigationAction =
+  | { type: "open-run"; runId: string }
+  | { type: "open-history" }
+  | { type: "close-history" };
+
+export function historyNavigation(action: HistoryNavigationAction): {
+  view: "canvas" | "history";
+  runId: string | null;
+} {
+  if (action.type === "open-run") {
+    return { view: "history", runId: action.runId };
+  }
+  if (action.type === "open-history") {
+    return { view: "history", runId: null };
+  }
+  return { view: "canvas", runId: null };
+}
 
 export function historyMode(query: string): HistoryMode {
   return query.trim() ? "search" : "browse";

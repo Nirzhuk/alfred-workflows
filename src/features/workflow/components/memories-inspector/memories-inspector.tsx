@@ -49,10 +49,16 @@ function fitHtmlPreview(frame: HTMLIFrameElement | null) {
 type Props = {
   open: boolean;
   initialMemoryId?: string | null;
+  onOpenRunHistory: (runId: string) => void;
   onClose: () => void;
 };
 
-export function MemoriesInspector({ open, initialMemoryId, onClose }: Props) {
+export function MemoriesInspector({
+  open,
+  initialMemoryId,
+  onOpenRunHistory,
+  onClose,
+}: Props) {
   const memories = useWorkflowStore((s) => s.memories);
   const activeWorkflowId = useWorkflowStore((s) => s.activeWorkflowId);
   const workflows = useWorkflowStore((s) => s.workflows);
@@ -758,14 +764,7 @@ export function MemoriesInspector({ open, initialMemoryId, onClose }: Props) {
                     <button
                       type="button"
                       className="ghost memories-history-link"
-                      onClick={() => {
-                        document
-                          .querySelector<HTMLButtonElement>(
-                            'button[aria-label="History"]',
-                          )
-                          ?.click();
-                        onClose();
-                      }}
+                      onClick={() => onOpenRunHistory(selected.runId!)}
                     >
                       Open run {selected.runId} in History
                     </button>

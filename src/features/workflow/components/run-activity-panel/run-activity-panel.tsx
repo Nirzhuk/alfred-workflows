@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useWorkflowStore } from "../../store";
 import { isAgentNodeData, type OutputMemory } from "../../types";
 import { formatStats } from "../../format-stats";
+import { isMemoryPromptEligible } from "../../memories";
 import { AgentMark } from "../agent-mark";
 
 const FOLLOW_THRESHOLD_PX = 24;
@@ -167,18 +168,21 @@ export function RunActivityPanel() {
   const status = activeRun?.status ?? "idle";
   const isRunning = status === "running";
 
+  const promptMemories = memories.filter((memory) =>
+    isMemoryPromptEligible(memory),
+  );
   const filteredMemories = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return memories;
-    return memories.filter(
+    if (!q) return promptMemories;
+    return promptMemories.filter(
       (m) =>
         m.title.toLowerCase().includes(q) ||
         m.body.toLowerCase().includes(q) ||
         m.kind.toLowerCase().includes(q),
     );
-  }, [memories, query]);
+  }, [promptMemories, query]);
 
-  const pinnedCount = memories.filter((m) => m.pinned).length;
+  const pinnedCount = promptMemories.filter((m) => m.pinned).length;
 
   const activeNode = nodes.find((n) => n.id === activeNodeId);
   const activeProvider =
@@ -567,7 +571,7 @@ export function RunActivityPanel() {
               </div>
             ) : null}
 
-            {memories.length > 4 ? (
+            {promptMemories.length > 4 ? (
               <input
                 type="search"
                 className="run-memories-search"
@@ -577,7 +581,7 @@ export function RunActivityPanel() {
               />
             ) : null}
 
-            {memories.length === 0 ? (
+            {promptMemories.length === 0 ? (
               <p className="muted run-memories-empty">
                 Nothing saved yet. Add an Output step with “Save to memories”,
                 or write a note, to keep results here.
@@ -600,7 +604,7 @@ export function RunActivityPanel() {
             )}
           </section>
 
-          {!hasRunContext && memories.length === 0 && !isRunning ? (
+          {!hasRunContext && promptMemories.length === 0 && !isRunning ? (
             <p className="muted run-panel-empty">
               Run a workflow to see steps and results here. Starred library items
               are injected into the next run.

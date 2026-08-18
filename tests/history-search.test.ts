@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   formatHistoryJson,
   historyHitLabel,
+  historyNavigation,
   historyMode,
   historyWorkflowId,
   isCurrentHistoryGeneration,
@@ -32,6 +33,21 @@ describe("history query state", () => {
     expect(historyHitLabel("memory")).toBe("Memory");
     expect(isCurrentHistoryGeneration(4, 4)).toBe(true);
     expect(isCurrentHistoryGeneration(3, 4)).toBe(false);
+  });
+
+  test("carries an exact run into History and clears stale external selection", () => {
+    expect(historyNavigation({ type: "open-run", runId: "run-42" })).toEqual({
+      view: "history",
+      runId: "run-42",
+    });
+    expect(historyNavigation({ type: "open-history" })).toEqual({
+      view: "history",
+      runId: null,
+    });
+    expect(historyNavigation({ type: "close-history" })).toEqual({
+      view: "canvas",
+      runId: null,
+    });
   });
 });
 

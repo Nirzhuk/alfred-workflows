@@ -63,7 +63,7 @@ pub struct HistorySearchHit {
     pub kind: String,
     pub source_id: String,
     pub run_id: Option<String>,
-    pub workflow_id: String,
+    pub workflow_id: Option<String>,
     pub workflow_name: String,
     pub title: String,
     pub snippet: String,
@@ -197,6 +197,15 @@ impl super::Db {
         let fts_query = plain_text_fts_query(&input.query)
             .ok_or_else(|| DbError::Other("history search query must not be empty".into()))?;
         let limit = input.limit.unwrap_or(25).clamp(1, 50);
+        let context = input
+            .workflow_id
+            .as_deref()
+            .map(|workflow_id| self.memory_context(workflow_id))
+            .transpose()?;
+        let workflow_id = context.as_ref().map(|value| value.workflow_id.as_str());
+        let workspace_key = context
+            .as_ref()
+            .and_then(|value| value.working_directory.as_deref());
         self.with_conn(|conn| {
             let mut hits = Vec::with_capacity(limit.saturating_mul(2));
             let mut run_statement = conn.prepare(
@@ -216,13 +225,13 @@ impl super::Db {
             )?;
             let run_hits = run_statement
                 .query_map(
-                    params![fts_query, input.workflow_id.as_deref(), limit as i64],
+                    params![fts_query, workflow_id, limit as i64],
                     |row| {
                         Ok(HistorySearchHit {
                             kind: "run_step".into(),
                             source_id: row.get(0)?,
                             run_id: Some(row.get(1)?),
-                            workflow_id: row.get(2)?,
+                            workflow_id: Some(row.get(2)?),
                             workflow_name: row.get(3)?,
                             title: row.get(4)?,
                             snippet: row.get(5)?,
@@ -234,21 +243,39 @@ impl super::Db {
                 .collect::<Result<Vec<_>, _>>()?;
             hits.extend(run_hits);
 
+            // History is an audit surface: retained superseded/retracted rows stay
+            // searchable, while scope visibility still follows the active context.
             let mut memory_statement = conn.prepare(
-                "SELECT memory_fts.memory_id, m.run_id, memory_fts.workflow_id, w.name,
+                "SELECT memory_fts.memory_id, m.run_id, m.workflow_id,
+                        CASE m.scope_type
+                          WHEN 'user' THEN 'User memory'
+                          WHEN 'workspace' THEN 'Workspace memory'
+                          ELSE COALESCE(w.name, 'Workflow memory')
+                        END,
                         m.title, snippet(memory_fts, -1, '[', ']', '…', 24),
                         m.updated_at, bm25(memory_fts, 0.0, 0.0, 1.0, 1.0)
                  FROM memory_fts
                  JOIN memories m ON m.id = memory_fts.memory_id
-                 JOIN workflows w ON w.id = memory_fts.workflow_id
+                 LEFT JOIN workflows w ON w.id = m.workflow_id
                  WHERE memory_fts MATCH ?1
-                   AND (?2 IS NULL OR memory_fts.workflow_id = ?2)
+                   AND (
+                     ?2 IS NULL
+                     OR (m.scope_type = 'user' AND m.scope_key = 'local-user')
+                     OR (m.scope_type = 'workspace' AND m.scope_key = ?3)
+                     OR (m.scope_type = 'workflow' AND (
+                       m.scope_key = ?2
+                       OR EXISTS (
+                         SELECT 1 FROM memory_links l
+                         WHERE l.workflow_id = ?2 AND l.memory_id = m.id
+                       )
+                     ))
+                   )
                  ORDER BY bm25(memory_fts), m.updated_at DESC, memory_fts.memory_id
-                 LIMIT ?3",
+                 LIMIT ?4",
             )?;
             let memory_hits = memory_statement
                 .query_map(
-                    params![fts_query, input.workflow_id.as_deref(), limit as i64],
+                    params![fts_query, workflow_id, workspace_key, limit as i64],
                     |row| {
                         Ok(HistorySearchHit {
                             kind: "memory".into(),
@@ -404,15 +431,22 @@ pub(crate) fn delete_memory_index(conn: &Connection, memory_id: &str) -> Result<
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::{CreateMemoryInput, CreateWorkflowInput, UpdateMemoryInput};
+    use crate::db::{
+        CreateMemoryInput, CreateWorkflowInput, MemoryScopeType, MemoryStatus, MemoryType,
+        UpdateMemoryInput,
+    };
     use rusqlite::params;
     use serde_json::json;
 
     fn create_workflow(db: &Db, name: &str) -> String {
+        create_workflow_at(db, name, "")
+    }
+
+    fn create_workflow_at(db: &Db, name: &str, working_directory: &str) -> String {
         db.create_workflow(CreateWorkflowInput {
             name: name.to_owned(),
             description: String::new(),
-            working_directory: String::new(),
+            working_directory: working_directory.to_owned(),
             folder_id: None,
             graph: json!({ "nodes": [], "edges": [] }),
         })
@@ -901,7 +935,9 @@ mod tests {
             })
             .expect("search current workflow");
         assert_eq!(scoped.len(), 2);
-        assert!(scoped.iter().all(|hit| hit.workflow_id == first_workflow));
+        assert!(scoped
+            .iter()
+            .all(|hit| hit.workflow_id.as_deref() == Some(first_workflow.as_str())));
 
         let limited = db
             .search_history(HistorySearchInput {
@@ -927,5 +963,113 @@ mod tests {
                 limit: None,
             })
             .is_err());
+    }
+
+    #[test]
+    fn scoped_memory_search_survives_provenance_deletion_and_respects_context() {
+        let db = Db::open_in_memory().expect("open database");
+        let origin = create_workflow_at(&db, "Origin", "/projects/shared/./app");
+        let current = create_workflow_at(&db, "Current", "/projects/shared/app");
+        let unrelated = create_workflow_at(&db, "Unrelated", "/projects/private");
+
+        let create =
+            |id: &str, workflow_id: &str, scope_type: MemoryScopeType, status: MemoryStatus| {
+                db.create_memory(CreateMemoryInput {
+                    workflow_id: workflow_id.into(),
+                    title: id.into(),
+                    body: format!("scopeprobe {id}"),
+                    run_id: None,
+                    node_id: None,
+                    kind: None,
+                    scope_type: Some(scope_type),
+                    memory_type: Some(MemoryType::Fact),
+                    source: Some("manual".into()),
+                    pinned: None,
+                    confidence: None,
+                    salience: None,
+                    status: Some(status),
+                    supersedes_id: None,
+                    last_confirmed_at: None,
+                    expires_at: None,
+                    id: Some(id.into()),
+                })
+                .expect("create scoped search memory")
+            };
+
+        create(
+            "visible-user",
+            &origin,
+            MemoryScopeType::User,
+            MemoryStatus::Active,
+        );
+        create(
+            "visible-workspace-history",
+            &origin,
+            MemoryScopeType::Workspace,
+            MemoryStatus::Retracted,
+        );
+        create(
+            "unrelated-workspace",
+            &unrelated,
+            MemoryScopeType::Workspace,
+            MemoryStatus::Active,
+        );
+        let linked = create(
+            "visible-linked",
+            &unrelated,
+            MemoryScopeType::Workflow,
+            MemoryStatus::Active,
+        );
+        db.link_memory(&current, &linked.id)
+            .expect("link visible memory");
+        create(
+            "unrelated-workflow",
+            &unrelated,
+            MemoryScopeType::Workflow,
+            MemoryStatus::Active,
+        );
+
+        db.delete_workflow(&origin)
+            .expect("delete provenance workflow");
+
+        let all = db
+            .search_history(HistorySearchInput {
+                query: "scopeprobe".into(),
+                workflow_id: None,
+                limit: Some(50),
+            })
+            .expect("search all memory history");
+        for id in ["visible-user", "visible-workspace-history"] {
+            let hit = all
+                .iter()
+                .find(|hit| hit.source_id == id)
+                .expect("preserved inherited memory hit");
+            assert_eq!(hit.workflow_id, None);
+            assert_eq!(
+                hit.workflow_name,
+                if id == "visible-user" {
+                    "User memory"
+                } else {
+                    "Workspace memory"
+                }
+            );
+        }
+
+        let current_hits = db
+            .search_history(HistorySearchInput {
+                query: "scopeprobe".into(),
+                workflow_id: Some(current),
+                limit: Some(50),
+            })
+            .expect("search current memory scope");
+        let ids = current_hits
+            .iter()
+            .map(|hit| hit.source_id.as_str())
+            .collect::<Vec<_>>();
+        assert!(ids.contains(&"visible-user"));
+        assert!(ids.contains(&"visible-workspace-history"));
+        assert!(ids.contains(&"visible-linked"));
+        assert!(!ids.contains(&"unrelated-workspace"));
+        assert!(!ids.contains(&"unrelated-workflow"));
     }
 }

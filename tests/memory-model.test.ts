@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { createMemory } from "../src/features/workflow/api";
 import {
   canPinMemory,
+  isMemoryPromptEligible,
   sortMemories,
   withMemoryDefaults,
   workspaceScopeAvailable,
@@ -111,6 +112,63 @@ describe("scoped atomic memory model", () => {
           updatedAt: "2026-08-18T10:00:00Z",
           status: "superseded",
         }),
+      ),
+    ).toBe(false);
+  });
+
+  test("prompt eligibility requires active, unexpired memory", () => {
+    const now = new Date("2026-08-18T12:00:00Z");
+    expect(isMemoryPromptEligible(memory("active"), now)).toBe(true);
+    expect(
+      isMemoryPromptEligible(
+        memory("future", {
+          id: "future",
+          title: "future",
+          body: "future",
+          createdAt: "2026-08-18T10:00:00Z",
+          updatedAt: "2026-08-18T10:00:00Z",
+          expiresAt: "2026-08-18T13:00:00Z",
+        }),
+        now,
+      ),
+    ).toBe(true);
+    expect(
+      isMemoryPromptEligible(
+        memory("expired", {
+          id: "expired",
+          title: "expired",
+          body: "expired",
+          createdAt: "2026-08-18T10:00:00Z",
+          updatedAt: "2026-08-18T10:00:00Z",
+          expiresAt: "2026-08-18T11:59:59Z",
+        }),
+        now,
+      ),
+    ).toBe(false);
+    expect(
+      isMemoryPromptEligible(
+        memory("superseded", {
+          id: "superseded",
+          title: "superseded",
+          body: "superseded",
+          createdAt: "2026-08-18T10:00:00Z",
+          updatedAt: "2026-08-18T10:00:00Z",
+          status: "superseded",
+        }),
+        now,
+      ),
+    ).toBe(false);
+    expect(
+      isMemoryPromptEligible(
+        memory("retracted", {
+          id: "retracted",
+          title: "retracted",
+          body: "retracted",
+          createdAt: "2026-08-18T10:00:00Z",
+          updatedAt: "2026-08-18T10:00:00Z",
+          status: "retracted",
+        }),
+        now,
       ),
     ).toBe(false);
   });
