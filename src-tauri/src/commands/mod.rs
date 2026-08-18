@@ -371,8 +371,13 @@ pub fn update_memory(db: State<'_, Db>, input: UpdateMemoryInput) -> Result<Memo
 }
 
 #[tauri::command]
-pub fn delete_memory(db: State<'_, Db>, id: String) -> Result<(), String> {
-    db.delete_memory(&id).map_err(|e| e.to_string())
+pub fn delete_memory(
+    db: State<'_, Db>,
+    id: String,
+    context_workflow_id: Option<String>,
+) -> Result<(), String> {
+    db.delete_memory_for_context(&id, context_workflow_id.as_deref())
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

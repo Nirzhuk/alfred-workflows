@@ -302,8 +302,11 @@ export async function updateMemory(input: {
   return invoke("update_memory", { input });
 }
 
-export async function deleteMemory(id: string): Promise<void> {
-  return invoke("delete_memory", { id });
+export async function deleteMemory(
+  id: string,
+  contextWorkflowId?: string,
+): Promise<void> {
+  return invoke("delete_memory", { id, contextWorkflowId });
 }
 
 export async function clearMemories(workflowId: string): Promise<number> {

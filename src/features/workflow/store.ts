@@ -1327,7 +1327,7 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
       return;
     }
     try {
-      await api.deleteMemory(id);
+      await api.deleteMemory(id, get().activeWorkflowId ?? undefined);
       set((state) => ({
         memories: state.memories.filter((m) => m.id !== id),
       }));

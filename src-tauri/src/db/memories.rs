@@ -864,6 +864,35 @@ impl Db {
         Ok(())
     }
 
+    pub fn delete_memory_for_context(
+        &self,
+        id: &str,
+        context_workflow_id: Option<&str>,
+    ) -> Result<(), DbError> {
+        if let Some(context_id) = context_workflow_id {
+            let memory = self
+                .get_memory(id)?
+                .ok_or_else(|| DbError::Other(format!("memory not found: {id}")))?;
+            if memory.scope_type == MemoryScopeType::Workflow
+                && memory.workflow_id.as_deref() != Some(context_id)
+            {
+                let linked = self.with_conn(|conn| {
+                    Ok(conn.query_row(
+                        "SELECT EXISTS(SELECT 1 FROM memory_links WHERE workflow_id = ?1 AND memory_id = ?2)",
+                        params![context_id, id],
+                        |row| row.get::<_, bool>(0),
+                    )?)
+                })?;
+                if linked {
+                    return Err(DbError::Other(
+                        "linked memories are read-only in the consuming workflow".into(),
+                    ));
+                }
+            }
+        }
+        self.delete_memory(id)
+    }
+
     pub fn clear_memories(&self, workflow_id: &str) -> Result<usize, DbError> {
         let rows = self.with_conn(|conn| {
             let mut statement = conn.prepare(
@@ -1448,6 +1477,9 @@ mod tests {
         linked_update.context_workflow_id = Some(consumer.clone());
         linked_update.body = Some("consumer rewrite".into());
         assert!(db.update_memory(linked_update).is_err());
+        assert!(db
+            .delete_memory_for_context(&owned.id, Some(&consumer))
+            .is_err());
 
         let user = db
             .create_memory(create_input(
