@@ -138,6 +138,36 @@ Run history can contain prompts, agent/tool results, errors, and saved memory
 text. Treat it as private local data with the same sensitivity as the workflows
 that produced it.
 
+### Scoped atomic memory
+
+Each memory is one compact claim or note. Its semantic type—`preference`,
+`fact`, `decision`, `constraint`, `lesson`, `episode`, `checkpoint`, `note`,
+`output`, or `artifact`—is separate from its rendering/content kind (`text`,
+`note`, or `artifact`). Memory has three visibility scopes:
+
+- **User memory** uses the fixed local identity `local-user` and is visible to
+  every workflow on this installation.
+- **Workspace memory** is visible to workflows whose configured absolute
+  working-directory path has the same purely lexical normalization. Alfred
+  removes `.` and collapses safe `..` components; it does not query the
+  filesystem, resolve symlinks, probe mounts, or contact network paths.
+- **Workflow memory** is visible to its owning workflow and to workflows with
+  an explicit legacy memory link.
+
+Lifecycle is explicit: `active`, `superseded`, or `retracted`. Inactive or
+expired records remain inspectable for correction history but never enter a
+prompt. Explicit deletion physically removes the canonical local row; deleting
+a workflow removes its workflow memory while preserving user/workspace memory
+that originated there.
+
+Pinned active memory forms bounded core context. The complete block is at most
+6,000 UTF-8 bytes: 1,500 for user, 2,000 for workspace, and 2,500 for
+workflow/linked memory, with unused capacity flowing forward and no item above
+1,500 bytes. Overflow remains in the library and the prompt reports only an
+omitted count. Durable memory is reference data, not authorization: it cannot
+override the current request, workflow instructions, permissions, or safety
+boundaries, and instructions embedded in memory text are ignored.
+
 ---
 
 ## 8. Repo layout

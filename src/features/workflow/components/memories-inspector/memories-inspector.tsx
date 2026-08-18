@@ -6,9 +6,17 @@ import {
   extractHtmlReport,
 } from "../../html-report";
 import { useWorkflowStore } from "../../store";
-import type { MemoryKind, OutputMemory } from "../../types";
+import { workspaceScopeAvailable } from "../../memories";
+import type {
+  MemoryKind,
+  MemoryScopeType,
+  MemoryStatus,
+  MemoryType,
+  OutputMemory,
+} from "../../types";
 
 type Filter = "all" | "pinned" | "linked" | MemoryKind;
+type ScopeFilter = "all" | "user" | "workspace" | "workflow" | "inactive";
 
 function formatWhen(value: string) {
   const date = new Date(value);
@@ -47,7 +55,8 @@ type Props = {
 export function MemoriesInspector({ open, initialMemoryId, onClose }: Props) {
   const memories = useWorkflowStore((s) => s.memories);
   const activeWorkflowId = useWorkflowStore((s) => s.activeWorkflowId);
-  const addNote = useWorkflowStore((s) => s.addNote);
+  const workflows = useWorkflowStore((s) => s.workflows);
+  const addMemory = useWorkflowStore((s) => s.addMemory);
   const linkMemory = useWorkflowStore((s) => s.linkMemory);
   const unlinkMemory = useWorkflowStore((s) => s.unlinkMemory);
   const updateMemoryFields = useWorkflowStore((s) => s.updateMemoryFields);
@@ -57,10 +66,19 @@ export function MemoriesInspector({ open, initialMemoryId, onClose }: Props) {
 
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
+  const [scopeFilter, setScopeFilter] = useState<ScopeFilter>("all");
+  const [typeFilter, setTypeFilter] = useState<MemoryType | "all">("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [kind, setKind] = useState<MemoryKind>("text");
+  const [scopeType, setScopeType] = useState<MemoryScopeType>("workflow");
+  const [memoryType, setMemoryType] = useState<MemoryType>("note");
+  const [status, setStatus] = useState<MemoryStatus>("active");
+  const [salience, setSalience] = useState(50);
+  const [confidence, setConfidence] = useState(1);
+  const [lastConfirmedAt, setLastConfirmedAt] = useState("");
+  const [expiresAt, setExpiresAt] = useState("");
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -70,6 +88,10 @@ export function MemoriesInspector({ open, initialMemoryId, onClose }: Props) {
   const htmlPreviewRef = useRef<HTMLIFrameElement>(null);
 
   const htmlPreview = useMemo(() => createHtmlReportPreview(body), [body]);
+  const activeWorkflow = workflows.find(({ id }) => id === activeWorkflowId);
+  const hasWorkingDirectory = workspaceScopeAvailable(
+    activeWorkflow?.workingDirectory,
+  );
 
   useEffect(() => {
     if (!htmlPreview || viewSource) return;
@@ -91,6 +113,15 @@ export function MemoriesInspector({ open, initialMemoryId, onClose }: Props) {
       ) {
         return false;
       }
+      if (scopeFilter === "inactive" && m.status === "active") return false;
+      if (
+        scopeFilter !== "all" &&
+        scopeFilter !== "inactive" &&
+        m.scopeType !== scopeFilter
+      ) {
+        return false;
+      }
+      if (typeFilter !== "all" && m.memoryType !== typeFilter) return false;
       if (!q) return true;
       return (
         m.title.toLowerCase().includes(q) ||
@@ -99,7 +130,7 @@ export function MemoriesInspector({ open, initialMemoryId, onClose }: Props) {
         (m.sourceWorkflowName ?? "").toLowerCase().includes(q)
       );
     });
-  }, [memories, query, filter]);
+  }, [memories, query, filter, scopeFilter, typeFilter]);
 
   const linkedCount = memories.filter((m) => m.origin === "linked").length;
 
@@ -118,6 +149,8 @@ export function MemoriesInspector({ open, initialMemoryId, onClose }: Props) {
     setSelectedId(preferred);
     setQuery("");
     setFilter("all");
+    setScopeFilter("all");
+    setTypeFilter("all");
     setCreating(false);
     setShowLinker(false);
     setViewSource(false);
@@ -146,6 +179,13 @@ export function MemoriesInspector({ open, initialMemoryId, onClose }: Props) {
     setTitle(selected.title);
     setBody(selected.body);
     setKind(selected.kind);
+    setScopeType(selected.scopeType);
+    setMemoryType(selected.memoryType);
+    setStatus(selected.status);
+    setSalience(selected.salience);
+    setConfidence(selected.confidence);
+    setLastConfirmedAt(selected.lastConfirmedAt ?? "");
+    setExpiresAt(selected.expiresAt ?? "");
     setDirty(false);
     setViewSource(false);
   }, [selected?.id, selected?.updatedAt, creating]);
@@ -162,6 +202,13 @@ export function MemoriesInspector({ open, initialMemoryId, onClose }: Props) {
     setTitle("");
     setBody("");
     setKind("note");
+    setScopeType("workflow");
+    setMemoryType("note");
+    setStatus("active");
+    setSalience(50);
+    setConfidence(1);
+    setLastConfirmedAt("");
+    setExpiresAt("");
     setDirty(true);
     setViewSource(true);
   };
@@ -171,16 +218,43 @@ export function MemoriesInspector({ open, initialMemoryId, onClose }: Props) {
     setSaving(true);
     try {
       if (creating) {
-        await addNote(title.trim() || "Note", body);
+        await addMemory({
+          title: title.trim() || "Note",
+          body,
+          kind,
+          scopeType,
+          memoryType,
+          source: "manual",
+          salience,
+          confidence,
+          status,
+          lastConfirmedAt: lastConfirmedAt || null,
+          expiresAt: expiresAt || null,
+        });
         setCreating(false);
         const latest = useWorkflowStore.getState().memories[0];
         if (latest) setSelectedId(latest.id);
       } else if (selected) {
+        if (
+          selected.scopeType !== scopeType &&
+          !window.confirm(
+            `Move this memory from ${selected.scopeLabel} scope to ${scopeType} scope?`,
+          )
+        ) {
+          return;
+        }
         await updateMemoryFields({
           id: selected.id,
           title: title.trim() || selected.title,
           body,
           kind,
+          scopeType,
+          memoryType,
+          salience,
+          confidence,
+          status,
+          lastConfirmedAt: lastConfirmedAt || null,
+          expiresAt: expiresAt || null,
         });
         setDirty(false);
       }
@@ -198,6 +272,19 @@ export function MemoriesInspector({ open, initialMemoryId, onClose }: Props) {
   const pinnedCount = memories.filter(
     (m) => m.pinned && m.origin !== "linked",
   ).length;
+  const visiblePinnedBytes = memories
+    .filter((memory) => memory.pinned && memory.status === "active")
+    .reduce(
+      (total, memory) =>
+        total + new TextEncoder().encode(`${memory.title}\n${memory.body}`).length,
+      0,
+    );
+  const supersedes = selected?.supersedesId
+    ? memories.find(({ id }) => id === selected.supersedesId)
+    : null;
+  const supersededBy = selected
+    ? memories.find(({ supersedesId }) => supersedesId === selected.id)
+    : null;
 
   return (
     <Modal open={open} size="xl" onClose={onClose} label="Memories inspector">
@@ -278,6 +365,52 @@ export function MemoriesInspector({ open, initialMemoryId, onClose }: Props) {
               </button>
             ))}
           </div>
+          <div className="memories-filter-selects">
+            <label className="field">
+              <span>Scope</span>
+              <select
+                value={scopeFilter}
+                onChange={(event) =>
+                  setScopeFilter(event.target.value as ScopeFilter)
+                }
+              >
+                <option value="all">All scopes</option>
+                <option value="user">User</option>
+                <option value="workspace">Workspace</option>
+                <option value="workflow">Workflow</option>
+                <option value="inactive">Inactive</option>
+              </select>
+            </label>
+            <label className="field">
+              <span>Type</span>
+              <select
+                value={typeFilter}
+                onChange={(event) =>
+                  setTypeFilter(event.target.value as MemoryType | "all")
+                }
+              >
+                <option value="all">All types</option>
+                {(
+                  [
+                    "preference",
+                    "fact",
+                    "decision",
+                    "constraint",
+                    "lesson",
+                    "episode",
+                    "checkpoint",
+                    "note",
+                    "output",
+                    "artifact",
+                  ] as MemoryType[]
+                ).map((value) => (
+                  <option key={value} value={value}>
+                    {value}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
 
           {showLinker ? (
             <div className="memories-linker">
@@ -354,7 +487,7 @@ export function MemoriesInspector({ open, initialMemoryId, onClose }: Props) {
                         </span>
                       ) : (
                         <span className="memories-list-kind">
-                          {memory.kind}
+                          {memory.scopeType} · {memory.memoryType}
                         </span>
                       )}
                     </span>
@@ -362,9 +495,9 @@ export function MemoriesInspector({ open, initialMemoryId, onClose }: Props) {
                       {previewText(memory.body)}
                     </span>
                     <span className="memories-list-meta">
-                      {memory.origin === "linked"
-                        ? `Linked · ${formatWhen(memory.updatedAt || memory.createdAt)}`
-                        : formatWhen(memory.updatedAt || memory.createdAt)}
+                      {memory.status !== "active" ? `${memory.status} · ` : ""}
+                      {memory.origin === "linked" ? "Linked · " : ""}
+                      {formatWhen(memory.updatedAt || memory.createdAt)}
                     </span>
                   </button>
                 </li>
@@ -402,6 +535,69 @@ export function MemoriesInspector({ open, initialMemoryId, onClose }: Props) {
                     <option value="artifact">Artifact</option>
                   </select>
                 </label>
+                <label className="field memories-kind-field">
+                  <span>Scope</span>
+                  <select
+                    value={scopeType}
+                    disabled={isLinkedSelected}
+                    onChange={(event) => {
+                      setScopeType(event.target.value as MemoryScopeType);
+                      setDirty(true);
+                    }}
+                  >
+                    <option value="workflow">Workflow</option>
+                    <option value="workspace" disabled={!hasWorkingDirectory}>
+                      Workspace
+                    </option>
+                    <option value="user">User</option>
+                  </select>
+                </label>
+                <label className="field memories-kind-field">
+                  <span>Type</span>
+                  <select
+                    value={memoryType}
+                    disabled={isLinkedSelected}
+                    onChange={(event) => {
+                      setMemoryType(event.target.value as MemoryType);
+                      setDirty(true);
+                    }}
+                  >
+                    {(
+                      [
+                        "preference",
+                        "fact",
+                        "decision",
+                        "constraint",
+                        "lesson",
+                        "episode",
+                        "checkpoint",
+                        "note",
+                        "output",
+                        "artifact",
+                      ] as MemoryType[]
+                    ).map((value) => (
+                      <option key={value} value={value}>
+                        {value}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field memories-kind-field">
+                  <span>Status</span>
+                  <select
+                    value={status}
+                    disabled={isLinkedSelected}
+                    onChange={(event) => {
+                      const next = event.target.value as MemoryStatus;
+                      setStatus(next);
+                      setDirty(true);
+                    }}
+                  >
+                    <option value="active">Active</option>
+                    <option value="superseded">Superseded</option>
+                    <option value="retracted">Retracted</option>
+                  </select>
+                </label>
                 {htmlPreview ? (
                   <button
                     type="button"
@@ -416,6 +612,7 @@ export function MemoriesInspector({ open, initialMemoryId, onClose }: Props) {
                   <button
                     type="button"
                     className={`ghost${selected.pinned ? " memories-pin-on" : ""}`}
+                    disabled={selected.status !== "active"}
                     onClick={() => void togglePinMemory(selected.id)}
                   >
                     {selected.pinned ? "Unpin" : "Pin for run"}
@@ -460,6 +657,63 @@ export function MemoriesInspector({ open, initialMemoryId, onClose }: Props) {
                 />
               </label>
 
+              <div className="memories-metadata-grid">
+                <label className="field">
+                  <span>Salience · {salience}</span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={salience}
+                    disabled={isLinkedSelected}
+                    onChange={(event) => {
+                      setSalience(Number(event.target.value));
+                      setDirty(true);
+                    }}
+                  />
+                </label>
+                <label className="field">
+                  <span>Confidence · {Math.round(confidence * 100)}%</span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={Math.round(confidence * 100)}
+                    disabled={isLinkedSelected}
+                    onChange={(event) => {
+                      setConfidence(Number(event.target.value) / 100);
+                      setDirty(true);
+                    }}
+                  />
+                </label>
+                <label className="field">
+                  <span>Last confirmed (RFC3339)</span>
+                  <input
+                    type="text"
+                    placeholder="2026-08-18T10:00:00Z"
+                    value={lastConfirmedAt}
+                    readOnly={isLinkedSelected}
+                    onChange={(event) => {
+                      setLastConfirmedAt(event.target.value);
+                      setDirty(true);
+                    }}
+                  />
+                </label>
+                <label className="field">
+                  <span>Expiry (RFC3339)</span>
+                  <input
+                    type="text"
+                    placeholder="No expiry"
+                    value={expiresAt}
+                    readOnly={isLinkedSelected}
+                    onChange={(event) => {
+                      setExpiresAt(event.target.value);
+                      setDirty(true);
+                    }}
+                  />
+                </label>
+              </div>
+
               <div className="field memories-body-field">
                 <span>Content</span>
                 {htmlPreview && !viewSource ? (
@@ -490,20 +744,56 @@ export function MemoriesInspector({ open, initialMemoryId, onClose }: Props) {
               </div>
 
               {selected && !creating ? (
-                <p className="muted memories-detail-meta">
-                  Source: {selected.source}
-                  {selected.artifactPath
-                    ? ` · Artifact on disk`
-                    : ""}
-                  {" · "}
-                  Updated {formatWhen(selected.updatedAt || selected.createdAt)}
-                </p>
+                <div className="muted memories-detail-meta">
+                  <p>
+                    Scope: {selected.scopeLabel} · Type: {selected.memoryType} ·
+                    Source: {selected.source}
+                    {selected.sourceWorkflowName
+                      ? ` from ${selected.sourceWorkflowName}`
+                      : ""}
+                    {selected.nodeId ? ` · Node ${selected.nodeId}` : ""}
+                    {selected.artifactPath ? " · Artifact on disk" : ""}
+                  </p>
+                  {selected.runId ? (
+                    <button
+                      type="button"
+                      className="ghost memories-history-link"
+                      onClick={() => {
+                        document
+                          .querySelector<HTMLButtonElement>(
+                            'button[aria-label="History"]',
+                          )
+                          ?.click();
+                        onClose();
+                      }}
+                    >
+                      Open run {selected.runId} in History
+                    </button>
+                  ) : null}
+                  {supersedes ? <p>Supersedes {supersedes.title}</p> : null}
+                  {supersededBy ? (
+                    <p>Superseded by {supersededBy.title}</p>
+                  ) : null}
+                  <p>
+                    Updated {formatWhen(selected.updatedAt || selected.createdAt)}
+                  </p>
+                </div>
               ) : (
                 <p className="muted memories-detail-meta">
                   Notes are durable workflow context. Pin them to inject into
                   the next agent run.
                 </p>
               )}
+              <div className="memory-budget-note" role="status">
+                Pinned context is selected deterministically within a 6,000-byte
+                budget (User 1,500 · Workspace 2,000 · Workflow/linked 2,500).
+                {visiblePinnedBytes > 6_000 ? (
+                  <strong>
+                    {" "}Visible pins exceed the budget; overflow remains in the
+                    library and will be omitted from the run prompt.
+                  </strong>
+                ) : null}
+              </div>
             </>
           ) : (
             <div className="memories-inspector-placeholder">

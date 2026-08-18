@@ -128,6 +128,7 @@ function MemoryCard({
             {previewText(memory.body, 120)}
           </p>
           <span className="run-memory-meta">
+            {memory.scopeLabel} · {memory.memoryType} ·{" "}
             {formatWhen(memory.updatedAt || memory.createdAt)}
           </span>
         </button>

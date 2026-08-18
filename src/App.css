@@ -7586,6 +7586,18 @@ button.primary.danger-solid:hover:not(:disabled) {
   color: var(--accent);
 }
 
+.memories-filter-selects,
+.memories-metadata-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+.memories-filter-selects .field,
+.memories-metadata-grid .field {
+  margin: 0;
+}
+
 .memories-inspector-list ul {
   list-style: none;
   margin: 0;
@@ -7711,6 +7723,28 @@ button.primary.danger-solid:hover:not(:disabled) {
   font-size: 0.76rem;
 }
 
+.memories-detail-meta p {
+  margin: 0 0 var(--space-1);
+}
+
+.memories-history-link {
+  padding-inline: 0;
+}
+
+.memory-budget-note {
+  padding: var(--space-2-5);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface-faint);
+  color: var(--muted);
+  font-size: var(--text-xs);
+  line-height: 1.45;
+}
+
+.memory-budget-note strong {
+  color: var(--warning, #b7791f);
+}
+
 .memories-inspector-placeholder {
   margin: auto;
   text-align: center;
@@ -7737,6 +7771,11 @@ button.primary.danger-solid:hover:not(:disabled) {
     max-height: 34%;
     border-right: none;
     border-bottom: 1px solid var(--line);
+  }
+
+  .memories-filter-selects,
+  .memories-metadata-grid {
+    grid-template-columns: 1fr;
   }
 }
 

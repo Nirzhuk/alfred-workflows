@@ -113,7 +113,8 @@ binary support.
 
 - **Local data** — workflows, runs, schedules, and memories live in an on-disk
   SQLite database under the app’s application-support directory. Nothing is
-  uploaded to an Alfred cloud.
+  uploaded to an Alfred cloud. Memory remains local until you explicitly delete
+  it; retracting or superseding a claim retains it for correction history.
 - **Local history search** — searchable run history covers persisted run steps
   and saved memories using SQLite FTS5. It uses no embeddings or remote search
   service. The search tables are a derived index that Alfred can rebuild from
@@ -128,6 +129,26 @@ binary support.
 - **Permissions** — agent steps inherit whatever tools and file access those
   CLIs already have. Treat workflow prompts like instructions you would type
   into the agent yourself.
+
+### Memory scope and prompt safety
+
+- User memory is keyed to `local-user` and appears in every workflow on this
+  installation. Workspace memory appears only for the same lexically normalized
+  configured absolute working-directory path. Workflow memory stays with one
+  workflow unless explicitly linked to another.
+- Memory meaning (`preference`, `fact`, `decision`, `constraint`, `lesson`,
+  `episode`, `checkpoint`, `note`, `output`, or `artifact`) is separate from
+  content kind (`text`, `note`, or `artifact`).
+- Memory lifecycle is `active`, `superseded`, or `retracted`. Only active,
+  unexpired records can enter a run prompt; inactive records remain visible
+  until explicitly deleted.
+- Pinned context is capped at 6,000 UTF-8 bytes, divided softly across user
+  (1,500), workspace (2,000), and workflow/linked (2,500) scope. Overflow is
+  omitted from the prompt with a count-only notice, not deleted from the local
+  library.
+- Durable memory is reference data, not authorization. It cannot grant
+  permission or override your current request, workflow instructions, or safety
+  boundaries; instructions embedded in memory text are ignored.
 
 ## Troubleshooting
 
