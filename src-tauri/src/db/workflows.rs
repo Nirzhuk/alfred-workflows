@@ -195,13 +195,49 @@ impl Db {
     }
 
     pub fn delete_workflow(&self, id: &str) -> Result<(), DbError> {
-        let changed = self.with_conn(|conn| {
+        let (changed, deleted_artifacts) = self.with_conn(|conn| {
             let transaction = conn.unchecked_transaction()?;
+            let deleted_artifacts = {
+                let mut statement = transaction.prepare(
+                    "SELECT artifact_path FROM memories
+                     WHERE workflow_id = ?1 AND scope_type = 'workflow' AND artifact_path IS NOT NULL",
+                )?;
+                let rows = statement
+                    .query_map(params![id], |row| row.get::<_, String>(0))?
+                    .collect::<Result<Vec<_>, _>>()?;
+                rows
+            };
+            let preserved_memory_ids = {
+                let mut statement = transaction.prepare(
+                    "SELECT id FROM memories
+                     WHERE workflow_id = ?1 AND scope_type IN ('user', 'workspace')",
+                )?;
+                let rows = statement
+                    .query_map(params![id], |row| row.get::<_, String>(0))?
+                    .collect::<Result<Vec<_>, _>>()?;
+                rows
+            };
             // Explicit cleanup so delete still works if CASCADE isn't active
             // on an older database connection.
-            transaction.execute("DELETE FROM memory_fts WHERE workflow_id = ?1", params![id])?;
+            transaction.execute(
+                "DELETE FROM memory_fts WHERE memory_id IN (
+                   SELECT id FROM memories WHERE workflow_id = ?1 AND scope_type = 'workflow'
+                 )",
+                params![id],
+            )?;
             transaction.execute("DELETE FROM run_step_fts WHERE workflow_id = ?1", params![id])?;
-            transaction.execute("DELETE FROM memories WHERE workflow_id = ?1", params![id])?;
+            transaction.execute(
+                "DELETE FROM memories WHERE workflow_id = ?1 AND scope_type = 'workflow'",
+                params![id],
+            )?;
+            transaction.execute(
+                "UPDATE memories SET workflow_id = NULL
+                 WHERE workflow_id = ?1 AND scope_type IN ('user', 'workspace')",
+                params![id],
+            )?;
+            for memory_id in preserved_memory_ids {
+                super::history::index_memory(&transaction, &memory_id)?;
+            }
             transaction.execute("DELETE FROM schedules WHERE workflow_id = ?1", params![id])?;
             transaction.execute(
                 "DELETE FROM run_steps WHERE run_id IN (SELECT id FROM runs WHERE workflow_id = ?1)",
@@ -210,18 +246,15 @@ impl Db {
             transaction.execute("DELETE FROM runs WHERE workflow_id = ?1", params![id])?;
             let changed = transaction.execute("DELETE FROM workflows WHERE id = ?1", params![id])?;
             transaction.commit()?;
-            Ok(changed)
+            Ok((changed, deleted_artifacts))
         })?;
 
         if changed == 0 {
             return Err(DbError::Other(format!("workflow not found: {id}")));
         }
 
-        let artifacts = super::app_data_dir()
-            .map(|d| d.join("artifacts").join(id))
-            .ok();
-        if let Some(dir) = artifacts {
-            let _ = std::fs::remove_dir_all(dir);
+        for artifact in deleted_artifacts {
+            let _ = std::fs::remove_file(artifact);
         }
 
         Ok(())

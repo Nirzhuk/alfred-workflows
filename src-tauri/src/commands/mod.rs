@@ -324,8 +324,10 @@ pub fn test_workflow_trigger(
 pub fn list_memories(
     db: State<'_, Db>,
     workflow_id: String,
+    include_history: Option<bool>,
 ) -> Result<Vec<MemoryWithOrigin>, String> {
-    db.list_memories_with_links(&workflow_id)
+    let context = db.memory_context(&workflow_id).map_err(|e| e.to_string())?;
+    db.list_memories_for_context(&context, include_history.unwrap_or(false))
         .map_err(|e| e.to_string())
 }
 

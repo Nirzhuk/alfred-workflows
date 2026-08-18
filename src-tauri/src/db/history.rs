@@ -367,7 +367,7 @@ pub(crate) fn index_run_step(
 }
 
 pub(crate) fn index_memory(conn: &Connection, memory_id: &str) -> Result<(), DbError> {
-    let memory: Option<(String, String, String)> = conn
+    let memory: Option<(Option<String>, String, String)> = conn
         .query_row(
             "SELECT workflow_id, title, body FROM memories WHERE id = ?1",
             params![memory_id],
@@ -491,8 +491,16 @@ mod tests {
                 run_id: None,
                 node_id: None,
                 kind: None,
+                scope_type: None,
+                memory_type: None,
                 source: Some("manual".into()),
                 pinned: None,
+                confidence: None,
+                salience: None,
+                status: None,
+                supersedes_id: None,
+                last_confirmed_at: None,
+                expires_at: None,
                 id: Some("memory-sync".into()),
             })
             .expect("create memory");
@@ -510,10 +518,19 @@ mod tests {
 
         db.update_memory(UpdateMemoryInput {
             id: memory.id.clone(),
+            context_workflow_id: None,
             title: Some("Updated title".into()),
             body: Some("replacement body".into()),
             pinned: None,
             kind: None,
+            scope_type: None,
+            memory_type: None,
+            confidence: None,
+            salience: None,
+            status: None,
+            supersedes_id: None,
+            last_confirmed_at: None,
+            expires_at: None,
         })
         .expect("update memory");
         db.with_conn(|conn| {
@@ -604,8 +621,10 @@ mod tests {
         db.with_conn(|conn| {
             conn.execute(
                 "INSERT INTO memories
-                 (id, workflow_id, kind, source, title, body, created_at, updated_at)
-                 VALUES ('legacy-memory', ?1, 'text', 'import', 'Legacy note',
+                 (id, workflow_id, scope_type, scope_key, kind, memory_type,
+                  source, title, body, created_at, updated_at)
+                 VALUES ('legacy-memory', ?1, 'workflow', ?1, 'text', 'output',
+                         'import', 'Legacy note',
                          'remember unicode café', '2026-08-18T09:00:00Z', '2026-08-18T09:00:00Z')",
                 params![workflow_id],
             )?;
@@ -659,8 +678,16 @@ mod tests {
             run_id: None,
             node_id: None,
             kind: None,
+            scope_type: None,
+            memory_type: None,
             source: None,
             pinned: None,
+            confidence: None,
+            salience: None,
+            status: None,
+            supersedes_id: None,
+            last_confirmed_at: None,
+            expires_at: None,
             id: Some("delete-memory".into()),
         })
         .expect("create memory");
@@ -832,8 +859,16 @@ mod tests {
                 run_id: None,
                 node_id: None,
                 kind: None,
+                scope_type: None,
+                memory_type: None,
                 source: Some("manual".into()),
                 pinned: None,
+                confidence: None,
+                salience: None,
+                status: None,
+                supersedes_id: None,
+                last_confirmed_at: None,
+                expires_at: None,
                 id: Some(id.into()),
             })
             .expect("create searchable memory");

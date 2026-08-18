@@ -86,17 +86,39 @@ CREATE TABLE IF NOT EXISTS triggers (
 
 CREATE TABLE IF NOT EXISTS memories (
   id TEXT PRIMARY KEY NOT NULL,
-  workflow_id TEXT NOT NULL REFERENCES workflows(id) ON DELETE CASCADE,
+  workflow_id TEXT REFERENCES workflows(id) ON DELETE SET NULL,
   run_id TEXT,
   node_id TEXT,
-  kind TEXT NOT NULL DEFAULT 'text' CHECK (kind IN ('text', 'note', 'artifact')),
-  source TEXT NOT NULL DEFAULT 'run' CHECK (source IN ('run', 'manual', 'import')),
+  scope_type TEXT NOT NULL DEFAULT 'workflow'
+    CHECK (scope_type IN ('user', 'workspace', 'workflow')),
+  scope_key TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'text'
+    CHECK (kind IN ('text', 'note', 'artifact')),
+  memory_type TEXT NOT NULL DEFAULT 'output'
+    CHECK (memory_type IN (
+      'preference', 'fact', 'decision', 'constraint', 'lesson', 'episode',
+      'checkpoint', 'note', 'output', 'artifact'
+    )),
+  source TEXT NOT NULL DEFAULT 'run'
+    CHECK (source IN ('run', 'manual', 'import', 'review')),
   title TEXT NOT NULL,
   body TEXT NOT NULL DEFAULT '',
   artifact_path TEXT,
   pinned INTEGER NOT NULL DEFAULT 0,
+  confidence REAL NOT NULL DEFAULT 1.0 CHECK (confidence >= 0 AND confidence <= 1),
+  salience INTEGER NOT NULL DEFAULT 50 CHECK (salience >= 0 AND salience <= 100),
+  status TEXT NOT NULL DEFAULT 'active'
+    CHECK (status IN ('active', 'superseded', 'retracted')),
+  supersedes_id TEXT REFERENCES memories(id) ON DELETE SET NULL,
+  last_confirmed_at TEXT,
+  expires_at TEXT,
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  CHECK (
+    (scope_type = 'workflow' AND workflow_id IS NOT NULL AND scope_key = workflow_id)
+    OR (scope_type = 'workspace' AND length(trim(scope_key)) > 0)
+    OR (scope_type = 'user' AND scope_key = 'local-user')
+  )
 );
 
 -- Cross-workflow memory links: consumer workflow → memory owned elsewhere.

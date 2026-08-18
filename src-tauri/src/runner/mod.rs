@@ -11,7 +11,7 @@ use crate::agents::{
     adapter_for, auth_required, AgentActivity, AgentActivityKind, AgentActivityState,
     AgentAuthRequired, AgentError, AgentProvider, AgentRequest, AgentRunHooks,
 };
-use crate::db::Db;
+use crate::db::{Db, MemoryContext};
 use crate::integrations::actions::{
     ActionCancellation, ActionDescriptor, ActionErrorCode, ActionRequest, ActionResult,
 };
@@ -616,7 +616,14 @@ pub fn execute_run(
     let mut last_output = String::new();
     let mut final_output: Option<String> = None;
     let mut last_files_changed: Vec<Value> = Vec::new();
-    let pinned_context = db.format_pinned_context(workflow_id).unwrap_or_default();
+    let formatted_memory = db
+        .format_pinned_context(&MemoryContext {
+            workflow_id: workflow_id.into(),
+            working_directory: working_directory.clone(),
+        })
+        .unwrap_or_default();
+    let pinned_count = formatted_memory.included_ids.len();
+    let pinned_context = formatted_memory.markdown;
 
     // Trigger payload (webhook body, changed file path…) rides in front of the
     // prompt alongside pinned memories.
@@ -651,7 +658,6 @@ pub fn execute_run(
         None => pinned_context.clone(),
     };
 
-    let pinned_count = pinned_context.matches("### Memory ").count();
     if pinned_count > 0 {
         emit(
             app,
