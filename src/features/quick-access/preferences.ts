@@ -123,6 +123,14 @@ export function saveQuickAccessPosition(position: QuickAccessPosition | null) {
   }
 }
 
+export async function showQuickAccess(): Promise<void> {
+  try {
+    await invoke("show_quick_access");
+  } catch (error) {
+    console.warn("Failed to open quick access", error);
+  }
+}
+
 export async function syncQuickAccessPreference(): Promise<void> {
   const enabled = readQuickAccessEnabled();
   const showInFullscreen = readQuickAccessFullscreen();

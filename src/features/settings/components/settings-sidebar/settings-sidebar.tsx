@@ -50,20 +50,6 @@ function GeneralIcon() {
   );
 }
 
-function AppearanceIcon() {
-  return (
-    <svg viewBox="0 0 16 16" fill="none" aria-hidden>
-      <path
-        d="M8 1.75v1.3M8 12.95v1.3M1.75 8h1.3M12.95 8h1.3M3.58 3.58l.92.92M11.5 11.5l.92.92M12.42 3.58l-.92.92M4.5 11.5l-.92.92"
-        stroke="currentColor"
-        strokeWidth="1.35"
-        strokeLinecap="round"
-      />
-      <circle cx="8" cy="8" r="3" stroke="currentColor" strokeWidth="1.35" />
-    </svg>
-  );
-}
-
 function QuickAccessIcon() {
   return (
     <svg viewBox="0 0 16 16" fill="none" aria-hidden>
@@ -195,12 +181,6 @@ const NAV_GROUPS: SettingsNavGroup[] = [
         label: SETTINGS_SECTION_LABELS.shortcuts,
         description: "Customize global and application keys",
         icon: <ShortcutsIcon />,
-      },
-      {
-        id: "appearance",
-        label: SETTINGS_SECTION_LABELS.appearance,
-        description: "Theme and display preferences",
-        icon: <AppearanceIcon />,
       },
       {
         id: "notifications",

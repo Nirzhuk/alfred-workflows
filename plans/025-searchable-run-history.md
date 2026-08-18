@@ -7,7 +7,7 @@
 > `plans/README.md`.
 >
 > **Drift check (run first)**:
-> `git diff --stat 62ff2bf..HEAD -- src-tauri/Cargo.toml src-tauri/src/db/schema.sql src-tauri/src/db/migrate.rs src-tauri/src/db/mod.rs src-tauri/src/db/history.rs src-tauri/src/runner/mod.rs src-tauri/src/commands/mod.rs src-tauri/src/lib.rs src/features/workflow/types.ts src/features/workflow/api.ts src/features/workflow/components/sidebar-nav/sidebar-nav.tsx src/features/workflow/components/workflow-canvas/workflow-canvas.tsx src/features/workflow/components/history-page src/App.css tests`
+> `git diff --stat 4f92020..HEAD -- src-tauri/Cargo.toml src-tauri/src/db/schema.sql src-tauri/src/db/migrate.rs src-tauri/src/db/mod.rs src-tauri/src/db/history.rs src-tauri/src/db/memories.rs src-tauri/src/db/workflows.rs src-tauri/src/runner/mod.rs src-tauri/src/commands/mod.rs src-tauri/src/lib.rs src/features/workflow/types.ts src/features/workflow/api.ts src/features/workflow/components/sidebar-nav/sidebar-nav.tsx src/features/workflow/components/workflow-canvas/workflow-canvas.tsx src/features/workflow/components/history-page src/App.css tests`
 >
 > The plan was written while the repository had an unrelated, uncommitted
 > Connected Apps batch. `src-tauri/src/runner/mod.rs`, `src-tauri/src/lib.rs`,
@@ -24,6 +24,9 @@
 - **Depends on**: none
 - **Category**: direction / data
 - **Planned at**: commit `62ff2bf`, 2026-08-18, with a dirty worktree
+- **Reconciled at**: commit `4f92020`, 2026-08-18, after the previously
+  staged Connected Apps baseline was committed. The scope list now explicitly
+  includes the memory/workflow delete paths already required by Step 2.
 
 ## Why this matters
 
@@ -118,6 +121,8 @@ on a normal host before marking DONE.
 - `src-tauri/src/db/migrate.rs`
 - `src-tauri/src/db/mod.rs`
 - `src-tauri/src/db/history.rs` (new)
+- `src-tauri/src/db/memories.rs`
+- `src-tauri/src/db/workflows.rs`
 - `src-tauri/src/runner/mod.rs`
 - `src-tauri/src/commands/mod.rs`
 - `src-tauri/src/lib.rs`

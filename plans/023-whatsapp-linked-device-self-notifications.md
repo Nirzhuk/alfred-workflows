@@ -29,7 +29,8 @@
 - **Does not depend on**: Plan 010 events or Plan 011 relay
 - **Category**: experimental integration
 - **Planned at**: 2026-08-16 after splitting Plan 021
-- **Implementation status**: TODO
+- **Implementation status**: IN PROGRESS (Step 1 spike: static gates green,
+  live-account gates pending)
 
 ## Product decisions
 
@@ -160,16 +161,93 @@ Commit a version and `Cargo.lock`; never track a floating branch.
 linkage, redaction, or packaged execution cannot be demonstrated. Record spike
 results in this plan before proceeding.
 
+#### Spike results (recorded 2026-08-18)
+
+Spike lives at `spikes/whatsapp-feasibility/` with its own committed
+`Cargo.lock`, pinned to `whatsapp-rust =0.7.0` (published 2026-08-07, MIT). It
+is outside the Tauri build graph. Its `README.md` holds the full evidence.
+
+| # | Gate | Result |
+|---|------|--------|
+| 1 | Toolchain + native-link graph | **GREEN, constrained** — see below |
+| 2 | QR pairing without pair-code | PENDING (needs a live account) |
+| 3 | Stable own JID | PENDING (needs a live account) |
+| 4 | Self-send returns a message ID | PENDING (needs a live account) |
+| 5 | Restart, reconnect, resend, logout | PENDING (needs a live account) |
+| 6 | Ignore message/history-sync events | **GREEN** |
+| 7 | Encrypt + purge retry data | PARTIAL — knobs exist, blocked on Step 2 |
+| 8 | No PII in default logs | PENDING (needs a live account) |
+| 9 | Packaged binary runs the path | PARTIAL — release binary builds and runs |
+
+**Gate 1 — two default features must be disabled or Alfred will not build.**
+
+- `sqlite-storage` pulls Diesel → `libsqlite3-sys 0.37`. Alfred's
+  `rusqlite 0.40.2` pulls `libsqlite3-sys 0.38.2`. Both declare
+  `links = "sqlite3"`, which Cargo rejects with a hard resolver error. This is
+  exactly the linkage risk the gate was written to catch.
+- `simd` gates `#![feature(portable_simd)]` in `wacore-binary`. Nightly only;
+  Alfred builds on stable `rustc 1.96.0`.
+
+The pinned shipping configuration is therefore:
+
+```toml
+whatsapp-rust = { version = "=0.7.0", default-features = false, features = [
+    "tokio-transport",
+    "tokio-runtime",
+    "tokio-native",
+    "ureq-client",
+] }
+```
+
+Verified: that config `cargo check`s clean beside `rusqlite 0.40.2 + bundled`,
+leaves exactly one `libsqlite3-sys` (0.38.2, Alfred's) in the graph, and adds
+183 packages with **zero** `-sys`/native-link crates of its own. `signal` is
+dropped because Tauri already owns Alfred's shutdown path. `cargo audit` is
+clean against 1,217 advisories on both the shipping and spike lockfiles. All
+`whatsapp-rust` workspace crates are MIT, compatible with GPL-3.0-or-later.
+`tracing-pii`, `danger-skip-tls-verify`, `danger-skip-cert-chain-verify`,
+`debug-snapshots`, `legacy-session-interop`, `metrics`, `plugins`, and `voip*`
+are off by default and stay off.
+
+`ureq-client` adds a second HTTP stack next to Alfred's `reqwest`. It is
+replaceable through `with_http_client`; consolidating is a Step 5 follow-up,
+not a gate.
+
+**Gate 6 — GREEN.** `BotBuilder::skip_history_sync()` declines the stream at
+the protocol level, so blobs are never received rather than received and
+dropped. Registering no `on_message` handler keeps inbound content entirely
+unobserved.
+
+**Gate 7 — partial.** `BotBuilder::with_resend_rate_limit(burst, refill_per_min)`
+and `Client::set_retry_admission(..)` exist, so Step 6's 5/min cap can lean on
+the library. Upstream `examples/retry_quarantine.rs` and
+`examples/durability_hook.rs` are the references for bounding retention.
+Encryption and 24-hour expiry depend on the Step 2 decision below.
+
+**Remaining gates 2–5, 8, 9 need a real phone and a real WhatsApp account.**
+Run `pair`, `send`, restart, `send` again, then `logout` from
+`spikes/whatsapp-feasibility/`, and record the outcomes in this table before any
+product work starts.
+
 ### Step 2: Design the encrypted protocol-store boundary
 
-The default plaintext `SqliteStore` is not acceptable. Choose the storage
-implementation only after the spike compares:
+The default plaintext `SqliteStore` is not acceptable. **The spike resolved this
+choice: the SQLCipher option is not viable and the Alfred-owned backend is the
+only remaining path.**
 
-- a reviewed SQLCipher-backed dedicated database that coexists safely with
-  Alfred's current SQLite linkage on every target; or
+- ~~a reviewed SQLCipher-backed dedicated database~~ — rejected.
+  `whatsapp-rust-sqlite-storage` is Diesel on `libsqlite3-sys 0.37`, which
+  cannot coexist with Alfred's `libsqlite3-sys 0.38.2` in one binary (see the
+  Step 1 spike results). Swapping in SQLCipher does not change that.
 - an Alfred-owned implementation of the required `whatsapp-rust` storage
   traits using authenticated encryption for every sensitive value and keyed
-  digests for sensitive lookup identifiers.
+  digests for sensitive lookup identifiers. **This is the chosen path.**
+
+Sizing measured against `wacore 0.7.0`: the backend must implement **82 trait
+methods** — `SignalStore` (25), `ProtocolStore` (36), `AppSyncStore` (10),
+`DeviceStore` (6), `MsgSecretStore` (5). The upstream Diesel reference
+implementation is ~3,800 lines. Re-estimate this plan's XL effort against that
+number before starting product work; it is the single largest cost in 023.
 
 Use established, audited AEAD primitives with versioned envelopes, random
 nonces, integrity-protected associated data, and zeroized key buffers. Generate

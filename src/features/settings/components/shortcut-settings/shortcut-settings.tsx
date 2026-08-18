@@ -58,6 +58,7 @@ export function ShortcutSettings() {
     if (event.key === "Escape") {
       setRecording(null);
       setError(null);
+      event.currentTarget.blur();
       return;
     }
 

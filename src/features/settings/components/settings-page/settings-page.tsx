@@ -1,7 +1,10 @@
 import { useEffect } from "react";
 import { SelectControl } from "../../../../components/select-control";
 import { ConnectedAppsSettings } from "../../../integrations/connected-apps-settings";
-import { useQuickAccessPreferences } from "../../../quick-access/preferences";
+import {
+  showQuickAccess,
+  useQuickAccessPreferences,
+} from "../../../quick-access/preferences";
 import { ShortcutSettings } from "../shortcut-settings";
 import {
   SETTINGS_SECTION_LABELS,
@@ -88,12 +91,12 @@ export function SettingsPage({ activeSection }: Props) {
       </header>
 
       <div className="settings-page-body settings-page-panel">
-        {activeSection === "appearance" ? (
+        {activeSection === "general" ? (
           <section
             className="settings-section"
-            aria-labelledby="appearance-settings-heading"
+            aria-labelledby="theme-settings-heading"
           >
-            <h2 id="appearance-settings-heading">Theme</h2>
+            <h2 id="theme-settings-heading">Theme</h2>
             <div className="settings-card">
               <div className="settings-row settings-row-theme">
                 <div>
@@ -149,7 +152,15 @@ export function SettingsPage({ activeSection }: Props) {
                     Alfred window is hidden.
                   </p>
                 </div>
-                <div className="settings-controls">
+                <div className="settings-controls settings-quick-access-actions">
+                  <button
+                    type="button"
+                    className="ghost settings-test-btn"
+                    disabled={quickAccessBusy}
+                    onClick={() => void showQuickAccess()}
+                  >
+                    Open now
+                  </button>
                   <button
                     type="button"
                     className={[

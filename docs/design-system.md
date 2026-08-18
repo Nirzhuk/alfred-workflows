@@ -121,6 +121,9 @@ at least 28px in dense chrome and 32px for ordinary controls.
 
 ## Iconography
 
+- Icons are Phosphor Icons (regular weight) rendered through the shared
+  `Icon` component; see `docs/iconography.md` for the rules, the add-an-icon
+  workflow, and the mapping of legacy inline icons.
 - Use one outline icon language per surface with consistent optical stroke.
 - Standard interface icons are `--icon-size-default` / 18px.
 - `--icon-size-compact` / 16px is for dense secondary controls only.

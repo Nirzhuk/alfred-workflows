@@ -283,6 +283,7 @@ pub fn run() {
             commands::update_memory,
             commands::delete_memory,
             commands::clear_memories,
+            quick_access::show_quick_access,
             quick_access::set_quick_access_expanded,
             quick_access::set_quick_access_enabled,
             quick_access::set_quick_access_mode,

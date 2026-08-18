@@ -7,7 +7,7 @@
 > complete.
 >
 > **Drift check (run first)**:
-> `git diff --stat 62ff2bf..HEAD -- src-tauri/src/db/schema.sql src-tauri/src/db/migrate.rs src-tauri/src/db/memories.rs src-tauri/src/db/history.rs src-tauri/src/db/mod.rs src-tauri/src/commands/mod.rs src-tauri/src/lib.rs src-tauri/src/runner/mod.rs src/features/workflow/types.ts src/features/workflow/api.ts src/features/workflow/memories.ts src/features/workflow/store.ts src/features/workflow/components/memories-inspector src/features/workflow/components/run-activity-panel/run-activity-panel.tsx src/App.css tests specs.md docs/install.md`
+> `git diff --stat 600efac..HEAD -- src-tauri/src/db/schema.sql src-tauri/src/db/migrate.rs src-tauri/src/db/memories.rs src-tauri/src/db/history.rs src-tauri/src/db/mod.rs src-tauri/src/db/workflows.rs src-tauri/src/commands/mod.rs src-tauri/src/lib.rs src-tauri/src/runner/mod.rs src/features/workflow/types.ts src/features/workflow/api.ts src/features/workflow/memories.ts src/features/workflow/store.ts src/features/workflow/components/memories-inspector src/features/workflow/components/run-activity-panel/run-activity-panel.tsx src/features/workflow/components/node-settings-modal/node-settings-modal.tsx src/features/workflow/components/history-page src/features/workflow/components/workflow-canvas/workflow-canvas.tsx src/App.css tests specs.md docs/install.md`
 >
 > Plan 025 must be DONE first. The plan was authored at `62ff2bf` while an
 > unrelated Connected Apps batch modified `runner/mod.rs`, `lib.rs`,
@@ -23,6 +23,19 @@
 - **Depends on**: `plans/025-searchable-run-history.md`
 - **Category**: direction / migration
 - **Planned at**: commit `62ff2bf`, 2026-08-18, with a dirty worktree
+- **Reconciled at**: Plan 025 implementation commit `600efac`, 2026-08-18.
+  The live FTS tables, `index_memory`, history DTOs, and transactional delete
+  paths match this plan's assumptions; Plan 026 must adapt `index_memory` to a
+  nullable owner while preserving searchable scope metadata.
+- **Execution clarification**: the first executor safely stopped before Step 3
+  because `std::fs::canonicalize` could block on symlink/network resolution.
+  Workspace keys must use the lexical algorithm below and must never touch the
+  filesystem.
+- **Review clarification**: user/workspace FTS hits must remain visible without
+  an owning workflow row; exact run links use explicit React state/callbacks,
+  never DOM queries; prompt-item byte caps include headings/provenance; and
+  inactive/expired memories must not appear in Activity or Memory-node prompt
+  selectors.
 
 ## Why this matters
 
@@ -45,7 +58,9 @@ retrieval and review can safely consume.
 
   - `user` with scope key `local-user` — available to every workflow;
   - `workspace` with scope key equal to the normalized workflow working
-    directory — available to workflows in that directory;
+    directory — available to workflows in that directory. V1 normalization is
+    purely lexical on an already-absolute path; it performs no filesystem,
+    symlink, mount, or network lookup;
   - `workflow` with scope key equal to a workflow id.
 
 - `workflow_id` becomes nullable. It records the owning workflow for legacy
@@ -144,6 +159,9 @@ the complete gate must pass in normal CI before DONE.
 - `src/features/workflow/store.ts`
 - `src/features/workflow/components/memories-inspector/`
 - `src/features/workflow/components/run-activity-panel/run-activity-panel.tsx`
+- `src/features/workflow/components/node-settings-modal/node-settings-modal.tsx`
+- Plan 025's `src/features/workflow/components/history-page/`
+- `src/features/workflow/components/workflow-canvas/workflow-canvas.tsx`
 - `src/App.css`
 - `tests/memory-model.test.ts` (new)
 - `specs.md`, `docs/install.md`
@@ -269,8 +287,12 @@ In `db/memories.rs`:
 
    - workflow → exact active workflow id;
    - user → `local-user`;
-   - workspace → canonicalize when possible, otherwise use the trimmed absolute
-     working-directory string; reject empty or relative workspace keys.
+   - workspace → trim the configured working-directory string, require
+     `Path::is_absolute()`, and normalize only its lexical `Component`s (drop
+     `CurDir`; collapse `Normal/ParentDir` pairs without traversing above the
+     root; preserve platform prefix/root semantics). Reject empty, relative,
+     or above-root results. Do not call `canonicalize`, `read_link`,
+     `metadata`, `current_dir`, or any API that queries the filesystem.
 
 4. Centralize validation:
 
@@ -384,14 +406,17 @@ Update the existing inspector:
 - Scope changes require confirmation because they change where memory appears.
   Disable Workspace when the current workflow has no working directory.
 - Show source workflow/run/node when present and link a run id to Plan 025's
-  History page.
+  History page. The link must open that exact persisted run through an explicit
+  component callback/state prop; do not query or click navigation DOM nodes.
 - Show `Supersedes <title>` and `Superseded by <title>` relationships without
   silently hiding inactive records.
 - Explain pinned context budget and show a non-blocking warning when visible
   pins exceed 6,000 bytes. Do not prevent saving; the runner deterministically
   chooses the bounded subset.
 - The Activity panel's compact Library cards should display scope and semantic
-  type, but remain compact. Full metadata belongs in the inspector.
+- Activity and Memory-node selectors must exclude inactive or expired rows even
+  if the inspector loaded them into shared state. Add one shared pure
+  eligibility helper and test it.
 - Preserve HTML artifact preview isolation and linked-memory read-only copy.
 
 Follow the existing modal, native select, token, focus, and responsive patterns
@@ -470,8 +495,9 @@ Stop and report if:
 - `PRAGMA foreign_key_check` reports any row after migration;
 - Plan 025 implemented a materially different FTS schema and a safe rebuild
   path is not obvious;
-- normalized workspace scope would require resolving symlinks or network paths
-  in a way that can block app startup;
+- correct workspace identity would require filesystem I/O, symlink resolution,
+  mount/network probing, or current-directory lookup instead of the specified
+  lexical absolute-path algorithm;
 - preserving user/workspace memory through workflow deletion requires a dummy
   workflow or sentinel FK row;
 - the implementation starts copying one memory row per workflow instead of
@@ -486,7 +512,8 @@ Stop and report if:
   reinterpret that key silently.
 - Workspace identity is path-based in v1. If Alfred later gains project ids or
   synced workspaces, introduce a migration rather than changing normalization
-  in place.
+  in place. Lexical normalization deliberately does not claim that symlinked
+  paths identify the same workspace.
 - Memory history is retained through lifecycle status. A future privacy/delete
   feature must distinguish retracting a claim from physically deleting it.
 - Plan 027 must use these visibility and budget functions rather than issuing

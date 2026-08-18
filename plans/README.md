@@ -278,9 +278,9 @@ and explainable; model-authored learning is staged for approval.
 
 | Plan | Title | Priority | Effort | Depends on | Status |
 |------|-------|----------|--------|------------|--------|
-| 025 | Make run history and saved memories searchable | P0 | L | — | TODO |
-| 026 | Turn workflow notes into scoped atomic memory | P0 | L | 025 | TODO |
-| 027 | Retrieve relevant memory automatically for agent steps | P0 | L | 025, 026 | TODO |
+| 025 | Make run history and saved memories searchable | P0 | L | — | DONE |
+| 026 | Turn workflow notes into scoped atomic memory | P0 | L | 025 | DONE |
+| 027 | Retrieve relevant memory automatically for agent steps | P0 | L | 025, 026 | DONE |
 | 028 | Curate memory through reviewable post-run suggestions | P1 | XL | 025, 026, 027 | TODO |
 
 ### Required execution order

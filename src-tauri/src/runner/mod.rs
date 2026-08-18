@@ -487,7 +487,13 @@ fn insert_step(
     let output_json = serde_json::to_string(output).unwrap_or_else(|_| "{}".into());
 
     db.with_conn(|conn| {
-        conn.execute(
+        let transaction = conn.unchecked_transaction()?;
+        let workflow_id: String = transaction.query_row(
+            "SELECT workflow_id FROM runs WHERE id = ?1",
+            rusqlite::params![run_id],
+            |row| row.get(0),
+        )?;
+        transaction.execute(
             "INSERT INTO run_steps
              (id, run_id, node_id, agent_provider, skill_name, status, input_json, output_json, error, started_at, finished_at, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10, ?10)",
@@ -504,6 +510,17 @@ fn insert_step(
                 created_at
             ],
         )?;
+        crate::db::index_run_step(
+            &transaction,
+            &id,
+            run_id,
+            &workflow_id,
+            node_id,
+            input,
+            output,
+            error,
+        )?;
+        transaction.commit()?;
         Ok(())
     })
     .map_err(|e| RunnerError::Message(e.to_string()))

@@ -7,7 +7,7 @@
 > `plans/README.md` when complete.
 >
 > **Drift check (run first)**:
-> `git diff --stat 62ff2bf..HEAD -- src-tauri/src/db/schema.sql src-tauri/src/db/migrate.rs src-tauri/src/db/memories.rs src-tauri/src/db/history.rs src-tauri/src/db/memory_retrieval.rs src-tauri/src/db/memory_curation.rs src-tauri/src/agents src-tauri/src/runner/mod.rs src-tauri/src/commands/mod.rs src-tauri/src/lib.rs src/features/workflow/types.ts src/features/workflow/api.ts src/features/workflow/store.ts src/features/workflow/components/memories-inspector src/features/workflow/components/history-page src/features/settings src/App.css tests specs.md docs/install.md`
+> `git diff --stat 6af3e7e..HEAD -- src-tauri/src/db/schema.sql src-tauri/src/db/migrate.rs src-tauri/src/db/memories.rs src-tauri/src/db/history.rs src-tauri/src/db/memory_retrieval.rs src-tauri/src/db/memory_curation.rs src-tauri/src/agents src-tauri/src/runner/mod.rs src-tauri/src/commands/mod.rs src-tauri/src/lib.rs src/features/workflow/types.ts src/features/workflow/api.ts src/features/workflow/store.ts src/features/workflow/components/memories-inspector src/features/workflow/components/history-page src/features/settings src/App.css tests specs.md docs/install.md`
 >
 > Reconcile against the live scoped-memory, retrieval, and history contracts.
 > Preserve the unrelated Connected Apps work that was already dirty when this
@@ -24,6 +24,12 @@
   `plans/027-automatic-memory-retrieval.md`
 - **Category**: direction / security
 - **Planned at**: commit `62ff2bf`, 2026-08-18, with a dirty worktree
+- **Reconciled at**: approved Plan 027 commit `6af3e7e`, 2026-08-18.
+  The live code provides lexical scoped-memory visibility, lifecycle and expiry
+  filtering, bounded pinned context, chunked deterministic FTS retrieval,
+  per-agent retrieval traces, exact History navigation, and a persisted
+  workflow recall toggle. Curation must reuse those contracts and preserve
+  Plans 025–027 prompt trust framing and byte limits.
 
 ## Why this matters
 

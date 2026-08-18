@@ -1223,6 +1223,7 @@ button:disabled {
   border: 0;
   background: transparent;
   border-radius: var(--radius-md) 0 0 var(--radius-md);
+  line-height: 1;
   text-align: left;
 }
 
@@ -1234,6 +1235,7 @@ button:disabled {
 .workflow-tab-dot {
   width: 0.45rem;
   height: 0.45rem;
+  align-self: center;
   border-radius: var(--radius-pill);
   background: color-mix(in srgb, var(--accent) 70%, #89b5aa);
   flex-shrink: 0;
@@ -2422,7 +2424,7 @@ button:disabled {
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--space-4);
-  padding: var(--space-5) var(--space-6);
+  padding: var(--space-3) var(--space-6);
   border-bottom: 1px solid var(--line);
 }
 
@@ -2987,6 +2989,11 @@ button:disabled {
   align-items: flex-end;
   gap: var(--space-1-5);
   flex-shrink: 0;
+}
+
+.settings-quick-access-actions {
+  flex-direction: row;
+  align-items: center;
 }
 
 .settings-toggle {

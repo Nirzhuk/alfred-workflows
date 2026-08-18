@@ -37,6 +37,11 @@ Thumbs.db
 src-tauri/target
 src-tauri/gen/schemas
 
+# Plan 023 WhatsApp feasibility spike (disposable, non-shipping)
+spikes/*/target
+spikes/**/spike-session.db*
+spikes/**/*.log
+
 # OS / tooling noise
 *.pem
 *.p12

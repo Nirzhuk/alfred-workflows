@@ -206,6 +206,11 @@ pub(crate) fn show_expanded(app: &AppHandle) -> tauri::Result<()> {
 }
 
 #[tauri::command]
+pub fn show_quick_access(app: AppHandle) -> Result<(), String> {
+    show_expanded(&app).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 pub fn set_quick_access_expanded(
     app: AppHandle,
     expanded: bool,

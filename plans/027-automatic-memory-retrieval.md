@@ -7,7 +7,7 @@
 > complete.
 >
 > **Drift check (run first)**:
-> `git diff --stat 62ff2bf..HEAD -- src-tauri/src/db/schema.sql src-tauri/src/db/migrate.rs src-tauri/src/db/memories.rs src-tauri/src/db/history.rs src-tauri/src/db/memory_retrieval.rs src-tauri/src/db/workflows.rs src-tauri/src/runner/mod.rs src-tauri/src/commands/mod.rs src-tauri/src/lib.rs src/features/workflow/types.ts src/features/workflow/api.ts src/features/workflow/store.ts src/features/workflow/components/memories-inspector src/features/workflow/components/history-page src/features/workflow/components/run-activity-panel/run-activity-panel.tsx src/App.css tests specs.md docs/install.md`
+> `git diff --stat bf7b475..HEAD -- src-tauri/src/db/schema.sql src-tauri/src/db/migrate.rs src-tauri/src/db/memories.rs src-tauri/src/db/history.rs src-tauri/src/db/memory_retrieval.rs src-tauri/src/db/workflows.rs src-tauri/src/runner/mod.rs src-tauri/src/commands/mod.rs src-tauri/src/lib.rs src/features/workflow/types.ts src/features/workflow/api.ts src/features/workflow/store.ts src/features/workflow/components/memories-inspector src/features/workflow/components/history-page src/features/workflow/components/run-activity-panel/run-activity-panel.tsx src/App.css tests specs.md docs/install.md`
 >
 > The live code must contain Plan 025's FTS search primitives and Plan 026's
 > scope/lifecycle model. Reconcile symbol names, but do not weaken those plans'
@@ -22,6 +22,10 @@
   `plans/026-scoped-atomic-memory.md`
 - **Category**: direction / architecture
 - **Planned at**: commit `62ff2bf`, 2026-08-18, with a dirty worktree
+- **Reconciled at**: approved Plan 026 commit `bf7b475`, 2026-08-18.
+  The live code provides lexical `MemoryContext`, scoped visibility,
+  lifecycle/expiry filtering, nullable memory FTS ownership, exact History run
+  navigation, and bounded pinned ids. Retrieval must reuse those contracts.
 
 ## Why this matters
 
