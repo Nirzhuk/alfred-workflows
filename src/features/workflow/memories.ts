@@ -34,16 +34,73 @@ export function clearLegacyMemories(workflowId: string) {
 
 export function sortMemories(memories: OutputMemory[]): OutputMemory[] {
   return [...memories].sort((a, b) => {
-    const aLinked = a.origin === "linked" ? 1 : 0;
-    const bLinked = b.origin === "linked" ? 1 : 0;
-    if (aLinked !== bLinked) return aLinked - bLinked;
-    if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+    const aActive = a.status === "active";
+    const bActive = b.status === "active";
+    if (aActive !== bActive) return aActive ? -1 : 1;
+    const aPinned = aActive && a.pinned;
+    const bPinned = bActive && b.pinned;
+    if (aPinned !== bPinned) return aPinned ? -1 : 1;
+    if (aActive && bActive) {
+      const specificity = { workflow: 0, workspace: 1, user: 2 } as const;
+      const scopeOrder = specificity[a.scopeType] - specificity[b.scopeType];
+      if (scopeOrder !== 0) return scopeOrder;
+    }
     return (b.updatedAt || b.createdAt).localeCompare(
       a.updatedAt || a.createdAt,
     );
   });
 }
 
+export function withMemoryDefaults(
+  memory: Partial<OutputMemory> &
+    Pick<OutputMemory, "id" | "title" | "body" | "createdAt" | "updatedAt">,
+): OutputMemory {
+  const workflowId = memory.workflowId ?? null;
+  const scopeType = memory.scopeType ?? "workflow";
+  return {
+    workflowId,
+    runId: null,
+    nodeId: null,
+    kind: "text",
+    scopeType,
+    scopeKey:
+      memory.scopeKey ??
+      (scopeType === "user" ? "local-user" : workflowId ?? ""),
+    scopeLabel:
+      memory.scopeLabel ??
+      (scopeType === "user"
+        ? "User"
+        : scopeType === "workspace"
+          ? "Workspace"
+          : "Workflow"),
+    memoryType:
+      memory.memoryType ??
+      (memory.kind === "artifact"
+        ? "artifact"
+        : memory.source === "manual"
+          ? "note"
+          : "output"),
+    source: "run",
+    artifactPath: null,
+    pinned: false,
+    confidence: 1,
+    salience: 50,
+    status: "active",
+    supersedesId: null,
+    lastConfirmedAt: null,
+    expiresAt: null,
+    ...memory,
+  };
+}
+
 export function asOwnedMemory(memory: OutputMemory): OutputMemory {
-  return { ...memory, origin: memory.origin ?? "owned" };
+  return withMemoryDefaults({ ...memory, origin: memory.origin ?? "owned" });
+}
+
+export function canPinMemory(memory: OutputMemory): boolean {
+  return memory.status === "active" && memory.origin !== "linked";
+}
+
+export function workspaceScopeAvailable(workingDirectory?: string): boolean {
+  return Boolean(workingDirectory?.trim());
 }

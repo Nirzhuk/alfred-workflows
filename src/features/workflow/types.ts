@@ -614,22 +614,45 @@ export type RunLogLine = {
 };
 
 export type MemoryKind = "text" | "note" | "artifact";
-export type MemorySource = "run" | "manual" | "import";
+export type MemorySource = "run" | "manual" | "import" | "review";
+export type MemoryScopeType = "user" | "workspace" | "workflow";
+export type MemoryType =
+  | "preference"
+  | "fact"
+  | "decision"
+  | "constraint"
+  | "lesson"
+  | "episode"
+  | "checkpoint"
+  | "note"
+  | "output"
+  | "artifact";
+export type MemoryStatus = "active" | "superseded" | "retracted";
 
 /** Durable workflow memory — SQLite-backed, optionally pinned into agent prompts. */
-export type MemoryOrigin = "owned" | "linked" | "linkable";
+export type MemoryOrigin = "owned" | "linked" | "linkable" | "inherited";
 
 export type OutputMemory = {
   id: string;
-  workflowId: string;
+  workflowId: string | null;
   runId?: string | null;
   nodeId?: string | null;
   kind: MemoryKind;
+  scopeType: MemoryScopeType;
+  scopeKey: string;
+  scopeLabel: string;
+  memoryType: MemoryType;
   source: MemorySource;
   title: string;
   body: string;
   artifactPath?: string | null;
   pinned: boolean;
+  confidence: number;
+  salience: number;
+  status: MemoryStatus;
+  supersedesId?: string | null;
+  lastConfirmedAt?: string | null;
+  expiresAt?: string | null;
   createdAt: string;
   updatedAt: string;
   /** `"owned"` for local memories; `"linked"` when imported from another workflow. */

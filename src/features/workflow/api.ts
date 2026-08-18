@@ -9,7 +9,10 @@ import type {
   HistorySearchHit,
   HistorySearchInput,
   MemoryKind,
+  MemoryScopeType,
   MemorySource,
+  MemoryStatus,
+  MemoryType,
   OutputMemory,
   RunHistoryDetail,
   RunHistoryItem,
@@ -230,8 +233,11 @@ export async function webhookBaseUrl(): Promise<string | null> {
   return invoke("webhook_base_url");
 }
 
-export async function listMemories(workflowId: string): Promise<OutputMemory[]> {
-  return invoke("list_memories", { workflowId });
+export async function listMemories(
+  workflowId: string,
+  includeHistory = false,
+): Promise<OutputMemory[]> {
+  return invoke("list_memories", { workflowId, includeHistory });
 }
 
 /** Memories from other workflows that can still be linked in. */
@@ -262,8 +268,16 @@ export async function createMemory(input: {
   runId?: string | null;
   nodeId?: string | null;
   kind?: MemoryKind;
+  scopeType?: MemoryScopeType;
+  memoryType?: MemoryType;
   source?: MemorySource;
   pinned?: boolean;
+  confidence?: number;
+  salience?: number;
+  status?: MemoryStatus;
+  supersedesId?: string | null;
+  lastConfirmedAt?: string | null;
+  expiresAt?: string | null;
   id?: string;
 }): Promise<OutputMemory> {
   return invoke("create_memory", { input });
@@ -271,10 +285,19 @@ export async function createMemory(input: {
 
 export async function updateMemory(input: {
   id: string;
+  contextWorkflowId?: string;
   title?: string;
   body?: string;
   pinned?: boolean;
   kind?: MemoryKind;
+  scopeType?: MemoryScopeType;
+  memoryType?: MemoryType;
+  confidence?: number;
+  salience?: number;
+  status?: MemoryStatus;
+  supersedesId?: string | null;
+  lastConfirmedAt?: string | null;
+  expiresAt?: string | null;
 }): Promise<OutputMemory> {
   return invoke("update_memory", { input });
 }
