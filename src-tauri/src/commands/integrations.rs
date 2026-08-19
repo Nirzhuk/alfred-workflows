@@ -3,12 +3,14 @@ use crate::integrations::actions::{ActionDescriptor, ActionError, ActionResource
 use crate::integrations::events::{AppEventDescriptor, AppEventError, AppEventResourcePage};
 use crate::integrations::github::{GitHubDeviceAuthorization, GitHubDevicePollResult};
 use crate::integrations::gmail::GmailAuthorizationStarted;
+use crate::integrations::linear::LinearPrivateConnectionInput;
 use crate::integrations::microsoft::{MicrosoftAuthorizationStarted, MicrosoftPrepareInput};
 use crate::integrations::models::{
     AppConnectionDto, AppConnectionUsage, AppProviderDto, IntegrationCommandError,
 };
 use crate::integrations::notion::NotionPrivateConnectionInput;
 use crate::integrations::obsidian::ObsidianVaultConnectionInput;
+use crate::integrations::sentry::SentryAuthTokenConnectionInput;
 use crate::integrations::slack::SlackPrivateConnectionInput;
 use crate::integrations::telegram::{
     TelegramCompleteInput, TelegramPairingPrepared, TelegramPrepareInput,
@@ -226,6 +228,24 @@ pub async fn connect_notion_private(
     input: NotionPrivateConnectionInput,
 ) -> Result<AppConnectionDto, IntegrationCommandError> {
     state.connect_notion_private(db.inner(), input).await
+}
+
+#[tauri::command]
+pub async fn connect_linear_private(
+    db: State<'_, Db>,
+    state: State<'_, IntegrationsState>,
+    input: LinearPrivateConnectionInput,
+) -> Result<AppConnectionDto, IntegrationCommandError> {
+    state.connect_linear_private(db.inner(), input).await
+}
+
+#[tauri::command]
+pub async fn connect_sentry_private(
+    db: State<'_, Db>,
+    state: State<'_, IntegrationsState>,
+    input: SentryAuthTokenConnectionInput,
+) -> Result<AppConnectionDto, IntegrationCommandError> {
+    state.connect_sentry_private(db.inner(), input).await
 }
 
 #[tauri::command]

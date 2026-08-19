@@ -23,6 +23,9 @@ describe("GitHub connected app", () => {
     const capability = await Bun.file(
       new URL("../src-tauri/capabilities/default.json", import.meta.url),
     ).text();
+    const registry = await Bun.file(
+      new URL("../src/features/integrations/provider-ui.ts", import.meta.url),
+    ).text();
     const settings = await Bun.file(
       new URL(
         "../src/features/integrations/connected-apps-settings.tsx",
@@ -30,8 +33,11 @@ describe("GitHub connected app", () => {
       ),
     ).text();
     expect(capability).toContain('"https://github.com/*"');
-    expect(settings).toContain("github: () => setGithubConnectOpen(true)");
-    expect(settings).toContain("<GitHubConnect");
+    expect(registry).toContain(
+      "github: { Dialog: GitHubConnect, supportsReconnect: true }",
+    );
+    expect(settings).toContain("PROVIDER_UI");
+    expect(settings).toContain("activeConnect");
   });
 
   test("preserves the legacy gh-backed Git Host node", async () => {

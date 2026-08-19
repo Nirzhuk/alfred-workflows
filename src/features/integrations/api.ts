@@ -10,10 +10,12 @@ import type {
   GitHubDeviceAuthorization,
   GitHubDevicePollResult,
   GmailAuthorizationStarted,
+  LinearPrivateConnectionInput,
   MicrosoftAuthorizationStarted,
   MicrosoftPrepareInput,
   NotionPrivateConnectionInput,
   ObsidianVaultConnectionInput,
+  SentryAuthTokenConnectionInput,
   SlackPrivateConnectionInput,
   TelegramCompleteInput,
   TelegramPairingPrepared,
@@ -64,6 +66,12 @@ export type IntegrationsApi = {
   cancelMicrosoftAuthorization: (sessionId: string) => Promise<void>;
   connectNotionPrivate: (
     input: NotionPrivateConnectionInput,
+  ) => Promise<AppConnection>;
+  connectLinearPrivate: (
+    input: LinearPrivateConnectionInput,
+  ) => Promise<AppConnection>;
+  connectSentryPrivate: (
+    input: SentryAuthTokenConnectionInput,
   ) => Promise<AppConnection>;
   connectObsidianVault: (
     input: ObsidianVaultConnectionInput,
@@ -125,6 +133,10 @@ export const integrationsApi: IntegrationsApi = {
     invoke("cancel_microsoft_authorization", { sessionId }),
   connectNotionPrivate: (input) =>
     invoke("connect_notion_private", { input }),
+  connectLinearPrivate: (input) =>
+    invoke("connect_linear_private", { input }),
+  connectSentryPrivate: (input) =>
+    invoke("connect_sentry_private", { input }),
   connectObsidianVault: (input) =>
     invoke("connect_obsidian_vault", { input }),
   prepareTelegramConnection: (input) =>

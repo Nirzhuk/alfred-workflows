@@ -271,6 +271,8 @@ pub fn run() {
             commands::integrations::cancel_microsoft_authorization,
             commands::integrations::connect_notion_private,
             commands::integrations::connect_obsidian_vault,
+            commands::integrations::connect_linear_private,
+            commands::integrations::connect_sentry_private,
             commands::integrations::prepare_telegram_connection,
             commands::integrations::complete_telegram_connection,
             commands::integrations::cancel_telegram_pairing,

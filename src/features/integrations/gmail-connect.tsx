@@ -4,10 +4,11 @@ import { Icon } from "../../components/icon";
 import { Modal, ModalHeader } from "../../components/modal";
 import { ConnectedAppTutorialLayout } from "./components/connected-app-tutorial-layout";
 import { ExternalLinkIcon } from "./components/external-link-icon";
+import type { ConnectDialogProps } from "./connect-dialog";
 import { useIntegrationsStore } from "./store";
 import type { GmailAuthorizationStarted } from "./types";
 
-export function GmailConnect({ onClose }: { onClose: () => void }) {
+export function GmailConnect({ onClose }: ConnectDialogProps) {
   const prepare = useIntegrationsStore((state) => state.prepareGmailConnection);
   const complete = useIntegrationsStore(
     (state) => state.completeGmailConnection,

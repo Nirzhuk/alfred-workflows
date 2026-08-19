@@ -1,14 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ConfirmDialog } from "../../components/confirm-dialog";
 import { AppLogo } from "./app-logo";
-import { GitHubConnect } from "./github-connect";
-import { GmailConnect } from "./gmail-connect";
-import { MicrosoftConnect } from "./microsoft-connect";
-import { NotionPrivateConnect } from "./notion-private-connect";
-import { ObsidianVaultConnect } from "./obsidian-vault-connect";
-import { SlackPrivateConnect } from "./slack-private-connect";
-import { TelegramConnect } from "./telegram-connect";
-import { WhatsAppConnect } from "./whatsapp-connect";
+import { PROVIDER_UI, type ActiveConnect } from "./provider-ui";
 import { useIntegrationsStore } from "./store";
 import type {
   AppConnection,
@@ -45,31 +38,9 @@ export function ConnectedAppsSettings() {
   const [pending, setPending] = useState<PendingDisconnect | null>(null);
   const [metadataCleanup, setMetadataCleanup] =
     useState<AppConnection | null>(null);
-  const [slackConnectOpen, setSlackConnectOpen] = useState(false);
-  const [telegramConnectOpen, setTelegramConnectOpen] = useState(false);
-  const [notionConnectOpen, setNotionConnectOpen] = useState(false);
-  const [obsidianConnectOpen, setObsidianConnectOpen] = useState(false);
-  const [githubConnectOpen, setGithubConnectOpen] = useState(false);
-  const [gmailConnectOpen, setGmailConnectOpen] = useState(false);
-  const [microsoftConnectOpen, setMicrosoftConnectOpen] = useState(false);
-  const [microsoftReconnectId, setMicrosoftReconnectId] = useState<
-    string | null
-  >(null);
-  const [whatsappConnectOpen, setWhatsappConnectOpen] = useState(false);
-
-  const connectHandlers: Record<string, () => void> = {
-    slack: () => setSlackConnectOpen(true),
-    telegram: () => setTelegramConnectOpen(true),
-    whatsapp: () => setWhatsappConnectOpen(true),
-    notion: () => setNotionConnectOpen(true),
-    obsidian: () => setObsidianConnectOpen(true),
-    github: () => setGithubConnectOpen(true),
-    gmail: () => setGmailConnectOpen(true),
-    microsoft: () => {
-      setMicrosoftReconnectId(null);
-      setMicrosoftConnectOpen(true);
-    },
-  };
+  const [activeConnect, setActiveConnect] = useState<ActiveConnect | null>(
+    null,
+  );
 
   useEffect(() => {
     void load();
@@ -125,6 +96,10 @@ export function ConnectedAppsSettings() {
     await disconnect(connection.id, true);
   };
 
+  const ActiveDialog = activeConnect
+    ? PROVIDER_UI[activeConnect.providerId]?.Dialog
+    : undefined;
+
   return (
     <section className="settings-section">
       {error ? (
@@ -142,128 +117,126 @@ export function ConnectedAppsSettings() {
             <p className="settings-value">Loading connected apps…</p>
           </div>
         ) : null}
-        {rows.map(({ provider, connections: providerConnections }) => (
-          <div className="settings-row integration-provider-row" key={provider.id}>
-            <div className="integration-provider-copy">
-              <AppLogo
-                providerId={provider.id}
-                providerName={provider.name}
-                size={36}
-              />
-              <div className="integration-provider-text">
-                <p className="settings-label">
-                  {provider.name}
-                  {provider.experimental ? (
-                    <span className="integration-experimental-badge">
-                      Experimental
-                    </span>
-                  ) : null}
-                </p>
-                <p className="settings-value">{provider.capabilitySummary}</p>
+        {rows.map(({ provider, connections: providerConnections }) => {
+          const ui = PROVIDER_UI[provider.id];
+          return (
+            <div className="settings-row integration-provider-row" key={provider.id}>
+              <div className="integration-provider-copy">
+                <AppLogo
+                  providerId={provider.id}
+                  providerName={provider.name}
+                  size={36}
+                />
+                <div className="integration-provider-text">
+                  <p className="settings-label">
+                    {provider.name}
+                    {provider.experimental ? (
+                      <span className="integration-experimental-badge">
+                        Experimental
+                      </span>
+                    ) : null}
+                  </p>
+                  <p className="settings-value">{provider.capabilitySummary}</p>
+                </div>
               </div>
-            </div>
-            {providerConnections.length === 0 ? (
-              provider.connectAvailable && connectHandlers[provider.id] ? (
-                <button
-                  type="button"
-                  className="integration-action integration-connect"
-                  title={`Connect ${provider.name}`}
-                  onClick={connectHandlers[provider.id]}
-                >
-                  Connect
-                </button>
+              {providerConnections.length === 0 ? (
+                provider.connectAvailable && ui ? (
+                  <button
+                    type="button"
+                    className="integration-action integration-connect"
+                    title={`Connect ${provider.name}`}
+                    onClick={() =>
+                      setActiveConnect({ providerId: provider.id })
+                    }
+                  >
+                    Connect
+                  </button>
+                ) : (
+                  <span
+                    className="integration-pending"
+                    title="Authorization arrives in the provider plan"
+                  >
+                    Coming next
+                  </span>
+                )
               ) : (
-                <span
-                  className="integration-pending"
-                  title="Authorization arrives in the provider plan"
-                >
-                  Coming next
-                </span>
-              )
-            ) : (
-              <div className="integration-connections">
-                {providerConnections.map((connection) => (
-                  <div className="integration-connection" key={connection.id}>
-                    <div className="integration-connection-copy">
-                      <p
-                        className="integration-account"
-                        title={
-                          connection.displayName ??
-                          connection.externalAccountId ??
-                          undefined
-                        }
-                      >
-                        {connection.displayName ??
-                          connection.externalAccountId ??
-                          "Connected account"}
-                      </p>
-                      <div className="integration-connection-meta">
-                        <span
-                          className={`integration-status is-${connection.status}`}
+                <div className="integration-connections">
+                  {providerConnections.map((connection) => (
+                    <div className="integration-connection" key={connection.id}>
+                      <div className="integration-connection-copy">
+                        <p
+                          className="integration-account"
+                          title={
+                            connection.displayName ??
+                            connection.externalAccountId ??
+                            undefined
+                          }
                         >
-                          {STATUS_LABELS[connection.status]}
-                        </span>
-                        {connection.scopes.length > 0 ? (
+                          {connection.displayName ??
+                            connection.externalAccountId ??
+                            "Connected account"}
+                        </p>
+                        <div className="integration-connection-meta">
                           <span
-                            className="integration-scopes"
-                            title={`Access: ${connection.scopes.join(", ")}`}
+                            className={`integration-status is-${connection.status}`}
                           >
-                            {connection.scopes.length} scope
-                            {connection.scopes.length === 1 ? "" : "s"}
+                            {STATUS_LABELS[connection.status]}
                           </span>
-                        ) : null}
+                          {connection.scopes.length > 0 ? (
+                            <span
+                              className="integration-scopes"
+                              title={`Access: ${connection.scopes.join(", ")}`}
+                            >
+                              {connection.scopes.length} scope
+                              {connection.scopes.length === 1 ? "" : "s"}
+                            </span>
+                          ) : null}
+                        </div>
                       </div>
-                    </div>
-                    <div className="integration-actions">
-                      {provider.id === "slack" ||
-                      provider.id === "notion" ||
-                      provider.id === "obsidian" ||
-                      provider.id === "github" ||
-                      provider.id === "gmail" ||
-                      provider.id === "microsoft" ? (
+                      <div className="integration-actions">
+                        {ui?.supportsReconnect ? (
+                          <button
+                            type="button"
+                            className="ghost integration-action"
+                            title={`Reconnect ${provider.name}`}
+                            onClick={() =>
+                              setActiveConnect({
+                                providerId: provider.id,
+                                reconnectConnectionId: connection.id,
+                              })
+                            }
+                          >
+                            Reconnect
+                          </button>
+                        ) : null}
                         <button
                           type="button"
-                          className="ghost integration-action"
-                          title={`Reconnect ${provider.name}`}
-                          onClick={() => {
-                            if (provider.id === "microsoft") {
-                              setMicrosoftReconnectId(connection.id);
-                              setMicrosoftConnectOpen(true);
-                              return;
-                            }
-                            connectHandlers[provider.id]?.();
-                          }}
+                          className="ghost danger integration-action"
+                          disabled={
+                            disconnectingId === connection.id ||
+                            preparingId === connection.id
+                          }
+                          onClick={() =>
+                            connection.status === "revoked"
+                              ? setMetadataCleanup(connection)
+                              : void prepareDisconnect(connection)
+                          }
                         >
-                          Reconnect
-                        </button>
-                      ) : null}
-                      <button
-                        type="button"
-                        className="ghost danger integration-action"
-                        disabled={
-                          disconnectingId === connection.id ||
+                          {disconnectingId === connection.id ||
                           preparingId === connection.id
-                        }
-                        onClick={() =>
-                          connection.status === "revoked"
-                            ? setMetadataCleanup(connection)
-                            : void prepareDisconnect(connection)
-                        }
-                      >
-                        {disconnectingId === connection.id ||
-                        preparingId === connection.id
-                          ? "Checking…"
-                          : connection.status === "revoked"
-                            ? "Remove local data"
-                            : "Disconnect"}
-                      </button>
+                            ? "Checking…"
+                            : connection.status === "revoked"
+                              ? "Remove local data"
+                              : "Disconnect"}
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        ))}
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       {pending ? (
@@ -288,34 +261,10 @@ export function ConnectedAppsSettings() {
         />
       ) : null}
 
-      {slackConnectOpen ? (
-        <SlackPrivateConnect onClose={() => setSlackConnectOpen(false)} />
-      ) : null}
-      {whatsappConnectOpen ? (
-        <WhatsAppConnect onClose={() => setWhatsappConnectOpen(false)} />
-      ) : null}
-      {telegramConnectOpen ? (
-        <TelegramConnect onClose={() => setTelegramConnectOpen(false)} />
-      ) : null}
-      {notionConnectOpen ? (
-        <NotionPrivateConnect onClose={() => setNotionConnectOpen(false)} />
-      ) : null}
-      {obsidianConnectOpen ? (
-        <ObsidianVaultConnect onClose={() => setObsidianConnectOpen(false)} />
-      ) : null}
-      {githubConnectOpen ? (
-        <GitHubConnect onClose={() => setGithubConnectOpen(false)} />
-      ) : null}
-      {gmailConnectOpen ? (
-        <GmailConnect onClose={() => setGmailConnectOpen(false)} />
-      ) : null}
-      {microsoftConnectOpen ? (
-        <MicrosoftConnect
-          reconnectConnectionId={microsoftReconnectId}
-          onClose={() => {
-            setMicrosoftConnectOpen(false);
-            setMicrosoftReconnectId(null);
-          }}
+      {ActiveDialog ? (
+        <ActiveDialog
+          reconnectConnectionId={activeConnect?.reconnectConnectionId ?? null}
+          onClose={() => setActiveConnect(null)}
         />
       ) : null}
     </section>

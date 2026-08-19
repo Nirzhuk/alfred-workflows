@@ -2,11 +2,12 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useState } from "react";
 import { ConnectedAppTutorialLayout } from "./components/connected-app-tutorial-layout";
 import { ExternalLinkIcon } from "./components/external-link-icon";
+import type { ConnectDialogProps } from "./connect-dialog";
 import { useIntegrationsStore } from "./store";
 
 const SLACK_APPS_URL = "https://api.slack.com/apps";
 
-export function SlackPrivateConnect({ onClose }: { onClose: () => void }) {
+export function SlackPrivateConnect({ onClose }: ConnectDialogProps) {
   const connect = useIntegrationsStore((state) => state.connectSlackPrivate);
   const loading = useIntegrationsStore((state) => state.loading);
   const error = useIntegrationsStore((state) => state.error);

@@ -5,6 +5,7 @@ import { Modal, ModalHeader } from "../../components/modal";
 import { ConnectedAppTutorialLayout } from "./components/connected-app-tutorial-layout";
 import { ExternalLinkIcon } from "./components/external-link-icon";
 import { TelegramSetupProgress } from "./components/telegram-setup-progress";
+import type { ConnectDialogProps } from "./connect-dialog";
 import { useIntegrationsStore } from "./store";
 import type { TelegramPairingPrepared } from "./types";
 
@@ -18,7 +19,7 @@ const TERMINAL_PAIRING_ERRORS = new Set([
   "telegram_test_delivery_unknown",
 ]);
 
-export function TelegramConnect({ onClose }: { onClose: () => void }) {
+export function TelegramConnect({ onClose }: ConnectDialogProps) {
   const prepare = useIntegrationsStore(
     (state) => state.prepareTelegramConnection,
   );

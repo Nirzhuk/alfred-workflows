@@ -4,10 +4,11 @@ import { Icon } from "../../components/icon";
 import { Modal, ModalHeader } from "../../components/modal";
 import { ConnectedAppTutorialLayout } from "./components/connected-app-tutorial-layout";
 import { ExternalLinkIcon } from "./components/external-link-icon";
+import type { ConnectDialogProps } from "./connect-dialog";
 import { useIntegrationsStore } from "./store";
 import type { GitHubDeviceAuthorization } from "./types";
 
-export function GitHubConnect({ onClose }: { onClose: () => void }) {
+export function GitHubConnect({ onClose }: ConnectDialogProps) {
   const prepare = useIntegrationsStore((state) => state.prepareGithubConnection);
   const poll = useIntegrationsStore((state) => state.pollGithubConnection);
   const cancel = useIntegrationsStore((state) => state.cancelGithubPairing);

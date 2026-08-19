@@ -108,7 +108,7 @@ improvement drafts were merged into these canonical files and the duplicate
 | 012 | Add the Slack connected app | P0 | L–XL | 008, 009; 010 events; 011 public bot OAuth | IN PROGRESS (private actions + local mentions green; manual/PKCE/public pending) |
 | 013 | Add Outlook Mail and Calendar through Microsoft Graph | P0 | XL | 008, 009; 010 events; 011 webhooks | IN PROGRESS (native auth + actions + local events; webhooks gated on 011) |
 | 014 | Add Gmail with staged, least-privilege access | P0–P1 | L–XL | 008, 009; 010 events; 011 push | TODO |
-| 015 | Add GitHub, Linear, and Sentry in priority order | P1–P2 | XL | 008, 009; 010 events; 011 public modes | IN PROGRESS (local GitHub Stage A green; live app/package smoke pending) |
+| 015 | Add GitHub, Linear, and Sentry in priority order | P1–P2 | XL | 008, 009; 010 events; 011 public modes | IN PROGRESS (GitHub/Linear/Sentry local modes green; public OAuth, relay webhooks, and live smoke pending) |
 | 016 | Add Notion, Google Drive, and SharePoint context sources | P1–P2 | XL | 008, 009; 010 events; 011 public modes | IN PROGRESS (private Notion + local Obsidian retrieval; Drive/Microsoft auth gates pending) |
 | 017 | Expose selected Alfred workflows to Microsoft Copilot | P1 | XL | 008, 011 | TODO |
 | 021 | Send personal notifications through Telegram | P1 | M | 008, 009 | DONE (archived) |
@@ -128,7 +128,10 @@ improvement drafts were merged into these canonical files and the duplicate
    Neither plan waits for the relay.
 4. **Remote-capability gate**: execute Plan 011's ADR/threat model. If approved,
    build public Slack bot OAuth/webhooks, Graph/Gmail push, and offline queues.
-5. **Core developer loop**: GitHub then Linear from 015; measure before Sentry.
+5. **Core developer loop**: GitHub, Linear, and Sentry local modes from 015
+   are implemented (GitHub App device auth; Linear personal API key; Sentry
+   auth token). Public OAuth and relay webhooks for all three wait on Plan 011;
+   measure Sentry demand before investing in its public mode.
 6. **Knowledge retrieval**: Notion then Google Drive from 016; SharePoint follows
    enterprise demand and policy review.
 7. **Copilot**: execute 017 only after the relay, Entra tenant model, remote

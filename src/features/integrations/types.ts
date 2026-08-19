@@ -142,6 +142,14 @@ export type NotionPrivateConnectionInput = {
   integrationToken: string;
 };
 
+export type LinearPrivateConnectionInput = {
+  apiKey: string;
+};
+
+export type SentryAuthTokenConnectionInput = {
+  authToken: string;
+};
+
 export type ObsidianVaultConnectionInput = {
   vaultPath: string;
 };

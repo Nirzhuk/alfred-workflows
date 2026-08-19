@@ -4,16 +4,14 @@ import { Icon } from "../../components/icon";
 import { Modal, ModalHeader } from "../../components/modal";
 import { ConnectedAppTutorialLayout } from "./components/connected-app-tutorial-layout";
 import { ExternalLinkIcon } from "./components/external-link-icon";
+import type { ConnectDialogProps } from "./connect-dialog";
 import { useIntegrationsStore } from "./store";
 import type { MicrosoftAuthorizationStarted } from "./types";
 
 export function MicrosoftConnect({
   onClose,
   reconnectConnectionId = null,
-}: {
-  onClose: () => void;
-  reconnectConnectionId?: string | null;
-}) {
+}: ConnectDialogProps) {
   const prepare = useIntegrationsStore(
     (state) => state.prepareMicrosoftConnection,
   );

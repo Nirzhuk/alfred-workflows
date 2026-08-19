@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon } from "../../components/icon";
 import { Modal, ModalHeader } from "../../components/modal";
 import { integrationsApi } from "./api";
+import type { ConnectDialogProps } from "./connect-dialog";
 import { useIntegrationsStore } from "./store";
 import type { WhatsAppPairingState, WhatsAppQr } from "./types";
 
@@ -42,7 +43,7 @@ const FAILURE_COPY: Record<string, string> = {
     "Alfred could not reach the system credential store. Unlock it and try again.",
 };
 
-export function WhatsAppConnect({ onClose }: { onClose: () => void }) {
+export function WhatsAppConnect({ onClose }: ConnectDialogProps) {
   const load = useIntegrationsStore((state) => state.load);
   const [acknowledged, setAcknowledged] = useState(false);
   const [pairing, setPairing] = useState<WhatsAppPairingState | null>(null);

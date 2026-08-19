@@ -11,10 +11,12 @@ import type {
   GitHubDevicePollResult,
   GmailAuthorizationStarted,
   IntegrationError,
+  LinearPrivateConnectionInput,
   MicrosoftAuthorizationStarted,
   MicrosoftPrepareInput,
   NotionPrivateConnectionInput,
   ObsidianVaultConnectionInput,
+  SentryAuthTokenConnectionInput,
   SlackPrivateConnectionInput,
   TelegramCompleteInput,
   TelegramPairingPrepared,
@@ -61,6 +63,19 @@ const ERROR_MESSAGES: Record<string, string> = {
     "Notion did not return a valid workspace and integration identity.",
   notion_connection_failed:
     "Notion could not validate or securely save this internal integration.",
+  linear_token_invalid: "Use a valid Linear personal API key beginning with lin_.",
+  linear_identity_invalid:
+    "Linear did not return a valid user and workspace identity.",
+  linear_connection_failed:
+    "Linear could not validate or securely save this personal API key.",
+  sentry_token_invalid:
+    "Use a valid Sentry auth token beginning with sntrys_ or sntryu_.",
+  sentry_identity_invalid:
+    "Sentry did not return a valid user and organization identity.",
+  sentry_scopes_missing:
+    "This Sentry token does not grant issue access. Use a token with event:read.",
+  sentry_connection_failed:
+    "Sentry could not validate or securely save this auth token.",
   obsidian_vault_invalid:
     "Choose a readable Obsidian vault folder containing .obsidian.",
   obsidian_connection_failed:
@@ -232,6 +247,12 @@ export type IntegrationsState = {
   cancelMicrosoftAuthorization: (sessionId: string) => Promise<void>;
   connectNotionPrivate: (
     input: NotionPrivateConnectionInput,
+  ) => Promise<IntegrationError | null>;
+  connectLinearPrivate: (
+    input: LinearPrivateConnectionInput,
+  ) => Promise<IntegrationError | null>;
+  connectSentryPrivate: (
+    input: SentryAuthTokenConnectionInput,
   ) => Promise<IntegrationError | null>;
   connectObsidianVault: (
     input: ObsidianVaultConnectionInput,
@@ -487,6 +508,48 @@ export function createIntegrationsState(
       try {
         const connected = redactConnectionPayload(
           await api.connectNotionPrivate(input),
+        );
+        set((state) => ({
+          connections: [
+            ...state.connections.filter((item) => item.id !== connected.id),
+            connected,
+          ],
+          loading: false,
+        }));
+        return null;
+      } catch (error) {
+        const normalized = normalizeIntegrationError(error);
+        set({ loading: false, error: normalized });
+        return normalized;
+      }
+    },
+
+    connectLinearPrivate: async (input) => {
+      set({ loading: true, error: null });
+      try {
+        const connected = redactConnectionPayload(
+          await api.connectLinearPrivate(input),
+        );
+        set((state) => ({
+          connections: [
+            ...state.connections.filter((item) => item.id !== connected.id),
+            connected,
+          ],
+          loading: false,
+        }));
+        return null;
+      } catch (error) {
+        const normalized = normalizeIntegrationError(error);
+        set({ loading: false, error: normalized });
+        return normalized;
+      }
+    },
+
+    connectSentryPrivate: async (input) => {
+      set({ loading: true, error: null });
+      try {
+        const connected = redactConnectionPayload(
+          await api.connectSentryPrivate(input),
         );
         set((state) => ({
           connections: [

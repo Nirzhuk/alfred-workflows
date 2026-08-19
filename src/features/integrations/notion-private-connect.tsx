@@ -2,11 +2,12 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useState } from "react";
 import { ConnectedAppTutorialLayout } from "./components/connected-app-tutorial-layout";
 import { ExternalLinkIcon } from "./components/external-link-icon";
+import type { ConnectDialogProps } from "./connect-dialog";
 import { useIntegrationsStore } from "./store";
 
 const NOTION_CONNECTIONS_URL = "https://www.notion.so/profile/integrations/internal";
 
-export function NotionPrivateConnect({ onClose }: { onClose: () => void }) {
+export function NotionPrivateConnect({ onClose }: ConnectDialogProps) {
   const connect = useIntegrationsStore((state) => state.connectNotionPrivate);
   const loading = useIntegrationsStore((state) => state.loading);
   const error = useIntegrationsStore((state) => state.error);

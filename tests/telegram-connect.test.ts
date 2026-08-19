@@ -25,6 +25,9 @@ describe("Telegram personal notifications", () => {
   });
 
   test("provider connection dispatch uses a registry and only allows Telegram deep links", async () => {
+    const registry = await Bun.file(
+      new URL("../src/features/integrations/provider-ui.ts", import.meta.url),
+    ).text();
     const settings = await Bun.file(
       new URL(
         "../src/features/integrations/connected-apps-settings.tsx",
@@ -34,9 +37,12 @@ describe("Telegram personal notifications", () => {
     const capability = await Bun.file(
       new URL("../src-tauri/capabilities/default.json", import.meta.url),
     ).text();
-    expect(settings).toContain("connectHandlers");
-    expect(settings).toContain("telegram: () => setTelegramConnectOpen(true)");
-    expect(settings).toContain("<TelegramConnect");
+    expect(registry).toContain("TelegramConnect");
+    expect(registry).toContain(
+      "telegram: { Dialog: TelegramConnect, supportsReconnect: false }",
+    );
+    expect(settings).toContain("PROVIDER_UI");
+    expect(settings).toContain("activeConnect");
     expect(capability).toContain('"https://t.me/*"');
   });
 });

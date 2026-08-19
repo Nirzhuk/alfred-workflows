@@ -1,9 +1,10 @@
 import { open } from "@tauri-apps/plugin-dialog";
 import { useEffect, useState } from "react";
 import { ConnectedAppTutorialLayout } from "./components/connected-app-tutorial-layout";
+import type { ConnectDialogProps } from "./connect-dialog";
 import { useIntegrationsStore } from "./store";
 
-export function ObsidianVaultConnect({ onClose }: { onClose: () => void }) {
+export function ObsidianVaultConnect({ onClose }: ConnectDialogProps) {
   const connect = useIntegrationsStore((state) => state.connectObsidianVault);
   const loading = useIntegrationsStore((state) => state.loading);
   const error = useIntegrationsStore((state) => state.error);

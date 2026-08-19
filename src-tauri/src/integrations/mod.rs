@@ -4,12 +4,14 @@ pub mod events;
 pub mod github;
 pub mod gmail;
 pub mod knowledge;
+pub mod linear;
 pub mod microsoft;
 pub mod models;
 pub mod notion;
 pub mod oauth_native;
 pub mod obsidian;
 pub mod refresh;
+pub mod sentry;
 pub mod slack;
 pub mod telegram;
 pub mod token_store;
@@ -36,7 +38,9 @@ pub struct IntegrationsState {
     pub refresh: RefreshService,
     pub github: Arc<github::GitHubService>,
     pub gmail: Arc<gmail::GmailService>,
+    pub linear: Arc<linear::LinearService>,
     pub microsoft: Arc<microsoft::MicrosoftService>,
+    pub sentry: Arc<sentry::SentryService>,
     pub telegram: Arc<telegram::TelegramService>,
     pub whatsapp: Arc<whatsapp::service::WhatsAppService>,
     token_store: Arc<dyn TokenStore>,
@@ -52,7 +56,9 @@ impl IntegrationsState {
     pub fn new(token_store: Arc<dyn TokenStore>) -> Self {
         let github = Arc::new(github::GitHubService::default());
         let gmail = Arc::new(gmail::GmailService::default());
+        let linear = Arc::new(linear::LinearService::default());
         let microsoft = Arc::new(microsoft::MicrosoftService::default());
+        let sentry = Arc::new(sentry::SentryService::default());
         let telegram = Arc::new(telegram::TelegramService::default());
         let whatsapp = Arc::new(whatsapp::service::WhatsAppService::new(token_store.clone()));
         let state = Self {
@@ -62,7 +68,9 @@ impl IntegrationsState {
             refresh: RefreshService::new(token_store.clone()),
             github: github.clone(),
             gmail: gmail.clone(),
+            linear: linear.clone(),
             microsoft: microsoft.clone(),
+            sentry: sentry.clone(),
             telegram: telegram.clone(),
             whatsapp,
             token_store,
@@ -73,8 +81,12 @@ impl IntegrationsState {
             .expect("GitHub action and event descriptors must be valid");
         gmail::register(&state.actions, gmail.clone())
             .expect("Gmail action descriptors must be valid");
+        linear::register(&state.actions, &state.events, linear.clone())
+            .expect("Linear action and event descriptors must be valid");
         microsoft::register(&state.actions, &state.events, microsoft.clone())
             .expect("Microsoft action and event descriptors must be valid");
+        sentry::register(&state.actions, &state.events, sentry.clone())
+            .expect("Sentry action and event descriptors must be valid");
         state
             .refresh
             .register("github", github.refresh_handler())
@@ -307,6 +319,22 @@ impl IntegrationsState {
         input: notion::NotionPrivateConnectionInput,
     ) -> Result<models::AppConnectionDto, IntegrationCommandError> {
         notion::connect_private(db, self.token_store.clone(), input).await
+    }
+
+    pub async fn connect_linear_private(
+        &self,
+        db: &Db,
+        input: linear::LinearPrivateConnectionInput,
+    ) -> Result<models::AppConnectionDto, IntegrationCommandError> {
+        linear::connect_private(db, self.token_store.clone(), input).await
+    }
+
+    pub async fn connect_sentry_private(
+        &self,
+        db: &Db,
+        input: sentry::SentryAuthTokenConnectionInput,
+    ) -> Result<models::AppConnectionDto, IntegrationCommandError> {
+        sentry::connect_private(db, self.token_store.clone(), input).await
     }
 
     pub async fn connect_obsidian_vault(

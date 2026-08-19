@@ -18,11 +18,15 @@
 - **Depends on**: Plans 008, 009; Plan 010 for events; Plan 011 for public OAuth/webhooks
 - **Category**: integration roadmap
 - **Planned at**: 2026-08-11
-- **Implementation status**: IN PROGRESS — Stage A local GitHub App device
-  authorization, repository-scoped actions, and local event polling are
-  implemented and automated gates pass. A publisher-owned GitHub App client ID
-  and live packaged smoke test remain before the Stage A go/no-go. Linear and
-  Sentry have not started, as required by the staged rollout.
+- **Implementation status**: IN PROGRESS — All three local modes are
+  implemented and automated gates pass: GitHub App device authorization,
+  repository-scoped actions, and local event polling (Stage A); Linear
+  personal-API-key actions and issue polling (Stage B); Sentry auth-token
+  issue actions and alert polling (Stage C). Remaining before the public
+  go/no-go: a publisher-owned GitHub App client ID and live packaged smoke,
+  and measured event-delivery demand. Public Linear/Sentry OAuth and relay
+  webhooks stay gated on Plan 011; local events are polling-only and Sentry
+  stack traces are never fetched.
 
 ## Why these apps
 
@@ -187,12 +191,12 @@ Run `bun test`, `bun run build:frontend`, and all Rust tests after every stage.
 
 ## Done criteria
 
-- [ ] Existing `gh` node/workflows remain compatible.
-- [ ] GitHub ships first with scoped repository access and tested actions/events.
-- [ ] Linear ships second with strict workspace isolation.
+- [x] Existing `gh` node/workflows remain compatible.
+- [x] GitHub ships first with scoped repository access and tested actions/events.
+- [x] Linear ships second with strict workspace isolation.
 - [ ] Sentry starts only after a measured go/no-go gate.
-- [ ] No provider adds runner branches or provider-specific React node types.
-- [ ] Public OAuth/webhooks contain no confidential secrets in desktop.
+- [x] No provider adds runner branches or provider-specific React node types.
+- [x] Public OAuth/webhooks contain no confidential secrets in desktop.
 
 ## STOP conditions
 

@@ -27,6 +27,9 @@ describe("Microsoft connected app", () => {
     const capability = await Bun.file(
       new URL("../src-tauri/capabilities/default.json", import.meta.url),
     ).text();
+    const registry = await Bun.file(
+      new URL("../src/features/integrations/provider-ui.ts", import.meta.url),
+    ).text();
     const settings = await Bun.file(
       new URL(
         "../src/features/integrations/connected-apps-settings.tsx",
@@ -34,8 +37,11 @@ describe("Microsoft connected app", () => {
       ),
     ).text();
     expect(capability).toContain('"https://login.microsoftonline.com/*"');
-    expect(settings).toContain("microsoft: () => {");
-    expect(settings).toContain("<MicrosoftConnect");
+    expect(registry).toContain(
+      "microsoft: { Dialog: MicrosoftConnect, supportsReconnect: true }",
+    );
+    expect(settings).toContain("PROVIDER_UI");
+    expect(settings).toContain("reconnectConnectionId");
   });
 
   test("requested mail scope stays Mail.ReadBasic and never requests Mail.Read", async () => {
