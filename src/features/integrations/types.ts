@@ -10,6 +10,12 @@ export type AppProvider = {
   capabilitySummary: string;
   connectionModes: string[];
   connectAvailable: boolean;
+  /** Unofficial integration that may break or put the linked account at risk.
+   * Surfaces an Experimental badge wherever the provider is shown. */
+  experimental: boolean;
+  /** Only one account may be linked. Rust refuses a second one regardless of
+   * what the UI allows. */
+  singleConnection: boolean;
 };
 
 /** Redacted metadata returned by Rust. Credential references are never part

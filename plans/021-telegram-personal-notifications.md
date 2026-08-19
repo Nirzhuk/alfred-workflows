@@ -21,9 +21,8 @@
 - **Category**: integration
 - **Planned at**: 2026-08-13
 - **Revised at**: 2026-08-16 after separating WhatsApp into Plan 023
-- **Implementation status**: IN PROGRESS (implementation, automated gates, and
-  macOS package build green; live-bot smoke on shipping operating systems
-  pending)
+- **Implementation status**: DONE (implementation, automated gates, and macOS
+  package build green; live-bot smoke confirmed by the maintainer 2026-08-18)
 
 ## Product decisions
 

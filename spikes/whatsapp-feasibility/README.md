@@ -103,24 +103,48 @@ That leaves the plan's second option — an Alfred-owned backend implementing th
 The upstream Diesel reference implementation is ~3,800 lines. Step 2 should be
 re-estimated against that number before any product work starts.
 
-### 1.2–1.5, 1.8, 1.9 — NOT YET RUN
+### 1.2–1.5 — GREEN (run against a live account 2026-08-18)
 
-Pairing needs a real phone and a real WhatsApp account. Run `pair`, then `send`,
-then `pair` again after a restart, then `logout`, and record the results here.
+Paired by QR with no pair-code path enabled. `Client::pn()` and `Client::lid()`
+both resolve straight after the post-pairing 515 reconnect. Three self-sends to
+`pn().to_non_ad()` returned distinct `3EB0…` message IDs and landed in the
+account's own chat. A cold restart restored the session from disk with no QR
+prompt and sent again. A revoked session surfaced as `<failure reason="401"/>`
+and the client refused to proceed rather than silently re-pairing.
 
-For 1.8, run with a sentinel body and scan the output:
+Not covered: a *successful* remote `logout()`. The account was already revoked
+phone-side when that ran, so only the failure branch executed.
+
+### 1.8 — RED, mitigable
+
+The send path is clean at `info`: no body, no phone number, no JID. Pairing is
+not. See the plan for the full write-up and the required Step 5 mitigation; the
+short version is that `wacore_libsignal::protocol::session_cipher` emits raw LID
+plus Signal ratchet/base key material at **`WARN`**, so filtering has to be by
+log *target*, not by level.
+
+Reproduce with a sentinel body:
 
 ```
 RUST_LOG=debug cargo run -- send "SENTINEL-BODY-9f3a" 2>&1 | tee spike.log
-grep -iE "SENTINEL-BODY-9f3a|<your phone number>|BEGIN|priv" spike.log
 ```
 
-The scan must find nothing. `mask()` in `src/main.rs` is the only formatter
-allowed to touch a JID, and its unit tests assert the full identifier never
-survives it.
+then scan `spike.log` for the sentinel and for any run of 10+ digits. Delete the
+log afterwards — at `debug` it contains real identity and key material.
+
+`mask()` in `src/main.rs` is the only formatter in this spike allowed to touch a
+JID, and its unit tests assert the full identifier never survives it.
+
+### 1.9 — PARTIAL
+
+`cargo build --release` produces a working binary that runs the CLI. The
+packaged per-OS pair/send/logout smoke is still outstanding.
 
 ## Cleanup
 
-Delete this directory once Step 1 is recorded in the plan. `spike-session.db*`
-is git-ignored and holds real linked-device credentials — always run `logout`
-before removing the folder.
+Delete this directory once Step 1 is recorded in the plan. The session lives at
+`~/.cache/alfred-whatsapp-spike/session.db` (override with `SPIKE_DB`) —
+deliberately outside the repo, because an in-tree copy was destroyed by a branch
+switch, costing a pairing and orphaning a linked device. It holds real
+linked-device credentials: always run `logout` before deleting anything, and
+remove the entry from **WhatsApp → Linked Devices** if the remote logout fails.

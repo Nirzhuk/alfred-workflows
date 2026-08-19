@@ -234,6 +234,8 @@ mod tests {
             capability_summary: "Read records".into(),
             connection_modes: vec!["native_oauth".into()],
             connect_available: false,
+            experimental: false,
+            single_connection: false,
         };
         let connection = AppConnectionDto::from(AppConnection {
             id: "id".into(),

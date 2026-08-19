@@ -111,8 +111,8 @@ improvement drafts were merged into these canonical files and the duplicate
 | 015 | Add GitHub, Linear, and Sentry in priority order | P1–P2 | XL | 008, 009; 010 events; 011 public modes | IN PROGRESS (local GitHub Stage A green; live app/package smoke pending) |
 | 016 | Add Notion, Google Drive, and SharePoint context sources | P1–P2 | XL | 008, 009; 010 events; 011 public modes | IN PROGRESS (private Notion + local Obsidian retrieval; Drive/Microsoft auth gates pending) |
 | 017 | Expose selected Alfred workflows to Microsoft Copilot | P1 | XL | 008, 011 | TODO |
-| 021 | Send personal notifications through Telegram | P1 | M | 008, 009 | IN PROGRESS (automated + macOS package build green; live-bot smoke pending) |
-| 023 | Send self-notifications through an experimental WhatsApp linked device | P1 | XL | 008, 009; execute after 021 | TODO |
+| 021 | Send personal notifications through Telegram | P1 | M | 008, 009 | DONE |
+| 023 | Send self-notifications through an experimental WhatsApp linked device | P1 | XL | 008, 009; execute after 021 | IN PROGRESS (Step 1 spike green; Step 2 store in progress) |
 
 ### Recommended execution slices
 

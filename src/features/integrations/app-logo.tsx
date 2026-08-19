@@ -1,5 +1,6 @@
 import slackLogo from "../../assets/apps/slack.svg?no-inline";
 import telegramLogo from "../../assets/apps/telegram.svg?no-inline";
+import whatsappLogo from "../../assets/apps/whatsapp.svg?no-inline";
 import microsoftLogo from "../../assets/apps/microsoft.svg?no-inline";
 import gmailLogo from "../../assets/apps/gmail.svg?no-inline";
 import githubLogo from "../../assets/apps/github.svg?no-inline";
@@ -24,6 +25,7 @@ export type AppLogoConfig = {
 export const APP_LOGOS: Readonly<Record<string, AppLogoConfig>> = {
   slack: { source: slackLogo },
   telegram: { source: telegramLogo },
+  whatsapp: { source: whatsappLogo },
   microsoft: { source: microsoftLogo },
   gmail: { source: gmailLogo },
   github: { source: githubLogo, requiresSurface: true },

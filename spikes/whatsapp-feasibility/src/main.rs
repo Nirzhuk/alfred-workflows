@@ -20,7 +20,19 @@ use tokio::sync::Notify;
 use whatsapp_rust::prelude::*;
 
 /// Session database for the spike only. Never a shipping path.
-const SPIKE_DB: &str = "spike-session.db";
+///
+/// Deliberately outside the repository: a `git clean`/branch switch inside the
+/// working tree destroyed one paired session already, and re-pairing costs a
+/// real QR scan and leaves an orphaned linked device behind.
+fn spike_db() -> String {
+    if let Ok(explicit) = std::env::var("SPIKE_DB") {
+        return explicit;
+    }
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    let dir = format!("{home}/.cache/alfred-whatsapp-spike");
+    let _ = std::fs::create_dir_all(&dir);
+    format!("{dir}/session.db")
+}
 /// How long we wait for the socket to authenticate before giving up.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(180);
 /// Plan 023 caps an interpolated body at 4096 Unicode chars.
@@ -58,14 +70,15 @@ fn usage() {
          \n\
          cargo run -- pair          Link a device by QR, print the masked own JID\n\
          cargo run -- send <text>   Restore the session and self-send <text>\n\
-         cargo run -- logout        Remote-logout and delete {SPIKE_DB}\n"
+         cargo run -- logout        Remote-logout and delete the session\n"
     );
 }
 
 /// Step 1.2 + 1.3: QR pairing, then read back the authenticated own JID.
 async fn pair() -> Result<()> {
-    if std::path::Path::new(SPIKE_DB).exists() {
-        bail!("{SPIKE_DB} already exists — run `logout` first so pairing starts clean");
+    let db = spike_db();
+    if std::path::Path::new(&db).exists() {
+        bail!("{db} already exists — run `logout` first so pairing starts clean");
     }
 
     let (handle, _) = start(true).await?;
@@ -91,8 +104,9 @@ async fn send(text: &str) -> Result<()> {
             text.chars().count()
         );
     }
-    if !std::path::Path::new(SPIKE_DB).exists() {
-        bail!("no {SPIKE_DB} — run `pair` first");
+    let db = spike_db();
+    if !std::path::Path::new(&db).exists() {
+        bail!("no session at {db} — run `pair` first");
     }
 
     let (handle, restored) = start(false).await?;
@@ -125,20 +139,27 @@ async fn send(text: &str) -> Result<()> {
 
 /// Step 1.5: remote logout, then remove every local trace of the session.
 async fn logout() -> Result<()> {
-    if std::path::Path::new(SPIKE_DB).exists() {
-        let (handle, restored) = start(false).await?;
-        if restored {
-            handle.client().logout().await;
-            info!("remote logout requested");
+    let db = spike_db();
+    if std::path::Path::new(&db).exists() {
+        // A revoked (401) session cannot be logged out remotely, and neither can
+        // an offline one. Neither is allowed to skip the local deletion below.
+        match start(false).await {
+            Ok((handle, restored)) => {
+                if restored {
+                    handle.client().logout().await;
+                    info!("remote logout requested");
+                }
+                handle.shutdown().await;
+            }
+            Err(e) => warn!("remote logout unavailable ({e}); deleting locally anyway"),
         }
-        handle.shutdown().await;
     }
 
     // Local deletion happens regardless of whether the remote logout landed —
     // the same rule Plan 023 Step 7 puts on the shipping disconnect path.
     let mut removed = 0;
     for suffix in ["", "-wal", "-shm", "-journal"] {
-        let path = format!("{SPIKE_DB}{suffix}");
+        let path = format!("{db}{suffix}");
         if std::fs::remove_file(&path).is_ok() {
             removed += 1;
         }
@@ -150,7 +171,7 @@ async fn logout() -> Result<()> {
 /// Builds and starts one client. Returns the handle and whether a stored
 /// session was restored (`false` means the backend asked to pair again).
 async fn start(expect_qr: bool) -> Result<(BotHandle, bool)> {
-    let store = SqliteStore::new(SPIKE_DB)
+    let store = SqliteStore::new(&spike_db())
         .await
         .map_err(|e| anyhow!("open spike store: {e}"))?;
 

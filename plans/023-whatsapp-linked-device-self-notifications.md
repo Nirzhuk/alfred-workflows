@@ -29,8 +29,8 @@
 - **Does not depend on**: Plan 010 events or Plan 011 relay
 - **Category**: experimental integration
 - **Planned at**: 2026-08-16 after splitting Plan 021
-- **Implementation status**: IN PROGRESS (Step 1 spike: static gates green,
-  live-account gates pending)
+- **Implementation status**: IN PROGRESS (Step 1 spike: 7 of 9 gates green;
+  gate 8 RED with a required Step 5 mitigation; gate 9 packaged smoke pending)
 
 ## Product decisions
 
@@ -170,13 +170,13 @@ is outside the Tauri build graph. Its `README.md` holds the full evidence.
 | # | Gate | Result |
 |---|------|--------|
 | 1 | Toolchain + native-link graph | **GREEN, constrained** — see below |
-| 2 | QR pairing without pair-code | PENDING (needs a live account) |
-| 3 | Stable own JID | PENDING (needs a live account) |
-| 4 | Self-send returns a message ID | PENDING (needs a live account) |
-| 5 | Restart, reconnect, resend, logout | PENDING (needs a live account) |
+| 2 | QR pairing without pair-code | **GREEN** — paired 2026-08-18 |
+| 3 | Stable own JID | **GREEN** — PN and LID both available |
+| 4 | Self-send returns a message ID | **GREEN** — 3 sends, distinct IDs |
+| 5 | Restart, reconnect, resend, logout | **GREEN** with one caveat, see below |
 | 6 | Ignore message/history-sync events | **GREEN** |
 | 7 | Encrypt + purge retry data | PARTIAL — knobs exist, blocked on Step 2 |
-| 8 | No PII in default logs | PENDING (needs a live account) |
+| 8 | No PII in default logs | **RED** — mitigable, see below |
 | 9 | Packaged binary runs the path | PARTIAL — release binary builds and runs |
 
 **Gate 1 — two default features must be disabled or Alfred will not build.**
@@ -224,10 +224,83 @@ the library. Upstream `examples/retry_quarantine.rs` and
 `examples/durability_hook.rs` are the references for bounding retention.
 Encryption and 24-hour expiry depend on the Step 2 decision below.
 
-**Remaining gates 2–5, 8, 9 need a real phone and a real WhatsApp account.**
-Run `pair`, `send`, restart, `send` again, then `logout` from
-`spikes/whatsapp-feasibility/`, and record the outcomes in this table before any
-product work starts.
+**Gates 2 and 3 — GREEN.** A live account paired by QR on 2026-08-18 with no
+pair-code or phone-number path enabled. `Client::pn()` and `Client::lid()` both
+return a usable JID immediately after the post-pairing 515 reconnect, so the
+self-chat destination can be derived entirely backend-side.
+
+**Gate 4 — GREEN.** Three self-sends to `Client::pn().to_non_ad()` each returned
+a distinct stable protocol message ID (`3EB0…`-form) and landed in the account's
+own “Message yourself” chat. The action surface needs nothing beyond the ID, a
+timestamp, and the masked destination.
+
+**Gate 5 — GREEN, with one untested branch.** Proven end to end: process exit,
+cold restart, session restored from durable state with **no** QR prompt,
+reconnect, and repeat sends. A revoked session was also exercised — the server
+answered `<failure reason="401"/>`, the client surfaced it as logged-out, and the
+runtime refused to proceed instead of silently starting a new pairing flow. That
+is precisely the `relink_required` behaviour Step 5 specifies.
+
+Untested: a *successful* remote `logout()` against a still-valid session. The
+account was already revoked phone-side before that call, so only the failure path
+ran. Step 7 must verify the happy path separately.
+
+The failure path did expose a defect worth carrying into Step 7: the first
+implementation propagated the connect error and skipped local deletion entirely,
+leaving the session database on disk. Local deletion must be unconditional. After
+the fix, `logout` removed all three files (`.db`, `-wal`, `-shm`) despite the
+remote call being impossible.
+
+**Gate 8 — RED, but mitigable. Read this before Step 5.**
+
+The *send* path is clean: at default `info`, three sends produced no message
+body, no phone number, and no JID in the output. The problem is elsewhere.
+
+At default `info`, during **pairing**, `whatsapp-rust` prints the linked
+account's full E.164 phone number and full LID:
+
+- `src/pair.rs:435` — `"Added own LID-PN mapping to cache: {} <-> {}"` emits the
+  raw LID and the raw phone number.
+- `src/handlers/notification/device.rs:660` —
+  `"Updated own device list from account_sync: {} devices (user: {})"` emits the
+  raw LID.
+
+Worse, and not level-gated: a **`WARN`** from `wacore_libsignal::protocol::session_cipher`
+emits the raw LID *and Signal ratchet/base key material* —
+
+```
+WARN wacore_libsignal::protocol::session_cipher] Failed to decrypt PreKey
+message with ratchet key: <64 hex> and counter: 4. Session loaded for
+<raw-lid>@lid.0. Local session has base key: <64 hex> …
+```
+
+A `WARN` passes any sane default filter, so lowering the level is not a defence.
+At `debug`, five targets leak identity: `Client/Recv`, `Client/Send`,
+`whatsapp_rust::client::sessions`, and `wacore_libsignal::protocol::session_cipher`.
+
+The crate has its own redaction helper and uses it elsewhere (`pair.rs:483` logs
+`jid.observe()`, hashing to `pn#<digest>:18@…`), so these are inconsistencies
+rather than a design position. Twenty-one `info!`/`warn!` sites interpolate a
+JID-ish value in total.
+
+As written this trips the plan's STOP conditions on full identity *and* Signal
+material reaching logs. It does **not** kill the plan, because the crate logs
+through the `log` facade. Step 5 must therefore:
+
+- filter by **target**, not by level — suppress `whatsapp_rust::*`, `wacore*::*`,
+  and the bare `Client/*` targets before any client is constructed;
+- never install a permissive global logger while a WhatsApp client exists;
+- carry a test asserting no such target reaches Alfred's sinks;
+- re-run this scan after every dependency bump. These are upstream log strings
+  that can move without a semver signal.
+
+**Gate 9 stays PARTIAL.** The release binary builds and runs the CLI, but the
+packaged pair/send/logout path per OS is still outstanding.
+
+Operational note: the spike stores its session at
+`~/.cache/alfred-whatsapp-spike/session.db`, deliberately outside the repository.
+An in-tree session database was destroyed by a branch switch during this spike,
+which cost a pairing and orphaned a linked device that had to be removed by hand.
 
 ### Step 2: Design the encrypted protocol-store boundary
 
@@ -277,6 +350,70 @@ creation, permissions, backup/temporary-file behavior, expiry, zeroization,
 and deletion tests. A raw-file scan with sentinel values must find no plaintext
 JID, phone number, message, or cryptographic fixture.
 
+#### Step 2 build status (2026-08-18)
+
+Landed in `src-tauri/src/integrations/whatsapp/`:
+
+- `crypto.rs` — `StoreKey` (random, zeroized on drop, no `Debug`/`Clone`/
+  `Serialize`), ChaCha20-Poly1305 sealing under a versioned `version || nonce ||
+  ciphertext` envelope, HMAC-SHA256 keyed lookup digests, and per-purpose
+  subkeys so the AEAD key and the index key are independent. AAD binds every
+  value to its `(namespace, key digest)` row, so a ciphertext moved between rows
+  or tables fails to open.
+- `schema.sql` — a dedicated database, separate from `app.db`. Every key column
+  is a digest and every value column an envelope. Namespace strings and
+  retention timestamps are the only plaintext, because the expiry sweeps must
+  range over them.
+- `store.rs` — `EncryptedProtocolStore` implementing all five `wacore` traits
+  (`SignalStore`, `AppSyncStore`, `ProtocolStore`, `MsgSecretStore`,
+  `DeviceStore`) over Alfred's existing `rusqlite`, plus `delete_files` for the
+  Step 7 disconnect path and `purge_expired` for the maintenance sweep.
+
+Dependencies added to `src-tauri`: `whatsapp-rust =0.7.0` in the Step 1 pinned
+configuration, `wacore =0.7.0` and `wacore-appstate =0.7.0` (both
+`default-features = false` — their default `simd` feature needs nightly),
+`chacha20poly1305 0.11`, `hmac 0.12`, `async-trait`, and `bytes`. Alfred's own
+`cargo check` and full test suite pass with all of them.
+
+Privacy decisions taken in the implementation:
+
+- The inbound durability buffer is **not** implemented, so `wacore`'s defaults
+  fail closed and no inbound message content can ever be persisted.
+- Group metadata persistence is **not** implemented, so it stays a no-op.
+- `DeviceStore::create` always returns device id 1: one linked account per
+  installation, enforced in the store rather than only in the UI.
+- `delete_expired_sent_messages` clamps the caller's cutoff to a hard 24-hour
+  ceiling, so no caller can widen retry retention beyond the plan's limit.
+
+**Verified** by 36 tests: seal/open roundtrip, ciphertext never contains the
+plaintext, random nonce per seal, wrong key, wrong AAD, cross-row replay,
+bit-flip tampering, truncation, unknown envelope version, malformed key
+material, digest determinism/namespacing/key-binding, composite-digest
+rearrangement, per-trait CRUD, pre-key `MAX(id)` and update-not-upsert upload
+marking, LID/PN bidirectional lookup, single-use retry take, the 24-hour clamp,
+msg-secret expiry merge rules, tc-token dual-bucket expiry, reopen durability,
+owner-only `0600` permissions, sidecar deletion, and a raw-file sentinel scan
+across `.db`/`-wal`/`-shm`/`-journal` proving no plaintext JID, phone number,
+LID, or message body survives.
+
+- `keyring.rs` — store-key custody through Alfred's existing `TokenStore`.
+  `provision()` mints a random key under an **opaque** `whatsapp-protocol-store/
+  <uuid>` reference; the reference is never derived from a phone number, JID,
+  device id, or password, so the credential entry reveals nothing about which
+  account is linked. `delete()` is idempotent because disconnect may run twice,
+  and `store_path()` places the database in a provider-specific app-data
+  sub-directory, never beside `app.db`.
+
+**Still open for Step 2**: the startup/interval purge scheduler (its natural home
+is the Step 5 runtime owner, which calls the existing `purge_expired`) and an
+explicit corrupted-file recovery path. Migration tests are not yet meaningful —
+the schema is at v1.
+
+Gates run: `cargo test` 208 passed, `cargo clippy` clean on the new module,
+`git diff --check` clean. Note for whoever runs the suite next: the pre-existing
+`integrations::oauth_native` tests bind real localhost ports and flake against
+each other under parallel execution — unrelated to this work.
+
 ### Step 3: Register the provider and one-account contract
 
 Add `whatsapp` to `ProviderCatalog`, not `AgentProviderId`, with mode
@@ -297,6 +434,44 @@ Generalize the shared `delivery_unknown` copy so it does not name Slack.
 
 **Verify**: catalog, one-account, DTO, platform-availability, identity-digest,
 and source/database serialization tests.
+
+#### Step 3 build status (2026-08-19)
+
+- `integrations/whatsapp/provider.rs` — `PROVIDER_ID`/`CONNECTION_MODE`
+  constants, `identity_key()` built through the existing
+  `canonical_identity_key(provider, mode, own_jid)`, `masked_account()`,
+  `display_name()`, backend-only `provider_metadata` keys, and the
+  risk-acknowledgement version Step 4 will record.
+- `integrations/catalog.rs` — `whatsapp` registered with mode
+  `linked_device_experimental`, action-only copy, and no event descriptors.
+  `AppProviderDto` gained `experimental` and `single_connection`; both default
+  to `false`, so no other provider changed behaviour.
+- `db/app_connections.rs` — `upsert_app_connection` refuses a second account for
+  a single-connection provider while still allowing the same account to relink.
+  Enforced in Rust, not merely in the connect UI.
+- Frontend contract (`types.ts`, `connected-apps-settings.tsx`) carries the two
+  new fields; the unknown-provider fallback still renders providers whose
+  integration is missing or newer than the app.
+
+Platform gate: `provider::is_available()` is `PACKAGED_GATE_PASSED ||
+cfg!(debug_assertions)`. Every OS constant is currently `false`, so release
+builds hide WhatsApp everywhere; development builds expose it so the remaining
+steps can be built. Flip a target's constant only when this plan records a green
+packaged smoke for that OS.
+
+Logo: `src/assets/apps/whatsapp.svg` (1.3 KiB, local, no remote assets) with an
+`APP_LOGOS` entry. Recolored to WhatsApp's darker brand green `#128c7e` rather
+than `#25d366`: measured against Alfred's four logo surfaces (`#ffffff`,
+`#e8eee9`, `#232b2e`, `#12181a`), `#25d366` scores 1.98:1 and 1.68:1 on the
+light theme, while `#128c7e` clears 3:1 on all four. Recoloring preserves brand
+identity, so `requiresSurface` is not needed.
+
+The shared `delivery_unknown` copy already reads "The provider may have accepted
+this action. Check the target before retrying." in both `actions.rs` and
+`store.ts` — it never named Slack, so no change was required.
+
+Gates: `cargo test` 222 passed, `bun test` 105 passed, `bun run build:frontend`
+green, `cargo clippy` clean across the WhatsApp module, `git diff --check` clean.
 
 ### Step 4: Build mandatory acknowledgement and QR pairing
 

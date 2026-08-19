@@ -23,6 +23,17 @@ impl Default for ProviderCatalog {
                     &["private_bot"],
                     true,
                 ),
+                AppProviderDto {
+                    experimental: true,
+                    single_connection: true,
+                    ..provider(
+                        "whatsapp",
+                        "WhatsApp",
+                        "Send plain-text notifications to your own WhatsApp chat while Alfred is running",
+                        &["linked_device_experimental"],
+                        super::whatsapp::provider::is_available(),
+                    )
+                },
                 provider(
                     "microsoft",
                     "Microsoft 365",
@@ -104,6 +115,8 @@ fn provider(
         capability_summary: summary.into(),
         connection_modes: modes.iter().map(|mode| (*mode).to_owned()).collect(),
         connect_available,
+        experimental: false,
+        single_connection: false,
     }
 }
 
@@ -116,5 +129,17 @@ impl ProviderCatalog {
         self.providers
             .iter()
             .any(|provider| provider.id == provider_id)
+    }
+
+    pub fn get(&self, provider_id: &str) -> Option<&AppProviderDto> {
+        self.providers
+            .iter()
+            .find(|provider| provider.id == provider_id)
+    }
+
+    /// Whether this provider allows at most one linked account.
+    pub fn is_single_connection(&self, provider_id: &str) -> bool {
+        self.get(provider_id)
+            .is_some_and(|provider| provider.single_connection)
     }
 }

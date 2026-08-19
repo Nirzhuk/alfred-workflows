@@ -75,6 +75,8 @@ export function ConnectedAppsSettings() {
               capabilitySummary: "Connected app",
               connectionModes: [connection.connectionMode],
               connectAvailable: false,
+              experimental: false,
+              singleConnection: false,
             } satisfies AppProvider,
           ]),
       ).values(),

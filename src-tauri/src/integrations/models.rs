@@ -129,6 +129,12 @@ pub struct AppProviderDto {
     pub capability_summary: String,
     pub connection_modes: Vec<String>,
     pub connect_available: bool,
+    /// Unofficial integration that may break or put the linked account at risk.
+    /// The UI must show a badge wherever the provider appears.
+    pub experimental: bool,
+    /// Only one account may be linked per Alfred installation. Enforced in
+    /// `upsert_app_connection`, not merely in the UI.
+    pub single_connection: bool,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]

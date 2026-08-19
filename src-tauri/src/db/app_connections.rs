@@ -10,6 +10,11 @@ use std::collections::BTreeMap;
 use std::str::FromStr;
 use uuid::Uuid;
 
+/// Surfaced when a single-account provider already holds a different account.
+/// Disconnecting the existing one is the only way forward.
+pub const SINGLE_CONNECTION_MESSAGE: &str =
+    "this provider supports one linked account; disconnect the existing one first";
+
 const COLUMNS: &str = "id, provider_id, display_name, external_account_id, \
 external_tenant_id, connection_mode, identity_key, scopes_json, provider_metadata_json, \
 status, expires_at, last_checked_at, last_error_code, credential_ref, created_at, updated_at";
@@ -88,9 +93,11 @@ impl Db {
         &self,
         mut input: UpsertAppConnection,
     ) -> Result<AppConnection, DbError> {
-        if !ProviderCatalog::default().contains(&input.provider_id) {
+        let catalog = ProviderCatalog::default();
+        if !catalog.contains(&input.provider_id) {
             return Err(DbError::Other("unknown connected-app provider".into()));
         }
+        let single_connection = catalog.is_single_connection(&input.provider_id);
         if input.provider_id.trim().is_empty()
             || input.connection_mode.trim().is_empty()
             || input.identity_key.trim().is_empty()
@@ -117,6 +124,21 @@ impl Db {
                     |row| Ok((row.get(0)?, row.get(1)?)),
                 )
                 .optional()?;
+
+            // Single-account providers (currently the experimental WhatsApp
+            // linked device) may relink the same account, but never add a
+            // second one. Enforced here rather than only in the connect UI.
+            if existing.is_none() && single_connection {
+                let other_accounts: i64 = conn.query_row(
+                    "SELECT COUNT(*) FROM app_connections
+                     WHERE provider_id = ?1 AND identity_key != ?2",
+                    params![input.provider_id, input.identity_key],
+                    |row| row.get(0),
+                )?;
+                if other_accounts > 0 {
+                    return Err(DbError::Other(SINGLE_CONNECTION_MESSAGE.into()));
+                }
+            }
 
             if let Some((id, _credential_ref)) = existing {
                 conn.execute(
@@ -353,6 +375,88 @@ mod tests {
             expires_at: None,
             credential_ref: credential_ref.into(),
         }
+    }
+
+    fn whatsapp_input(own_jid: &str, credential_ref: &str) -> UpsertAppConnection {
+        use crate::integrations::whatsapp::provider;
+        UpsertAppConnection {
+            provider_id: provider::PROVIDER_ID.into(),
+            display_name: Some(provider::display_name()),
+            external_account_id: None,
+            external_tenant_id: None,
+            connection_mode: provider::CONNECTION_MODE.into(),
+            identity_key: provider::identity_key(own_jid),
+            scopes: Vec::new(),
+            provider_metadata: provider::connection_metadata(
+                own_jid,
+                "/tmp/whatsapp/protocol.db",
+                "2026-08-19",
+            ),
+            expires_at: None,
+            credential_ref: credential_ref.into(),
+        }
+    }
+
+    #[test]
+    fn a_single_account_provider_rejects_a_second_account() {
+        let db = Db::open_in_memory().expect("database");
+        db.upsert_app_connection(whatsapp_input("34600123456@s.whatsapp.net", "ref-a"))
+            .expect("first account links");
+
+        let error = db
+            .upsert_app_connection(whatsapp_input("34600999999@s.whatsapp.net", "ref-b"))
+            .expect_err("a second WhatsApp account must be refused");
+        assert!(error.to_string().contains("one linked account"));
+        assert_eq!(db.list_app_connections().expect("list").len(), 1);
+    }
+
+    #[test]
+    fn a_single_account_provider_still_allows_relinking_the_same_account() {
+        let db = Db::open_in_memory().expect("database");
+        let first = db
+            .upsert_app_connection(whatsapp_input("34600123456@s.whatsapp.net", "ref-a"))
+            .expect("first link");
+        let relinked = db
+            .upsert_app_connection(whatsapp_input("34600123456@s.whatsapp.net", "ref-a"))
+            .expect("relinking the same account must succeed");
+
+        assert_eq!(first.id, relinked.id);
+        assert_eq!(db.list_app_connections().expect("list").len(), 1);
+    }
+
+    #[test]
+    fn the_single_account_rule_does_not_constrain_other_providers() {
+        let db = Db::open_in_memory().expect("database");
+        db.upsert_app_connection(input(Some("tenant-a"), "native_oauth", "ref-a"))
+            .expect("first Slack workspace");
+        db.upsert_app_connection(input(Some("tenant-b"), "native_oauth", "ref-b"))
+            .expect("a second Slack workspace is allowed");
+
+        assert_eq!(db.list_app_connections().expect("list").len(), 2);
+    }
+
+    #[test]
+    fn a_whatsapp_connection_stores_no_raw_identity() {
+        let db = Db::open_in_memory().expect("database");
+        let own_jid = "34600123456@s.whatsapp.net";
+        let connection = db
+            .upsert_app_connection(whatsapp_input(own_jid, "ref-a"))
+            .expect("link");
+
+        // Everything the row carries, serialized together.
+        let serialized = format!(
+            "{:?}{:?}{:?}{:?}{:?}",
+            connection.display_name,
+            connection.external_account_id,
+            connection.external_tenant_id,
+            connection.identity_key,
+            connection.provider_metadata
+        );
+        assert!(
+            !serialized.contains("34600123456"),
+            "the connection row must never hold a full phone number or JID"
+        );
+        assert!(serialized.contains("***56@s.whatsapp.net"));
     }
 
     #[test]

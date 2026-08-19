@@ -11,6 +11,7 @@ pub mod refresh;
 pub mod slack;
 pub mod telegram;
 pub mod token_store;
+pub mod whatsapp;
 
 use self::actions::ActionRegistry;
 use self::actions::{
