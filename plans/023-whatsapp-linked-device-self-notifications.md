@@ -29,8 +29,10 @@
 - **Does not depend on**: Plan 010 events or Plan 011 relay
 - **Category**: experimental integration
 - **Planned at**: 2026-08-16 after splitting Plan 021
-- **Implementation status**: IN PROGRESS (Step 1 spike: 7 of 9 gates green;
-  gate 8 RED with a required Step 5 mitigation; gate 9 packaged smoke pending)
+- **Implementation status**: DONE (2026-08-19). Implementation, automated
+  gates, Gate 8 log-guard mitigation, and maintainer live smoke are complete.
+  The macOS packaged gate is on; Windows and Linux stay hidden until those OS
+  smokes run.
 
 ## Product decisions
 
@@ -454,10 +456,9 @@ and source/database serialization tests.
   integration is missing or newer than the app.
 
 Platform gate: `provider::is_available()` is `PACKAGED_GATE_PASSED ||
-cfg!(debug_assertions)`. Every OS constant is currently `false`, so release
-builds hide WhatsApp everywhere; development builds expose it so the remaining
-steps can be built. Flip a target's constant only when this plan records a green
-packaged smoke for that OS.
+cfg!(debug_assertions)`. macOS is `true` after maintainer smoke on 2026-08-19.
+Windows and Linux stay `false`, so release builds hide WhatsApp there.
+Development builds still expose it on every OS.
 
 Logo: `src/assets/apps/whatsapp.svg` (1.3 KiB, local, no remote assets) with an
 `APP_LOGOS` entry. Recolored to WhatsApp's darker brand green `#128c7e` rather
@@ -764,25 +765,27 @@ can guarantee account safety.
 
 ## Done criteria
 
-- [ ] Plan 021 ships first and the Step 1 feasibility spike is recorded green.
-- [ ] WhatsApp is visibly experimental/unofficial and pairing requires explicit
+- [x] Plan 021 ships first and the Step 1 feasibility spike is recorded green.
+- [x] WhatsApp is visibly experimental/unofficial and pairing requires explicit
       risk acknowledgement.
-- [ ] Exactly one QR-linked account is supported per installation.
-- [ ] The only destination is the authenticated account's own self-chat.
-- [ ] A successful explicit self-test is required before readiness.
-- [ ] One runtime remains connected only while Alfred or its tray process runs.
-- [ ] Session state is encrypted with a key held in the OS credential store;
+- [x] Exactly one QR-linked account is supported per installation.
+- [x] The only destination is the authenticated account's own self-chat.
+- [x] A successful explicit self-test is required before readiness.
+- [x] One runtime remains connected only while Alfred or its tray process runs.
+- [x] Session state is encrypted with a key held in the OS credential store;
       plaintext default storage is not used.
-- [ ] No incoming messages, history, contacts, media, triggers, or raw protocol
+- [x] No incoming messages, history, contacts, media, triggers, or raw protocol
       surface is retained or exposed.
-- [ ] Encrypted retry payloads expire within 24 hours.
-- [ ] The action accepts only one interpolatable 4,096-character plain-text
+- [x] Encrypted retry payloads expire within 24 hours.
+- [x] The action accepts only one interpolatable 4,096-character plain-text
       message and exposes no recipient control.
-- [ ] Sends are serialized and capped at five per minute and 60 per hour.
-- [ ] No queue or automatic retry after ambiguous dispatch exists.
-- [ ] Disconnect always removes local session data and attempts remote logout.
-- [ ] Each enabled OS has passed its own packaged smoke gate.
-- [ ] QR material, keys, Signal state, full JIDs/phone numbers, inbound content,
+- [x] Sends are serialized and capped at five per minute and 60 per hour.
+- [x] No queue or automatic retry after ambiguous dispatch exists.
+- [x] Disconnect always removes local session data and attempts remote logout.
+- [x] Each enabled OS has passed its own packaged smoke gate.
+      Maintainer smoke confirmed 2026-08-19 on macOS. Windows and Linux remain
+      disabled until those packaged smokes run.
+- [x] QR material, keys, Signal state, full JIDs/phone numbers, inbound content,
       retry messages, resolved outgoing bodies, and raw frames never leak into
       plaintext connection persistence, DTOs, logs, analytics, errors, or
       outputs. The configured workflow template is the sole intended plaintext

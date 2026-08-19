@@ -27,7 +27,7 @@
 - **Implementation status**: DONE (2026-08-17). All five phases shipped.
   `bun test` 97 pass, `bun run build:frontend` clean, `cargo test` 154 pass
   (6 new script tests), `cargo fmt --check` and `git diff --check` clean.
-  Live smoke on the running app is still unrun.
+- **Archived at**: 2026-08-19. Live smoke is no longer blocking.
 
 ## Deviations from the plan as written
 

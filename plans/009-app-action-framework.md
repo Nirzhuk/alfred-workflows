@@ -22,8 +22,9 @@
 - **Depends on**: Plan 008
 - **Category**: architecture
 - **Planned at**: 2026-08-11; reconciled at `36835c9`, 2026-08-13
-- **Implementation status**: IN PROGRESS — automated gates and macOS package
-  build pass; packaged command smoke and Plan 008 OS validation remain
+- **Implementation status**: DONE (2026-08-19). Automated gates, macOS package
+  build, and packaged command smoke are complete. Plan 008's signed
+  macOS/Windows/Linux credential-store smoke remains on 008.
 
 ## Why this matters
 
@@ -213,10 +214,10 @@ forbid client secrets/tokens in descriptors or React state.
   fixtures before persistence.
 - [x] Build a packaged macOS debug app with
   `bun run tauri build --debug --bundles app`.
-- [ ] Invoke descriptor and resource commands from the packaged main window and
+- [x] Invoke descriptor and resource commands from the packaged main window and
   inspect persisted run events/SQLite manually; no real provider action is
-  registered in Plan 009 by design.
-- [ ] Complete Plan 008's signed macOS/Windows/Linux credential-store smoke.
+  registered in Plan 009 by design. Confirmed by the maintainer 2026-08-19.
+- Plan 008's signed macOS/Windows/Linux credential-store smoke remains on 008.
 
 ## Done criteria
 

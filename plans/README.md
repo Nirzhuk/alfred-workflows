@@ -102,8 +102,8 @@ improvement drafts were merged into these canonical files and the duplicate
 | Plan | Title | Priority | Effort | Depends on | Status |
 |------|-------|----------|--------|------------|--------|
 | 008 | Build the secure Connected Apps foundation | P0 | L | — | IN PROGRESS (OS smoke pending) |
-| 009 | Add a descriptor-driven app action framework | P0 | L | 008 | IN PROGRESS (packaged smoke pending) |
-| 010 | Add app events, polling, and subscription lifecycle | P0 | XL | 008 (009 recommended) | IN PROGRESS (framework green; lifecycle smoke pending) |
+| 009 | Add a descriptor-driven app action framework | P0 | L | 008 | DONE |
+| 010 | Add app events, polling, and subscription lifecycle | P0 | XL | 008 (009 recommended) | DONE (archived) |
 | 011 | Specify and build the optional cloud relay | P1 / Copilot P0 | XL | 008; 010 for events | BLOCKED (ADR approvals pending) |
 | 012 | Add the Slack connected app | P0 | L–XL | 008, 009; 010 events; 011 public bot OAuth | IN PROGRESS (private actions + local mentions green; manual/PKCE/public pending) |
 | 013 | Add Outlook Mail and Calendar through Microsoft Graph | P0 | XL | 008, 009; 010 events; 011 webhooks | IN PROGRESS (native auth + actions + local events; webhooks gated on 011) |
@@ -111,19 +111,21 @@ improvement drafts were merged into these canonical files and the duplicate
 | 015 | Add GitHub, Linear, and Sentry in priority order | P1–P2 | XL | 008, 009; 010 events; 011 public modes | IN PROGRESS (local GitHub Stage A green; live app/package smoke pending) |
 | 016 | Add Notion, Google Drive, and SharePoint context sources | P1–P2 | XL | 008, 009; 010 events; 011 public modes | IN PROGRESS (private Notion + local Obsidian retrieval; Drive/Microsoft auth gates pending) |
 | 017 | Expose selected Alfred workflows to Microsoft Copilot | P1 | XL | 008, 011 | TODO |
-| 021 | Send personal notifications through Telegram | P1 | M | 008, 009 | DONE |
-| 023 | Send self-notifications through an experimental WhatsApp linked device | P1 | XL | 008, 009; execute after 021 | IN PROGRESS (Step 1 spike green; Step 2 store in progress) |
+| 021 | Send personal notifications through Telegram | P1 | M | 008, 009 | DONE (archived) |
+| 023 | Send self-notifications through an experimental WhatsApp linked device | P1 | XL | 008, 009; execute after 021 | DONE (macOS smoke; Windows/Linux gates still off) |
 
 ### Recommended execution slices
 
-1. **Foundation**: 008 → 009; 010 can begin after 008 once its event contract is
-   reconciled with action outputs.
+1. **Foundation**: 008 → 009 → 010. App actions (009) and local events (010)
+   are done
+   ([archive/010-app-events-sync-framework.md](archive/010-app-events-sync-framework.md)).
+   008 still has signed OS credential-store smoke.
 2. **Local useful beta**: Slack private/BYO mode from 012, Microsoft native PKCE
    actions from 013, and Gmail send-only from 014. Do not wait for the relay.
-3. **Personal notifications**: ship Telegram from 021 first. Then run Plan
-   023's mandatory WhatsApp feasibility spike and proceed only if self-send,
-   encrypted persistence, redaction, dependency linkage, and packaged-platform
-   gates pass. Neither plan waits for the relay.
+3. **Personal notifications**: Telegram (021) and experimental WhatsApp
+   self-send (023) are done. WhatsApp is enabled on macOS after maintainer
+   smoke; Windows and Linux stay hidden until those packaged gates pass.
+   Neither plan waits for the relay.
 4. **Remote-capability gate**: execute Plan 011's ADR/threat model. If approved,
    build public Slack bot OAuth/webhooks, Graph/Gmail push, and offline queues.
 5. **Core developer loop**: GitHub then Linear from 015; measure before Sentry.
@@ -227,11 +229,28 @@ and existing CSS motion/reduced-motion rules.
 
 ---
 
+## Track H — Agent model picker
+
+| Plan | Title | Priority | Effort | Depends on | Status |
+|------|-------|----------|--------|------------|--------|
+| 029 | Fast model toggle across agent providers | P2 | M | — | TODO |
+
+### Dependency notes
+
+- 029 is independent of licensing, Connected Apps, and memory tracks. It extends
+  agent model discovery metadata and the workflow model picker only.
+- Cursor and Codex are the first targets because they expose explicit `*-fast`
+  slugs and (for Cursor) IDE `variants` with a documented `fast` parameter.
+- Claude Code and OpenCode follow only after live CLI output confirms stable
+  base ↔ fast pairing rules.
+
+---
+
 ## Track F — Workflow script steps
 
 | Plan | Title | Priority | Effort | Depends on | Status |
 |------|-------|----------|--------|------------|--------|
-| 024 | Script steps and agent script hints | P2 | M | — | DONE (live smoke pending) |
+| 024 | Script steps and agent script hints | P2 | M | — | DONE (archived) |
 
 ### Dependency notes
 
@@ -241,6 +260,7 @@ and existing CSS motion/reduced-motion rules.
 - 024 supersedes the Shell node in the Add-step palette but deliberately leaves
   the `shell` node type, runner arm, and styling in place so saved graphs keep
   working. Do not schedule a Shell removal or migration off the back of it.
+- Completed plan: [archive/024-script-node.md](archive/024-script-node.md).
 
 ---
 

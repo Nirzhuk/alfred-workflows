@@ -20,9 +20,9 @@
 - **Depends on**: Plan 008
 - **Category**: architecture / data handling
 - **Planned at**: 2026-08-11; reconciled at `36835c9`, 2026-08-13
-- **Implementation status**: IN PROGRESS — generic descriptors, normalization,
-  durable receipts/queue, runtime, UI, documentation, and automated gates pass;
-  extended lifecycle coverage and the manual app-close/restart smoke remain
+- **Implementation status**: DONE (2026-08-19). Framework, automated gates,
+  and maintainer close/restart smoke are complete.
+- **Archived at**: 2026-08-19
 
 ## Why this matters
 
@@ -206,15 +206,15 @@ by default. Add a user-visible “last error code” with a provider-safe messag
 
 ## Done criteria
 
-- [ ] Providers can register events without modifying core trigger UI/runtime.
-- [ ] Events are normalized, bounded, deduplicated, and recoverable.
-- [ ] Poll/socket/subscription lifecycle pauses and resumes safely.
-- [ ] The durable queue respects the existing one-active-run-per-workflow rule.
-- [ ] Event bursts are bounded without silently deleting accepted events.
-- [ ] Failed runs are one-shot and are never silently re-enqueued from receipts.
-- [ ] Only allow-listed event data reaches runs and prompts.
-- [ ] UI clearly distinguishes local-only delivery from cloud delivery.
-- [ ] Existing schedule/file/webhook behavior remains green.
+- [x] Providers can register events without modifying core trigger UI/runtime.
+- [x] Events are normalized, bounded, deduplicated, and recoverable.
+- [x] Poll/socket/subscription lifecycle pauses and resumes safely.
+- [x] The durable queue respects the existing one-active-run-per-workflow rule.
+- [x] Event bursts are bounded without silently deleting accepted events.
+- [x] Failed runs are one-shot and are never silently re-enqueued from receipts.
+- [x] Only allow-listed event data reaches runs and prompts.
+- [x] UI clearly distinguishes local-only delivery from cloud delivery.
+- [x] Existing schedule/file/webhook behavior remains green.
 
 ## STOP conditions
 

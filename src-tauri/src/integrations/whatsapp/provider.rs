@@ -38,9 +38,9 @@ pub const RISK_ACKNOWLEDGEMENT_VERSION: &str = "1";
 /// Whether WhatsApp may be offered on this build's operating system.
 ///
 /// Plan 023 enables the provider per OS only after that OS has passed its own
-/// packaged smoke gate. None have yet, so release builds hide it everywhere.
-/// Development builds expose it so the remaining steps can be worked on; that
-/// is the only reason this is not a flat `false`.
+/// packaged smoke gate. macOS passed maintainer smoke on 2026-08-19. Windows
+/// and Linux stay hidden in release builds until those gates pass. Development
+/// builds expose it on every OS so pairing can still be exercised locally.
 pub const fn is_available() -> bool {
     PACKAGED_GATE_PASSED || cfg!(debug_assertions)
 }
@@ -48,7 +48,7 @@ pub const fn is_available() -> bool {
 /// Flip to `true` per target only after `plans/023` records a green packaged
 /// smoke for that OS. A failed platform gate must never block Telegram.
 #[cfg(target_os = "macos")]
-const PACKAGED_GATE_PASSED: bool = false;
+const PACKAGED_GATE_PASSED: bool = true;
 #[cfg(target_os = "windows")]
 const PACKAGED_GATE_PASSED: bool = false;
 #[cfg(target_os = "linux")]
@@ -174,14 +174,14 @@ mod tests {
     }
 
     #[test]
-    fn release_builds_hide_whatsapp_until_a_packaged_gate_passes() {
+    fn release_builds_follow_the_per_os_packaged_gate() {
         // The gate is what keeps an unvalidated OS from offering the provider.
         assert_eq!(
             is_available(),
             PACKAGED_GATE_PASSED || cfg!(debug_assertions)
         );
         if !cfg!(debug_assertions) {
-            assert!(!is_available(), "no OS has passed its packaged smoke yet");
+            assert_eq!(is_available(), PACKAGED_GATE_PASSED);
         }
     }
 

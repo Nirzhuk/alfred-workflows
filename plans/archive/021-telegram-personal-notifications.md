@@ -23,6 +23,7 @@
 - **Revised at**: 2026-08-16 after separating WhatsApp into Plan 023
 - **Implementation status**: DONE (implementation, automated gates, and macOS
   package build green; live-bot smoke confirmed by the maintainer 2026-08-18)
+- **Archived at**: 2026-08-19
 
 ## Product decisions
 
