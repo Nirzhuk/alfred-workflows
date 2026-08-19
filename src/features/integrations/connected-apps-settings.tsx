@@ -6,6 +6,7 @@ import { NotionPrivateConnect } from "./notion-private-connect";
 import { ObsidianVaultConnect } from "./obsidian-vault-connect";
 import { SlackPrivateConnect } from "./slack-private-connect";
 import { TelegramConnect } from "./telegram-connect";
+import { WhatsAppConnect } from "./whatsapp-connect";
 import { useIntegrationsStore } from "./store";
 import type {
   AppConnection,
@@ -48,10 +49,12 @@ export function ConnectedAppsSettings() {
   const [notionConnectOpen, setNotionConnectOpen] = useState(false);
   const [obsidianConnectOpen, setObsidianConnectOpen] = useState(false);
   const [githubConnectOpen, setGithubConnectOpen] = useState(false);
+  const [whatsappConnectOpen, setWhatsappConnectOpen] = useState(false);
 
   const connectHandlers: Record<string, () => void> = {
     slack: () => setSlackConnectOpen(true),
     telegram: () => setTelegramConnectOpen(true),
+    whatsapp: () => setWhatsappConnectOpen(true),
     notion: () => setNotionConnectOpen(true),
     obsidian: () => setObsidianConnectOpen(true),
     github: () => setGithubConnectOpen(true),
@@ -154,7 +157,14 @@ export function ConnectedAppsSettings() {
                 providerName={provider.name}
               />
               <div className="integration-provider-text">
-                <p className="settings-label">{provider.name}</p>
+                <p className="settings-label">
+                  {provider.name}
+                  {provider.experimental ? (
+                    <span className="integration-experimental-badge">
+                      Experimental
+                    </span>
+                  ) : null}
+                </p>
                 <p className="settings-value">{provider.capabilitySummary}</p>
               </div>
             </div>
@@ -271,6 +281,9 @@ export function ConnectedAppsSettings() {
 
       {slackConnectOpen ? (
         <SlackPrivateConnect onClose={() => setSlackConnectOpen(false)} />
+      ) : null}
+      {whatsappConnectOpen ? (
+        <WhatsAppConnect onClose={() => setWhatsappConnectOpen(false)} />
       ) : null}
       {telegramConnectOpen ? (
         <TelegramConnect onClose={() => setTelegramConnectOpen(false)} />

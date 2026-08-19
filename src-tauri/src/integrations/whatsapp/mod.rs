@@ -6,5 +6,8 @@
 
 pub mod crypto;
 pub mod keyring;
+pub mod pairing;
 pub mod provider;
+pub mod runtime;
+pub mod service;
 pub mod store;

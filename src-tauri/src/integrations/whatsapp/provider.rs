@@ -98,19 +98,26 @@ pub fn display_name() -> String {
     "WhatsApp (experimental)".to_string()
 }
 
-/// Backend-only metadata for a ready connection.
+/// Backend-only metadata for a ready connection, from a raw own JID.
 pub fn connection_metadata(
     own_jid: &str,
+    store_path: &str,
+    acknowledged_at: &str,
+) -> BTreeMap<String, String> {
+    connection_metadata_from(&masked_account(own_jid), store_path, acknowledged_at)
+}
+
+/// Same, for callers that already hold only the masked form — which is every
+/// caller past the pairing boundary.
+pub fn connection_metadata_from(
+    masked_account: &str,
     store_path: &str,
     acknowledged_at: &str,
 ) -> BTreeMap<String, String> {
     BTreeMap::from([
         (metadata_key::STORE_VERSION.into(), STORE_VERSION.into()),
         (metadata_key::STORE_PATH.into(), store_path.into()),
-        (
-            metadata_key::MASKED_ACCOUNT.into(),
-            masked_account(own_jid),
-        ),
+        (metadata_key::MASKED_ACCOUNT.into(), masked_account.into()),
         (
             metadata_key::ACKNOWLEDGED_RISK_VERSION.into(),
             RISK_ACKNOWLEDGEMENT_VERSION.into(),

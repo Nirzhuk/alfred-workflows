@@ -34,6 +34,7 @@ pub struct IntegrationsState {
     pub refresh: RefreshService,
     pub github: Arc<github::GitHubService>,
     pub telegram: Arc<telegram::TelegramService>,
+    pub whatsapp: Arc<whatsapp::service::WhatsAppService>,
     token_store: Arc<dyn TokenStore>,
 }
 
@@ -47,6 +48,7 @@ impl IntegrationsState {
     pub fn new(token_store: Arc<dyn TokenStore>) -> Self {
         let github = Arc::new(github::GitHubService::default());
         let telegram = Arc::new(telegram::TelegramService::default());
+        let whatsapp = Arc::new(whatsapp::service::WhatsAppService::new(token_store.clone()));
         let state = Self {
             actions: ActionRegistry::default(),
             catalog: ProviderCatalog::default(),
@@ -54,6 +56,7 @@ impl IntegrationsState {
             refresh: RefreshService::new(token_store.clone()),
             github: github.clone(),
             telegram: telegram.clone(),
+            whatsapp,
             token_store,
         };
         slack::register(&state.actions, &state.events)

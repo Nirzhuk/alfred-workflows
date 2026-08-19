@@ -15,6 +15,8 @@ import type {
   TelegramCompleteInput,
   TelegramPairingPrepared,
   TelegramPrepareInput,
+  WhatsAppPairingState,
+  WhatsAppTestSend,
 } from "./types";
 
 export type IntegrationsApi = {
@@ -62,6 +64,13 @@ export type IntegrationsApi = {
     input: TelegramCompleteInput,
   ) => Promise<AppConnection>;
   cancelTelegramPairing: (pairingSessionId: string) => Promise<void>;
+  beginWhatsappPairing: (
+    acknowledgedVersion: string,
+  ) => Promise<WhatsAppPairingState>;
+  whatsappPairingState: () => Promise<WhatsAppPairingState>;
+  sendWhatsappPairingTest: (message: string) => Promise<WhatsAppTestSend>;
+  completeWhatsappPairing: () => Promise<AppConnection>;
+  cancelWhatsappPairing: () => Promise<void>;
 };
 
 export const integrationsApi: IntegrationsApi = {
@@ -102,4 +111,11 @@ export const integrationsApi: IntegrationsApi = {
     invoke("complete_telegram_connection", { input }),
   cancelTelegramPairing: (pairingSessionId) =>
     invoke("cancel_telegram_pairing", { pairingSessionId }),
+  beginWhatsappPairing: (acknowledgedVersion) =>
+    invoke("begin_whatsapp_pairing", { acknowledgedVersion }),
+  whatsappPairingState: () => invoke("whatsapp_pairing_state"),
+  sendWhatsappPairingTest: (message) =>
+    invoke("send_whatsapp_pairing_test", { message }),
+  completeWhatsappPairing: () => invoke("complete_whatsapp_pairing"),
+  cancelWhatsappPairing: () => invoke("cancel_whatsapp_pairing"),
 };

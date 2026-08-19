@@ -502,6 +502,89 @@ the message may have appeared but do not create a ready connection.
 cancel at every state, duplicate account rejection, invalid/self-JID failure,
 ambiguous test, cleanup, keychain failure, and complete redaction.
 
+#### Step 4 build status (2026-08-19) — backend complete, UI outstanding
+
+`integrations/whatsapp/runtime.rs` introduces the boundary Steps 4 and 5 share.
+The protocol client exists in exactly one place and is never returned, cloned
+out, or reachable from a command: `RuntimeHandle` exposes only own-JID, send to
+self, logout, and shutdown. `RuntimeLauncher` lets the pairing state machine and
+(next) the runtime owner be driven by a scripted `FakeRuntime`, so every path
+below is tested with no live account, no network, and no committed device state.
+
+`WhatsAppLauncher` is the real implementation, compiled against
+`whatsapp-rust 0.7.0`: `skip_history_sync()`, `with_resend_rate_limit(5, 5)`, no
+`on_message` handler anywhere, and a `classify_send_error` that is deliberately
+conservative — only `InvalidRequest` (never sent) and `Iq` (the pre-send device
+query) are retryable; `Client` and `Internal` become `DeliveryUnknown` because
+the stanza may already be on the wire. Retrying those is a STOP condition.
+
+`integrations/whatsapp/pairing.rs` is the state machine:
+`Starting → AwaitingScan → AwaitingTest → Ready`, plus `Failed`/`Cancelled`.
+
+- `acknowledge()` is the gate. A missing or stale acknowledgement version, or an
+  account that is already linked, is refused **before** a key is minted or a
+  staging store is created.
+- Each QR payload goes to a `QrSink` and nowhere else; a new code calls
+  `expire()` on the previous one first, so a superseded payload can never be
+  re-presented. No state variant carries a payload, and nothing logs one.
+- The own JID is read from the authenticated client. `validate_own_jid` accepts
+  only `s.whatsapp.net` and `lid`, so a group, broadcast, or newsletter
+  identifier can never become the self-chat destination.
+- `send_test()` moves to `Ready` only on a definitive success. An ambiguous
+  outcome lands in `Failed { code: "test_delivery_unknown" }` and `finish()`
+  still refuses, so no connection exists that has not passed a real test.
+- `cancel()` stops the runtime, attempts a remote logout only if the device
+  actually linked, then deletes the staging database and the staging key
+  regardless of that outcome. It is idempotent.
+- `finish()` promotes staging to the final store by rename and returns only the
+  identity digest, masked account, credential reference, store path, and
+  acknowledgement timestamp.
+
+Verified by 70 module tests, 12 of them covering this step: acknowledgement
+versioning, nothing provisioned before acknowledgement, duplicate-account
+refusal, link-without-test, ambiguous test, QR supersession counting, revoked
+session, group identity refusal, cleanup with and without a prior link, double
+cancel, failed launch, promotion, and a redaction sweep asserting no state
+variant renders a raw JID or a QR payload.
+
+`PairingPaths` is injected rather than resolved internally, so tests never touch
+the real app-data directory. That was not cosmetic: the first version resolved
+paths internally and the parallel test run raced on one shared staging database,
+crashing the test binary with SIGBUS.
+
+`integrations/whatsapp/service.rs` holds at most one attempt and translates it
+into DTOs: `WhatsAppPairingStateDto` (state code, masked account, failure code),
+`WhatsAppTestSendDto`, and `WhatsAppQrDto`. `begin_pairing` cancels any previous
+attempt first, so a reopened modal can never leave a second runtime or a stale
+staging store behind.
+
+**The QR is rendered to SVG in Rust**, not in the frontend. The scannable
+payload therefore never exists as a JavaScript string, and no QR library was
+added to the frontend bundle. A payload that cannot be rendered is dropped
+rather than falling back to shipping the raw text. Tests assert the SVG contains
+no `<script>`, `<image>`, `xlink:href`, or remote URL, so it satisfies the app
+window's CSP.
+
+Commands: `begin_whatsapp_pairing`, `whatsapp_pairing_state`,
+`send_whatsapp_pairing_test`, `complete_whatsapp_pairing`,
+`cancel_whatsapp_pairing`. Events: `whatsapp://qr` and `whatsapp://qr-expired`.
+
+`whatsapp-connect.tsx` is the modal: the risk warning and an explicit
+acknowledgement checkbox gate the "Link a device" button, the QR panel names the
+**WhatsApp → Linked Devices → Link a device** path, the test-message step shows
+the masked account, and closing the modal always cancels through Rust. It reuses
+the existing connect-modal class vocabulary (`schedule-modal-body`,
+`app-action-warning`, `field`, `primary`/`ghost`,
+`connection-tutorial-inline-error`, `telegram-pairing-card`) rather than
+inventing a parallel set; only the experimental badge, the acknowledgement row,
+and the QR plate needed new rules, all built from existing tokens. The QR plate
+is deliberately opaque white — a transparent QR inverts in the dark theme and
+stops scanning.
+
+Gates: `cargo test` 246 passed, `bun test` 105 passed,
+`bun run build:frontend` green, `cargo clippy` clean across the WhatsApp module,
+`git diff --check` clean.
+
 ### Step 5: Own one persistent runtime for the Alfred lifecycle
 
 Create one backend runtime owner, separate from app-action requests. If a ready

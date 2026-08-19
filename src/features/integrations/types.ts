@@ -174,3 +174,32 @@ export type TelegramCompleteInput = {
   pairingSessionId: string;
   testMessage: string;
 };
+
+/** Safe pairing status for the experimental WhatsApp linked device. Never
+ * carries a QR payload, a full JID, or a phone number. */
+export type WhatsAppPairingState = {
+  state:
+    | "awaiting_acknowledgement"
+    | "starting"
+    | "awaiting_scan"
+    | "awaiting_test"
+    | "ready"
+    | "failed"
+    | "cancelled";
+  maskedAccount: string | null;
+  failureCode: string | null;
+  acknowledgementVersion: string;
+};
+
+/** A pairing code, already rendered to SVG by Rust so the scannable payload
+ * never exists as a JavaScript string. */
+export type WhatsAppQr = {
+  svg: string;
+  expiresInSeconds: number;
+};
+
+export type WhatsAppTestSend = {
+  messageId: string;
+  submittedAt: string;
+  maskedDestination: string;
+};

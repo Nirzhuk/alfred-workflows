@@ -11,6 +11,7 @@ use crate::integrations::slack::SlackPrivateConnectionInput;
 use crate::integrations::telegram::{
     TelegramCompleteInput, TelegramPairingPrepared, TelegramPrepareInput,
 };
+use crate::integrations::whatsapp::service::{WhatsAppPairingStateDto, WhatsAppTestSendDto};
 use crate::integrations::IntegrationsState;
 use tauri::State;
 
@@ -206,6 +207,55 @@ pub async fn complete_telegram_connection(
 #[tauri::command]
 pub fn cancel_telegram_pairing(state: State<'_, IntegrationsState>, pairing_session_id: String) {
     state.cancel_telegram_pairing(&pairing_session_id);
+}
+
+/// Records the experimental-risk acknowledgement and starts QR pairing.
+///
+/// Nothing is created and no QR can exist until this succeeds — the
+/// acknowledgement is the gate (Plan 023 Step 4).
+#[tauri::command]
+pub async fn begin_whatsapp_pairing(
+    db: State<'_, Db>,
+    state: State<'_, IntegrationsState>,
+    app: tauri::AppHandle,
+    acknowledged_version: String,
+) -> Result<WhatsAppPairingStateDto, IntegrationCommandError> {
+    state
+        .whatsapp
+        .begin_pairing(db.inner(), app, &acknowledged_version)
+        .await
+}
+
+#[tauri::command]
+pub fn whatsapp_pairing_state(state: State<'_, IntegrationsState>) -> WhatsAppPairingStateDto {
+    state.whatsapp.pairing_state()
+}
+
+/// The explicit self-test. A connection cannot be created without it.
+#[tauri::command]
+pub async fn send_whatsapp_pairing_test(
+    state: State<'_, IntegrationsState>,
+    message: String,
+) -> Result<WhatsAppTestSendDto, IntegrationCommandError> {
+    state.whatsapp.send_pairing_test(&message).await
+}
+
+#[tauri::command]
+pub async fn complete_whatsapp_pairing(
+    db: State<'_, Db>,
+    state: State<'_, IntegrationsState>,
+) -> Result<AppConnectionDto, IntegrationCommandError> {
+    state.whatsapp.complete_pairing(db.inner()).await
+}
+
+/// Cancels an in-flight attempt: stops the runtime, best-effort remote logout,
+/// then deletes the staging store and key. Safe when nothing is running.
+#[tauri::command]
+pub async fn cancel_whatsapp_pairing(
+    state: State<'_, IntegrationsState>,
+) -> Result<(), IntegrationCommandError> {
+    state.whatsapp.cancel_pairing().await;
+    Ok(())
 }
 
 fn metadata_read_error() -> IntegrationCommandError {

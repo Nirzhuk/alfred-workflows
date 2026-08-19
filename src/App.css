@@ -4697,6 +4697,53 @@ button.primary.danger-solid:hover:not(:disabled) {
   margin: 0;
 }
 
+/* Experimental provider badge (Plan 023). Reuses the status-pill shape so the
+   Connected Apps row keeps one badge vocabulary. */
+.integration-experimental-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 0.4rem;
+  padding: 0.14rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  color: var(--muted);
+  font-size: 0.67rem;
+  font-weight: var(--font-weight-bold);
+  line-height: 1.2;
+}
+
+.whatsapp-acknowledge {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.whatsapp-acknowledge input {
+  margin-top: 0.15rem;
+  flex-shrink: 0;
+}
+
+.whatsapp-qr {
+  align-items: center;
+  text-align: center;
+}
+
+/* The code is rendered by Rust as an SVG. A light plate keeps it scannable in
+   the dark theme, where a transparent QR would invert and fail to scan. */
+.whatsapp-qr-code {
+  padding: 0.6rem;
+  border-radius: var(--radius-md);
+  background: #ffffff;
+  line-height: 0;
+}
+
+.whatsapp-qr-code svg {
+  display: block;
+  width: 100%;
+  max-width: 240px;
+  height: auto;
+}
+
 .github-pairing-card {
   display: grid;
   gap: var(--space-3);
