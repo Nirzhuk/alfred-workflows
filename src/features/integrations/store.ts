@@ -9,7 +9,10 @@ import type {
   AppProvider,
   GitHubDeviceAuthorization,
   GitHubDevicePollResult,
+  GmailAuthorizationStarted,
   IntegrationError,
+  MicrosoftAuthorizationStarted,
+  MicrosoftPrepareInput,
   NotionPrivateConnectionInput,
   ObsidianVaultConnectionInput,
   SlackPrivateConnectionInput,
@@ -100,6 +103,54 @@ const ERROR_MESSAGES: Record<string, string> = {
     "The GitHub App installation does not grant repository metadata access.",
   github_unavailable: "GitHub is temporarily unavailable.",
   github_connection_failed: "The GitHub credential could not be saved securely.",
+  gmail_not_configured:
+    "This Alfred build is not configured with the public Gmail OAuth client ID.",
+  gmail_pairing_busy:
+    "Too many Gmail authorization attempts are active. Close another attempt and try again.",
+  gmail_pairing_failed: "The Gmail authorization attempt could not be updated.",
+  gmail_pairing_expired:
+    "This Gmail authorization attempt expired. Start again.",
+  gmail_pairing_cancelled: "The Gmail authorization attempt was cancelled.",
+  gmail_authorization_denied: "Google authorization was not completed.",
+  gmail_authorization_expired:
+    "Google rejected the authorization. Start a new connection attempt.",
+  gmail_offline_access_required:
+    "Google did not grant offline access. Authorize again.",
+  gmail_account_invalid:
+    "Google did not return a valid, verified Gmail account identity.",
+  gmail_invalid_response: "Google returned an invalid authorization response.",
+  gmail_unavailable: "Google authorization is temporarily unavailable.",
+  gmail_connection_failed: "The Gmail credential could not be saved securely.",
+  microsoft_not_configured:
+    "This Alfred build is not configured with the public Microsoft Entra client ID.",
+  microsoft_pairing_busy:
+    "Too many Microsoft authorization attempts are active. Close another attempt and try again.",
+  microsoft_pairing_failed:
+    "The Microsoft authorization attempt could not be updated.",
+  microsoft_pairing_expired:
+    "This Microsoft authorization attempt expired. Start again.",
+  microsoft_pairing_cancelled:
+    "The Microsoft authorization attempt was cancelled.",
+  microsoft_authorization_denied: "Microsoft authorization was not completed.",
+  microsoft_authorization_expired:
+    "Microsoft rejected the authorization. Start a new connection attempt.",
+  microsoft_offline_access_required:
+    "Microsoft did not grant offline access. Authorize again.",
+  microsoft_invalid_id_token:
+    "Microsoft returned an identity token Alfred could not verify.",
+  microsoft_identity_invalid:
+    "Microsoft did not return a valid account identity.",
+  microsoft_account_mismatch:
+    "That Microsoft account does not match the connected account. Sign in with the original account.",
+  microsoft_personal_account_blocked:
+    "This Alfred build only accepts Microsoft work or school accounts.",
+  microsoft_work_account_blocked:
+    "This Alfred build only accepts personal Microsoft accounts.",
+  microsoft_invalid_response:
+    "Microsoft returned an invalid authorization response.",
+  microsoft_unavailable: "Microsoft authorization is temporarily unavailable.",
+  microsoft_connection_failed:
+    "The Microsoft credential could not be saved securely.",
   timed_out: "The provider request timed out.",
   delivery_unknown:
     "The provider may have accepted this action. Check the target before retrying.",
@@ -167,6 +218,18 @@ export type IntegrationsState = {
     pairingSessionId: string,
   ) => Promise<GitHubDevicePollResult | null>;
   cancelGithubPairing: (pairingSessionId: string) => Promise<void>;
+  prepareGmailConnection: () => Promise<GmailAuthorizationStarted | null>;
+  completeGmailConnection: (
+    sessionId: string,
+  ) => Promise<IntegrationError | null>;
+  cancelGmailAuthorization: (sessionId: string) => Promise<void>;
+  prepareMicrosoftConnection: (
+    input: MicrosoftPrepareInput,
+  ) => Promise<MicrosoftAuthorizationStarted | null>;
+  completeMicrosoftConnection: (
+    sessionId: string,
+  ) => Promise<IntegrationError | null>;
+  cancelMicrosoftAuthorization: (sessionId: string) => Promise<void>;
   connectNotionPrivate: (
     input: NotionPrivateConnectionInput,
   ) => Promise<IntegrationError | null>;
@@ -334,6 +397,88 @@ export function createIntegrationsState(
         await api.cancelGithubPairing(pairingSessionId);
       } catch {
         // Device sessions are process-local and expire automatically.
+      }
+    },
+
+    prepareGmailConnection: async () => {
+      set({ loading: true, error: null });
+      try {
+        const authorization = await api.prepareGmailConnection();
+        set({ loading: false });
+        return authorization;
+      } catch (error) {
+        set({ loading: false, error: normalizeIntegrationError(error) });
+        return null;
+      }
+    },
+
+    completeGmailConnection: async (sessionId) => {
+      set({ loading: true, error: null });
+      try {
+        const connected = redactConnectionPayload(
+          await api.completeGmailConnection(sessionId),
+        );
+        set((state) => ({
+          connections: [
+            ...state.connections.filter((item) => item.id !== connected.id),
+            connected,
+          ],
+          loading: false,
+        }));
+        return null;
+      } catch (error) {
+        const normalized = normalizeIntegrationError(error);
+        set({ loading: false, error: normalized });
+        return normalized;
+      }
+    },
+
+    cancelGmailAuthorization: async (sessionId) => {
+      try {
+        await api.cancelGmailAuthorization(sessionId);
+      } catch {
+        // Authorization sessions are process-local and expire automatically.
+      }
+    },
+
+    prepareMicrosoftConnection: async (input) => {
+      set({ loading: true, error: null });
+      try {
+        const authorization = await api.prepareMicrosoftConnection(input);
+        set({ loading: false });
+        return authorization;
+      } catch (error) {
+        set({ loading: false, error: normalizeIntegrationError(error) });
+        return null;
+      }
+    },
+
+    completeMicrosoftConnection: async (sessionId) => {
+      set({ loading: true, error: null });
+      try {
+        const connected = redactConnectionPayload(
+          await api.completeMicrosoftConnection(sessionId),
+        );
+        set((state) => ({
+          connections: [
+            ...state.connections.filter((item) => item.id !== connected.id),
+            connected,
+          ],
+          loading: false,
+        }));
+        return null;
+      } catch (error) {
+        const normalized = normalizeIntegrationError(error);
+        set({ loading: false, error: normalized });
+        return normalized;
+      }
+    },
+
+    cancelMicrosoftAuthorization: async (sessionId) => {
+      try {
+        await api.cancelMicrosoftAuthorization(sessionId);
+      } catch {
+        // Authorization sessions are process-local and expire automatically.
       }
     },
 

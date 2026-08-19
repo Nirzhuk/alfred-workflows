@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { ConfirmDialog } from "../../components/confirm-dialog";
 import { AppLogo } from "./app-logo";
 import { GitHubConnect } from "./github-connect";
+import { GmailConnect } from "./gmail-connect";
+import { MicrosoftConnect } from "./microsoft-connect";
 import { NotionPrivateConnect } from "./notion-private-connect";
 import { ObsidianVaultConnect } from "./obsidian-vault-connect";
 import { SlackPrivateConnect } from "./slack-private-connect";
@@ -49,6 +51,11 @@ export function ConnectedAppsSettings() {
   const [notionConnectOpen, setNotionConnectOpen] = useState(false);
   const [obsidianConnectOpen, setObsidianConnectOpen] = useState(false);
   const [githubConnectOpen, setGithubConnectOpen] = useState(false);
+  const [gmailConnectOpen, setGmailConnectOpen] = useState(false);
+  const [microsoftConnectOpen, setMicrosoftConnectOpen] = useState(false);
+  const [microsoftReconnectId, setMicrosoftReconnectId] = useState<
+    string | null
+  >(null);
   const [whatsappConnectOpen, setWhatsappConnectOpen] = useState(false);
 
   const connectHandlers: Record<string, () => void> = {
@@ -58,6 +65,11 @@ export function ConnectedAppsSettings() {
     notion: () => setNotionConnectOpen(true),
     obsidian: () => setObsidianConnectOpen(true),
     github: () => setGithubConnectOpen(true),
+    gmail: () => setGmailConnectOpen(true),
+    microsoft: () => {
+      setMicrosoftReconnectId(null);
+      setMicrosoftConnectOpen(true);
+    },
   };
 
   useEffect(() => {
@@ -218,12 +230,21 @@ export function ConnectedAppsSettings() {
                       {provider.id === "slack" ||
                       provider.id === "notion" ||
                       provider.id === "obsidian" ||
-                      provider.id === "github" ? (
+                      provider.id === "github" ||
+                      provider.id === "gmail" ||
+                      provider.id === "microsoft" ? (
                         <button
                           type="button"
                           className="ghost integration-action"
                           title={`Reconnect ${provider.name}`}
-                          onClick={connectHandlers[provider.id]}
+                          onClick={() => {
+                            if (provider.id === "microsoft") {
+                              setMicrosoftReconnectId(connection.id);
+                              setMicrosoftConnectOpen(true);
+                              return;
+                            }
+                            connectHandlers[provider.id]?.();
+                          }}
                         >
                           Reconnect
                         </button>
@@ -296,6 +317,18 @@ export function ConnectedAppsSettings() {
       ) : null}
       {githubConnectOpen ? (
         <GitHubConnect onClose={() => setGithubConnectOpen(false)} />
+      ) : null}
+      {gmailConnectOpen ? (
+        <GmailConnect onClose={() => setGmailConnectOpen(false)} />
+      ) : null}
+      {microsoftConnectOpen ? (
+        <MicrosoftConnect
+          reconnectConnectionId={microsoftReconnectId}
+          onClose={() => {
+            setMicrosoftConnectOpen(false);
+            setMicrosoftReconnectId(null);
+          }}
+        />
       ) : null}
     </section>
   );

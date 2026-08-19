@@ -147,6 +147,10 @@ export function GitHubConnect({ onClose }: { onClose: () => void }) {
           <p className="hint">
             If the button does not open, visit <code>{pairing.verificationUri}</code>.
           </p>
+          <p className="hint">
+            Only enter a code you just generated here in Alfred. Never enter a
+            code someone else sent you.
+          </p>
         </div>
         <p className="hint">
           Organization repositories can require administrator approval or an

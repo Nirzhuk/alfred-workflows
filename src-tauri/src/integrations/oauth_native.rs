@@ -5,12 +5,22 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::io::{Read, Write};
 use std::net::{IpAddr, TcpListener, TcpStream};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+#[cfg(test)]
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use thiserror::Error;
 use url::Url;
 use zeroize::Zeroize;
 
 const MAX_CALLBACK_BYTES: usize = 8 * 1024;
+
+/// Serializes tests that bind loopback listeners, because the OS can hand a
+/// just-released ephemeral port to a parallel test's listener and corrupt its
+/// closed-port assertions. Product code never touches this gate.
+#[cfg(test)]
+pub(crate) static LOOPBACK_TEST_GATE: Mutex<()> = Mutex::new(());
 
 #[derive(Clone)]
 pub struct NativeOAuthConfig {
@@ -130,6 +140,8 @@ pub enum NativeOAuthError {
     StateMismatch,
     #[error("authorization was not completed")]
     AuthorizationDenied,
+    #[error("the authorization attempt was cancelled")]
+    Cancelled,
 }
 
 impl NativeOAuthAttempt {
@@ -218,8 +230,21 @@ impl NativeOAuthAttempt {
     }
 
     pub fn wait_for_callback(self) -> Result<VerifiedAuthorizationCode, NativeOAuthError> {
+        self.wait_for_callback_cancellable(Arc::new(AtomicBool::new(false)))
+    }
+
+    /// Like [`Self::wait_for_callback`] but returns [`NativeOAuthError::Cancelled`]
+    /// when the shared flag is set, so a provider can abandon an in-flight
+    /// attempt without closing the whole process.
+    pub fn wait_for_callback_cancellable(
+        self,
+        cancelled: Arc<AtomicBool>,
+    ) -> Result<VerifiedAuthorizationCode, NativeOAuthError> {
         let started = Instant::now();
         while started.elapsed() < self.timeout {
+            if cancelled.load(Ordering::SeqCst) {
+                return Err(NativeOAuthError::Cancelled);
+            }
             match self.listener.accept() {
                 Ok((mut stream, peer)) => {
                     if !is_loopback(peer.ip()) {
@@ -241,13 +266,27 @@ impl NativeOAuthAttempt {
         self,
         stream: &mut TcpStream,
     ) -> Result<VerifiedAuthorizationCode, NativeOAuthError> {
+        // BSD accept() hands the accepted socket the listener's non-blocking
+        // flag, so restore blocking mode before the timed read.
+        stream
+            .set_nonblocking(false)
+            .map_err(|_| NativeOAuthError::InvalidCallback)?;
         let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
         let mut buffer = [0_u8; MAX_CALLBACK_BYTES];
-        let count = stream
-            .read(&mut buffer)
-            .map_err(|_| NativeOAuthError::InvalidCallback)?;
+        let mut received = 0;
+        while received < buffer.len()
+            && !buffer[..received].windows(4).any(|window| window == b"\r\n\r\n")
+        {
+            let count = stream
+                .read(&mut buffer[received..])
+                .map_err(|_| NativeOAuthError::InvalidCallback)?;
+            if count == 0 {
+                break;
+            }
+            received += count;
+        }
         let request =
-            std::str::from_utf8(&buffer[..count]).map_err(|_| NativeOAuthError::InvalidCallback)?;
+            std::str::from_utf8(&buffer[..received]).map_err(|_| NativeOAuthError::InvalidCallback)?;
         let request_line = request
             .lines()
             .next()
@@ -393,15 +432,20 @@ mod tests {
 
     #[test]
     fn rejects_state_mismatch() {
+        let _gate = LOOPBACK_TEST_GATE.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         let result = callback(
             NativeOAuthAttempt::start(config()).expect("start"),
             "wrong".into(),
         );
-        assert!(matches!(result, Err(NativeOAuthError::StateMismatch)));
+        assert!(
+            matches!(result, Err(NativeOAuthError::StateMismatch)),
+            "unexpected result: {result:?}"
+        );
     }
 
     #[test]
     fn returns_code_and_keeps_attempt_context_in_memory() {
+        let _gate = LOOPBACK_TEST_GATE.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         let attempt = NativeOAuthAttempt::start(config()).expect("start");
         let state = attempt.context.state.clone();
         let result = callback(attempt, state).expect("callback");
@@ -412,16 +456,39 @@ mod tests {
 
     #[test]
     fn listener_is_one_shot() {
+        let _gate = LOOPBACK_TEST_GATE.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         let attempt = NativeOAuthAttempt::start(config()).expect("start");
         let redirect = Url::parse(attempt.redirect_uri()).expect("redirect");
         let address = SocketAddr::from(([127, 0, 0, 1], redirect.port().expect("port")));
         let state = attempt.context.state.clone();
-        callback(attempt, state).expect("first callback");
-        assert!(TcpStream::connect(address).is_err());
+        callback(attempt, state.clone()).expect("first callback");
+        // The kernel may hand the freed port to a parallel fixture server, so
+        // assert functionally: nothing may still answer an authorization
+        // callback on this address.
+        let mut stream = match TcpStream::connect(address) {
+            Ok(stream) => stream,
+            Err(_) => return,
+        };
+        let _ = stream.set_read_timeout(Some(Duration::from_millis(200)));
+        write!(
+            stream,
+            "GET /oauth/callback?code=leftover&state={state} HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n"
+        )
+        .expect("write probe");
+        let mut response = Vec::new();
+        let mut chunk = [0_u8; 512];
+        loop {
+            match stream.read(&mut chunk) {
+                Ok(0) | Err(_) => break,
+                Ok(count) => response.extend_from_slice(&chunk[..count]),
+            }
+        }
+        assert!(!String::from_utf8_lossy(&response).contains("Authorization complete"));
     }
 
     #[test]
     fn retries_after_preferred_port_collision() {
+        let _gate = LOOPBACK_TEST_GATE.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         let occupied = TcpListener::bind(("127.0.0.1", 0)).expect("occupy port");
         let occupied_port = occupied.local_addr().expect("address").port();
         let mut request = config();
@@ -435,12 +502,24 @@ mod tests {
 
     #[test]
     fn expires_attempt_after_timeout() {
+        let _gate = LOOPBACK_TEST_GATE.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         let mut request = config();
         request.timeout = Duration::from_millis(20);
         let attempt = NativeOAuthAttempt::start(request).expect("start");
         assert!(matches!(
             attempt.wait_for_callback(),
             Err(NativeOAuthError::Timeout)
+        ));
+    }
+
+    #[test]
+    fn a_cancelled_attempt_abandons_without_waiting_for_the_timeout() {
+        let _gate = LOOPBACK_TEST_GATE.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let attempt = NativeOAuthAttempt::start(config()).expect("start");
+        let cancelled = Arc::new(AtomicBool::new(true));
+        assert!(matches!(
+            attempt.wait_for_callback_cancellable(cancelled),
+            Err(NativeOAuthError::Cancelled)
         ));
     }
 }

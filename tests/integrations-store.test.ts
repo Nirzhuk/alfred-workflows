@@ -66,6 +66,30 @@ function api(overrides: Partial<IntegrationsApi> = {}): IntegrationsApi {
       },
     }),
     cancelGithubPairing: async () => {},
+    prepareGmailConnection: async () => ({
+      sessionId: "gmail-session",
+      authorizationUrl: "https://accounts.google.com/o/oauth2/v2/auth",
+      expiresAt: "2026-08-13T10:10:00Z",
+    }),
+    completeGmailConnection: async () => ({
+      ...connection("user@example.com"),
+      providerId: "gmail",
+      connectionMode: "native_oauth",
+      scopes: ["https://www.googleapis.com/auth/gmail.send"],
+    }),
+    cancelGmailAuthorization: async () => {},
+    prepareMicrosoftConnection: async () => ({
+      sessionId: "microsoft-session",
+      authorizationUrl: "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
+      expiresAt: "2026-08-13T10:10:00Z",
+    }),
+    completeMicrosoftConnection: async () => ({
+      ...connection("Ada Lovelace"),
+      providerId: "microsoft",
+      connectionMode: "native_oauth",
+      scopes: ["Mail.Send", "Mail.ReadBasic"],
+    }),
+    cancelMicrosoftAuthorization: async () => {},
     connectNotionPrivate: async () => ({
       ...connection("Product workspace"),
       providerId: "notion",
@@ -92,6 +116,30 @@ function api(overrides: Partial<IntegrationsApi> = {}): IntegrationsApi {
       scopes: [],
     }),
     cancelTelegramPairing: async () => {},
+    beginWhatsappPairing: async () => ({
+      state: "awaiting_acknowledgement",
+      maskedAccount: null,
+      failureCode: null,
+      acknowledgementVersion: "1",
+    }),
+    whatsappPairingState: async () => ({
+      state: "awaiting_acknowledgement",
+      maskedAccount: null,
+      failureCode: null,
+      acknowledgementVersion: "1",
+    }),
+    sendWhatsappPairingTest: async () => ({
+      messageId: "test-message",
+      submittedAt: "2026-08-13T10:00:00Z",
+      maskedDestination: "••••1234",
+    }),
+    completeWhatsappPairing: async () => ({
+      ...connection("WhatsApp"),
+      providerId: "whatsapp",
+      connectionMode: "linked_device_experimental",
+      scopes: [],
+    }),
+    cancelWhatsappPairing: async () => {},
     ...overrides,
   };
 }

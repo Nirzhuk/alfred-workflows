@@ -17,6 +17,8 @@
       "allow": [
         { "url": "x-apple.systempreferences:*" },
         { "url": "https://github.com/*" },
+        { "url": "https://accounts.google.com/*" },
+        { "url": "https://login.microsoftonline.com/*" },
         { "url": "https://www.notion.so/profile/integrations/internal" },
         { "url": "https://t.me/*" }
       ]

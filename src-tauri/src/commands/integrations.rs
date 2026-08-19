@@ -2,6 +2,8 @@ use crate::db::Db;
 use crate::integrations::actions::{ActionDescriptor, ActionError, ActionResourcePage};
 use crate::integrations::events::{AppEventDescriptor, AppEventError, AppEventResourcePage};
 use crate::integrations::github::{GitHubDeviceAuthorization, GitHubDevicePollResult};
+use crate::integrations::gmail::GmailAuthorizationStarted;
+use crate::integrations::microsoft::{MicrosoftAuthorizationStarted, MicrosoftPrepareInput};
 use crate::integrations::models::{
     AppConnectionDto, AppConnectionUsage, AppProviderDto, IntegrationCommandError,
 };
@@ -167,6 +169,52 @@ pub async fn poll_github_connection(
 #[tauri::command]
 pub fn cancel_github_pairing(state: State<'_, IntegrationsState>, pairing_session_id: String) {
     state.cancel_github_pairing(&pairing_session_id);
+}
+
+#[tauri::command]
+pub fn prepare_gmail_connection(
+    state: State<'_, IntegrationsState>,
+) -> Result<GmailAuthorizationStarted, IntegrationCommandError> {
+    state.prepare_gmail_connection()
+}
+
+#[tauri::command]
+pub async fn complete_gmail_connection(
+    db: State<'_, Db>,
+    state: State<'_, IntegrationsState>,
+    session_id: String,
+) -> Result<AppConnectionDto, IntegrationCommandError> {
+    state.complete_gmail_connection(db.inner(), &session_id).await
+}
+
+#[tauri::command]
+pub fn cancel_gmail_authorization(state: State<'_, IntegrationsState>, session_id: String) {
+    state.cancel_gmail_authorization(&session_id);
+}
+
+#[tauri::command]
+pub fn prepare_microsoft_connection(
+    db: State<'_, Db>,
+    state: State<'_, IntegrationsState>,
+    input: MicrosoftPrepareInput,
+) -> Result<MicrosoftAuthorizationStarted, IntegrationCommandError> {
+    state.prepare_microsoft_connection(db.inner(), input)
+}
+
+#[tauri::command]
+pub async fn complete_microsoft_connection(
+    db: State<'_, Db>,
+    state: State<'_, IntegrationsState>,
+    session_id: String,
+) -> Result<AppConnectionDto, IntegrationCommandError> {
+    state
+        .complete_microsoft_connection(db.inner(), &session_id)
+        .await
+}
+
+#[tauri::command]
+pub fn cancel_microsoft_authorization(state: State<'_, IntegrationsState>, session_id: String) {
+    state.cancel_microsoft_authorization(&session_id);
 }
 
 #[tauri::command]

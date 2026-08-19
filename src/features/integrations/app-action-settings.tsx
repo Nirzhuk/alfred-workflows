@@ -161,8 +161,14 @@ export function AppActionSettings({ data, onUpdate }: Props) {
               value={data.input[field.key]}
               displaySnapshot={data.input[`${field.key}__display`]}
               onChange={(value) => updateInput(field.key, value)}
-              onDisplayChange={(value) =>
-                updateInput(`${field.key}__display`, value)
+              onSelectResource={(value, label) =>
+                onUpdate({
+                  input: {
+                    ...data.input,
+                    [field.key]: value,
+                    [`${field.key}__display`]: label,
+                  },
+                })
               }
             />
           ))}
@@ -200,7 +206,7 @@ function DescriptorField({
   value,
   displaySnapshot,
   onChange,
-  onDisplayChange,
+  onSelectResource,
 }: {
   field: ActionFieldDescriptor;
   descriptor: ActionDescriptor;
@@ -208,7 +214,7 @@ function DescriptorField({
   value: unknown;
   displaySnapshot: unknown;
   onChange: (value: unknown) => void;
-  onDisplayChange: (value: string) => void;
+  onSelectResource: (value: string, label: string) => void;
 }) {
   const description = [
     field.description,
@@ -264,8 +270,7 @@ function DescriptorField({
         displaySnapshot={
           typeof displaySnapshot === "string" ? displaySnapshot : ""
         }
-        onChange={onChange}
-        onDisplayChange={onDisplayChange}
+        onSelect={onSelectResource}
       />
     );
   }
@@ -299,16 +304,14 @@ function ResourceSelector({
   connectionId,
   value,
   displaySnapshot,
-  onChange,
-  onDisplayChange,
+  onSelect,
 }: {
   field: ActionFieldDescriptor;
   descriptor: ActionDescriptor;
   connectionId: string;
   value: string;
   displaySnapshot: string;
-  onChange: (value: string) => void;
-  onDisplayChange: (value: string) => void;
+  onSelect: (value: string, label: string) => void;
 }) {
   const [query, setQuery] = useState("");
   const [items, setItems] = useState<ActionResourceItem[]>([]);
@@ -382,10 +385,8 @@ function ResourceSelector({
         required={field.required}
         onChange={(event) => {
           const nextId = event.currentTarget.value;
-          onChange(nextId);
-          onDisplayChange(
-            items.find((item) => item.id === nextId)?.label ?? "",
-          );
+          const label = items.find((item) => item.id === nextId)?.label ?? "";
+          onSelect(nextId, label);
         }}
       >
         <option value="">Choose…</option>

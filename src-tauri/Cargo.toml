@@ -27,6 +27,8 @@ futures-util = { version = "0.3.31", features = ["sink"] }
 tokio-tungstenite = { version = "0.28.0", features = ["rustls-tls-native-roots"] }
 rusqlite = { version = "0.40.2", features = ["bundled"] }
 chrono = { version = "0.4.45", features = ["clock", "serde"] }
+chrono-tz = "0.10"
+jsonwebtoken = "9"
 uuid = { version = "1.24.0", features = ["v4", "serde"] }
 thiserror = "2.0.20"
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "sync", "time"] }

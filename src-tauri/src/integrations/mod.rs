@@ -2,6 +2,8 @@ pub mod actions;
 pub mod catalog;
 pub mod events;
 pub mod github;
+pub mod gmail;
+pub mod microsoft;
 pub mod knowledge;
 pub mod models;
 pub mod notion;
@@ -33,6 +35,8 @@ pub struct IntegrationsState {
     pub events: AppEventRegistry,
     pub refresh: RefreshService,
     pub github: Arc<github::GitHubService>,
+    pub gmail: Arc<gmail::GmailService>,
+    pub microsoft: Arc<microsoft::MicrosoftService>,
     pub telegram: Arc<telegram::TelegramService>,
     pub whatsapp: Arc<whatsapp::service::WhatsAppService>,
     token_store: Arc<dyn TokenStore>,
@@ -47,6 +51,8 @@ impl Default for IntegrationsState {
 impl IntegrationsState {
     pub fn new(token_store: Arc<dyn TokenStore>) -> Self {
         let github = Arc::new(github::GitHubService::default());
+        let gmail = Arc::new(gmail::GmailService::default());
+        let microsoft = Arc::new(microsoft::MicrosoftService::default());
         let telegram = Arc::new(telegram::TelegramService::default());
         let whatsapp = Arc::new(whatsapp::service::WhatsAppService::new(token_store.clone()));
         let state = Self {
@@ -55,6 +61,8 @@ impl IntegrationsState {
             events: AppEventRegistry::default(),
             refresh: RefreshService::new(token_store.clone()),
             github: github.clone(),
+            gmail: gmail.clone(),
+            microsoft: microsoft.clone(),
             telegram: telegram.clone(),
             whatsapp,
             token_store,
@@ -63,10 +71,22 @@ impl IntegrationsState {
             .expect("Slack action and event descriptors must be valid");
         github::register(&state.actions, &state.events, github.clone())
             .expect("GitHub action and event descriptors must be valid");
+        gmail::register(&state.actions, gmail.clone())
+            .expect("Gmail action descriptors must be valid");
+        microsoft::register(&state.actions, &state.events, microsoft.clone())
+            .expect("Microsoft action and event descriptors must be valid");
         state
             .refresh
             .register("github", github.refresh_handler())
             .expect("GitHub refresh handler must be valid");
+        state
+            .refresh
+            .register("gmail", gmail.refresh_handler())
+            .expect("Gmail refresh handler must be valid");
+        state
+            .refresh
+            .register("microsoft", microsoft.refresh_handler())
+            .expect("Microsoft refresh handler must be valid");
         telegram::register(&state.actions, telegram)
             .expect("Telegram action descriptor must be valid");
         notion::register(&state.actions).expect("Notion action descriptors must be valid");
@@ -237,6 +257,48 @@ impl IntegrationsState {
 
     pub fn cancel_github_pairing(&self, pairing_session_id: &str) {
         self.github.cancel_device_authorization(pairing_session_id);
+    }
+
+    pub fn prepare_gmail_connection(
+        &self,
+    ) -> Result<gmail::GmailAuthorizationStarted, IntegrationCommandError> {
+        self.gmail.prepare_authorization()
+    }
+
+    pub async fn complete_gmail_connection(
+        &self,
+        db: &Db,
+        session_id: &str,
+    ) -> Result<models::AppConnectionDto, IntegrationCommandError> {
+        self.gmail
+            .complete_authorization(db, self.token_store.clone(), session_id)
+            .await
+    }
+
+    pub fn cancel_gmail_authorization(&self, session_id: &str) {
+        self.gmail.cancel_authorization(session_id);
+    }
+
+    pub fn prepare_microsoft_connection(
+        &self,
+        db: &Db,
+        input: microsoft::MicrosoftPrepareInput,
+    ) -> Result<microsoft::MicrosoftAuthorizationStarted, IntegrationCommandError> {
+        self.microsoft.prepare_authorization(db, input)
+    }
+
+    pub async fn complete_microsoft_connection(
+        &self,
+        db: &Db,
+        session_id: &str,
+    ) -> Result<models::AppConnectionDto, IntegrationCommandError> {
+        self.microsoft
+            .complete_authorization(db, self.token_store.clone(), session_id)
+            .await
+    }
+
+    pub fn cancel_microsoft_authorization(&self, session_id: &str) {
+        self.microsoft.cancel_authorization(session_id);
     }
 
     pub async fn connect_notion_private(

@@ -24,6 +24,8 @@ Provider setup and capability details:
 
 - [Slack](slack.md)
 - [GitHub](github.md)
+- [Gmail](gmail.md)
+- [Microsoft 365 mail and calendar](microsoft.md)
 - [Telegram personal notifications](telegram.md)
 - [Notion and the knowledge-source boundary](knowledge-connectors.md)
 

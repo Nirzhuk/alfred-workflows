@@ -39,14 +39,14 @@ impl Default for ProviderCatalog {
                     "Microsoft 365",
                     "Outlook mail and calendar",
                     &["native_oauth"],
-                    false,
+                    super::microsoft::is_configured(),
                 ),
                 provider(
                     "gmail",
                     "Gmail",
-                    "Mail search, reading, and sending",
+                    "Send email from your connected Gmail account",
                     &["native_oauth"],
-                    false,
+                    super::gmail::is_configured(),
                 ),
                 provider(
                     "github",

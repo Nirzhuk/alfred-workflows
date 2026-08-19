@@ -9,6 +9,9 @@ import type {
   AppProvider,
   GitHubDeviceAuthorization,
   GitHubDevicePollResult,
+  GmailAuthorizationStarted,
+  MicrosoftAuthorizationStarted,
+  MicrosoftPrepareInput,
   NotionPrivateConnectionInput,
   ObsidianVaultConnectionInput,
   SlackPrivateConnectionInput,
@@ -51,6 +54,14 @@ export type IntegrationsApi = {
     pairingSessionId: string,
   ) => Promise<GitHubDevicePollResult>;
   cancelGithubPairing: (pairingSessionId: string) => Promise<void>;
+  prepareGmailConnection: () => Promise<GmailAuthorizationStarted>;
+  completeGmailConnection: (sessionId: string) => Promise<AppConnection>;
+  cancelGmailAuthorization: (sessionId: string) => Promise<void>;
+  prepareMicrosoftConnection: (
+    input: MicrosoftPrepareInput,
+  ) => Promise<MicrosoftAuthorizationStarted>;
+  completeMicrosoftConnection: (sessionId: string) => Promise<AppConnection>;
+  cancelMicrosoftAuthorization: (sessionId: string) => Promise<void>;
   connectNotionPrivate: (
     input: NotionPrivateConnectionInput,
   ) => Promise<AppConnection>;
@@ -101,6 +112,17 @@ export const integrationsApi: IntegrationsApi = {
     invoke("poll_github_connection", { pairingSessionId }),
   cancelGithubPairing: (pairingSessionId) =>
     invoke("cancel_github_pairing", { pairingSessionId }),
+  prepareGmailConnection: () => invoke("prepare_gmail_connection"),
+  completeGmailConnection: (sessionId) =>
+    invoke("complete_gmail_connection", { sessionId }),
+  cancelGmailAuthorization: (sessionId) =>
+    invoke("cancel_gmail_authorization", { sessionId }),
+  prepareMicrosoftConnection: (input) =>
+    invoke("prepare_microsoft_connection", { input }),
+  completeMicrosoftConnection: (sessionId) =>
+    invoke("complete_microsoft_connection", { sessionId }),
+  cancelMicrosoftAuthorization: (sessionId) =>
+    invoke("cancel_microsoft_authorization", { sessionId }),
   connectNotionPrivate: (input) =>
     invoke("connect_notion_private", { input }),
   connectObsidianVault: (input) =>

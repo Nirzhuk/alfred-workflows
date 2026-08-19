@@ -159,6 +159,29 @@ export type GitHubDevicePollResult =
   | { status: "pending"; retryAfterSeconds: number }
   | { status: "connected"; connection: AppConnection };
 
+/** Google native-app OAuth attempt. The URL opens in the system browser and
+ * never contains a client secret. */
+export type GmailAuthorizationStarted = {
+  sessionId: string;
+  authorizationUrl: string;
+  expiresAt: string;
+};
+
+export type MicrosoftPrepareInput = {
+  sendMail?: boolean;
+  readMail?: boolean;
+  calendar?: boolean;
+  reconnectConnectionId?: string | null;
+};
+
+/** Microsoft public-client OAuth attempt. The URL opens in the system browser
+ * and never contains a client secret. */
+export type MicrosoftAuthorizationStarted = {
+  sessionId: string;
+  authorizationUrl: string;
+  expiresAt: string;
+};
+
 export type TelegramPrepareInput = {
   botToken: string;
 };

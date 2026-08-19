@@ -17,6 +17,7 @@
 - **Depends on**: Plans 008, 009; Plan 010 for events; Plan 011 for webhooks
 - **Category**: integration
 - **Planned at**: 2026-08-11
+- **Status**: IN PROGRESS (native PKCE + actions + local delta events green; Graph webhooks gated on 011)
 
 ## Product outcome
 
@@ -180,12 +181,12 @@ local vs relay events behave. Include an admin-facing permission table.
 
 ## Done criteria
 
-- [ ] Native PKCE works without a desktop client secret.
-- [ ] Permissions are incremental and capability-specific.
-- [ ] Mail/calendar actions run through generic `appAction`.
-- [ ] Full bodies/attachments are excluded unless explicitly fetched and bounded.
-- [ ] Local events disclose open-app behavior; relay webhooks are separately gated.
-- [ ] Disconnect/reconnect and enterprise policy failures are actionable.
+- [x] Native PKCE works without a desktop client secret.
+- [x] Permissions are incremental and capability-specific.
+- [x] Mail/calendar actions run through generic `appAction`.
+- [x] Full bodies/attachments are excluded unless explicitly fetched and bounded.
+- [x] Local events disclose open-app behavior; relay webhooks are separately gated.
+- [x] Disconnect/reconnect and enterprise policy failures are actionable.
 
 ## STOP conditions
 
