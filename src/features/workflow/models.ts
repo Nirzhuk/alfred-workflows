@@ -25,10 +25,10 @@ export const FALLBACK_PROVIDER_MODELS: ProviderModels[] = [
     source: "fallback",
     available: false,
     models: [
-      { id: "sonnet", label: "sonnet", description: "" },
-      { id: "opus", label: "opus", description: "" },
-      { id: "haiku", label: "haiku", description: "" },
-      { id: "fable", label: "fable", description: "" },
+      { id: "sonnet", label: "Sonnet 5", description: "" },
+      { id: "opus", label: "Opus 5", description: "" },
+      { id: "haiku", label: "Haiku 4.5", description: "" },
+      { id: "fable", label: "Fable 5", description: "" },
     ],
   },
   {

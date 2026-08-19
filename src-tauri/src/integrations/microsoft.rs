@@ -10,13 +10,14 @@
 use super::actions::{
     ActionArtifact, ActionCancellation, ActionDescriptor, ActionError, ActionErrorCode,
     ActionExecutor, ActionFieldDescriptor, ActionFieldKind, ActionFuture, ActionLimits,
-    ActionRegistry, ActionResourceItem, ActionResourcePage, ActionResourcesFuture,
-    ActionResult, TokenAccessCapability, ValidatedActionRequest,
+    ActionRegistry, ActionResourceItem, ActionResourcePage, ActionResourcesFuture, ActionResult,
+    TokenAccessCapability, ValidatedActionRequest,
 };
 use super::events::{
     AppEventAdapter, AppEventBatch, AppEventCancellation, AppEventDeliveryMode, AppEventDescriptor,
     AppEventError, AppEventErrorCode, AppEventFuture, AppEventRegistry, AppEventResourceItem,
-    AppEventResourcePage, AppTriggerConfig, NormalizedAppEvent, NORMALIZED_APP_EVENT_SCHEMA_VERSION,
+    AppEventResourcePage, AppTriggerConfig, NormalizedAppEvent,
+    NORMALIZED_APP_EVENT_SCHEMA_VERSION,
 };
 use super::models::{
     canonical_identity_key, AppConnection, AppConnectionDto, IntegrationCommandError,
@@ -139,9 +140,9 @@ fn valid_tenant_guid(value: &str) -> bool {
     let mut parts = value.split('-');
     let lengths = [8, 4, 4, 4, 12];
     lengths.into_iter().all(|length| {
-        parts
-            .next()
-            .is_some_and(|part| part.len() == length && part.bytes().all(|byte| byte.is_ascii_hexdigit()))
+        parts.next().is_some_and(|part| {
+            part.len() == length && part.bytes().all(|byte| byte.is_ascii_hexdigit())
+        })
     }) && parts.next().is_none()
 }
 
@@ -187,10 +188,16 @@ impl MicrosoftService {
             None
         };
         let scopes = requested_scopes(&input, existing.as_ref());
-        let upgrading = existing
-            .as_ref()
-            .is_some_and(|connection| scopes.iter().any(|scope| !connection.scopes.contains(scope)));
-        let prompt = if upgrading { "consent" } else { "select_account" };
+        let upgrading = existing.as_ref().is_some_and(|connection| {
+            scopes
+                .iter()
+                .any(|scope| !connection.scopes.contains(scope))
+        });
+        let prompt = if upgrading {
+            "consent"
+        } else {
+            "select_account"
+        };
         let config = NativeOAuthConfig {
             authorization_endpoint: format!(
                 "{}/{}/oauth2/v2.0/authorize",
@@ -505,8 +512,15 @@ impl MicrosoftService {
             .map_err(|_| ActionError::new(ActionErrorCode::InvalidInput))?
             .claims;
         if claims.nonce.as_deref() != Some(nonce)
-            || claims.tid.as_deref().is_none_or(|tid| !valid_tenant_guid(tid) && tid != MSA_TENANT)
-            || claims.oid.as_deref().unwrap_or(claims.sub.as_str()).is_empty()
+            || claims
+                .tid
+                .as_deref()
+                .is_none_or(|tid| !valid_tenant_guid(tid) && tid != MSA_TENANT)
+            || claims
+                .oid
+                .as_deref()
+                .unwrap_or(claims.sub.as_str())
+                .is_empty()
         {
             return Err(ActionError::new(ActionErrorCode::InvalidInput));
         }
@@ -525,8 +539,11 @@ impl MicrosoftService {
             .into_iter()
             .find(|key| key.kid.as_deref() == Some(kid) && key.kty == "RSA")
             .ok_or_else(|| ActionError::new(ActionErrorCode::InvalidInput))?;
-        DecodingKey::from_rsa_components(key.n.as_deref().unwrap_or_default(), key.e.as_deref().unwrap_or_default())
-            .map_err(|_| ActionError::new(ActionErrorCode::InvalidInput))
+        DecodingKey::from_rsa_components(
+            key.n.as_deref().unwrap_or_default(),
+            key.e.as_deref().unwrap_or_default(),
+        )
+        .map_err(|_| ActionError::new(ActionErrorCode::InvalidInput))
     }
 
     async fn load_graph_identity(
@@ -541,7 +558,11 @@ impl MicrosoftService {
             .unwrap_or_else(|| claims.sub.clone());
         let tenant_id = claims.tid.clone().unwrap_or_default();
         let profile: Result<GraphUser, ActionError> = self
-            .get_json(token, "/me", &[("$select", "id,displayName,userPrincipalName,mail")])
+            .get_json(
+                token,
+                "/me",
+                &[("$select", "id,displayName,userPrincipalName,mail")],
+            )
             .await;
         let profile = profile.map_err(map_connect_action_error)?;
         if !profile.id.is_empty() && profile.id != object_id {
@@ -882,7 +903,9 @@ impl RefreshHandler for MicrosoftRefreshHandler {
                     .as_deref()
                     .is_some_and(|value| value.eq_ignore_ascii_case("bearer"))
             {
-                return Err(ProviderRefreshError::retryable("microsoft_invalid_response"));
+                return Err(ProviderRefreshError::retryable(
+                    "microsoft_invalid_response",
+                ));
             }
             credential.access_token = access_token;
             credential.refresh_token = response
@@ -897,7 +920,10 @@ impl RefreshHandler for MicrosoftRefreshHandler {
     }
 }
 
-fn requested_scopes(input: &MicrosoftPrepareInput, existing: Option<&AppConnection>) -> Vec<String> {
+fn requested_scopes(
+    input: &MicrosoftPrepareInput,
+    existing: Option<&AppConnection>,
+) -> Vec<String> {
     let mut scopes: HashSet<String> = IDENTITY_SCOPES
         .iter()
         .map(|scope| (*scope).to_owned())
@@ -947,9 +973,20 @@ fn action_descriptors() -> Vec<ActionDescriptor> {
             label: "Send Outlook email".into(),
             description: "Send email from the connected Microsoft account.".into(),
             fields: vec![
-                text_field("to", "To", "Comma-separated recipient addresses.", true, true),
+                text_field(
+                    "to",
+                    "To",
+                    "Comma-separated recipient addresses.",
+                    true,
+                    true,
+                ),
                 text_field("subject", "Subject", "Email subject line.", true, true),
-                textarea_field("body", "Body", "Email body. HTML is escaped unless enabled below.", true),
+                textarea_field(
+                    "body",
+                    "Body",
+                    "Email body. HTML is escaped unless enabled below.",
+                    true,
+                ),
                 boolean_field(
                     "html",
                     "Send as HTML",
@@ -984,7 +1021,9 @@ fn action_descriptors() -> Vec<ActionDescriptor> {
             provider_id: "microsoft".into(),
             action_id: "microsoft.get_mail".into(),
             label: "Get Outlook message".into(),
-            description: "Fetch bounded message metadata and a preview. Attachments are never returned.".into(),
+            description:
+                "Fetch bounded message metadata and a preview. Attachments are never returned."
+                    .into(),
             fields: vec![text_field(
                 "message_id",
                 "Message ID",
@@ -1173,7 +1212,12 @@ fn text_field(
     }
 }
 
-fn textarea_field(key: &str, label: &str, description: &str, required: bool) -> ActionFieldDescriptor {
+fn textarea_field(
+    key: &str,
+    label: &str,
+    description: &str,
+    required: bool,
+) -> ActionFieldDescriptor {
     ActionFieldDescriptor {
         key: key.into(),
         label: label.into(),
@@ -1188,7 +1232,12 @@ fn textarea_field(key: &str, label: &str, description: &str, required: bool) -> 
     }
 }
 
-fn boolean_field(key: &str, label: &str, description: &str, default: bool) -> ActionFieldDescriptor {
+fn boolean_field(
+    key: &str,
+    label: &str,
+    description: &str,
+    default: bool,
+) -> ActionFieldDescriptor {
     ActionFieldDescriptor {
         key: key.into(),
         label: label.into(),
@@ -1274,7 +1323,8 @@ impl ActionExecutor for MicrosoftService {
                                 id: folder.id,
                             })
                             .filter(|item| {
-                                needle.is_empty() || item.label.to_ascii_lowercase().contains(&needle)
+                                needle.is_empty()
+                                    || item.label.to_ascii_lowercase().contains(&needle)
                             })
                             .take(50)
                             .collect(),
@@ -1303,7 +1353,8 @@ impl ActionExecutor for MicrosoftService {
                                 id: calendar.id,
                             })
                             .filter(|item| {
-                                needle.is_empty() || item.label.to_ascii_lowercase().contains(&needle)
+                                needle.is_empty()
+                                    || item.label.to_ascii_lowercase().contains(&needle)
                             })
                             .take(50)
                             .collect(),
@@ -1736,7 +1787,10 @@ impl MicrosoftService {
             if pages > MAX_DELTA_PAGES {
                 break;
             }
-            let mut query = vec![("$select", "id,subject,start,end,organizer,webLink,lastModifiedDateTime")];
+            let mut query = vec![(
+                "$select",
+                "id,subject,start,end,organizer,webLink,lastModifiedDateTime",
+            )];
             if let Some(token) = state.token.as_deref() {
                 query.push((state.token_kind.as_str(), token));
             }
@@ -1912,13 +1966,18 @@ fn normalize_mail_event(
         .get("subject")
         .and_then(Value::as_str)
         .unwrap_or_default();
-    if sender_contains.is_some_and(|needle| !sender.to_ascii_lowercase().contains(&needle.to_ascii_lowercase()))
-    {
+    if sender_contains.is_some_and(|needle| {
+        !sender
+            .to_ascii_lowercase()
+            .contains(&needle.to_ascii_lowercase())
+    }) {
         return None;
     }
-    if subject_contains
-        .is_some_and(|needle| !subject.to_ascii_lowercase().contains(&needle.to_ascii_lowercase()))
-    {
+    if subject_contains.is_some_and(|needle| {
+        !subject
+            .to_ascii_lowercase()
+            .contains(&needle.to_ascii_lowercase())
+    }) {
         return None;
     }
     let received = summary.get("receivedAt")?.as_str()?.to_owned();
@@ -1926,11 +1985,18 @@ fn normalize_mail_event(
         .get("senderName")
         .and_then(Value::as_str)
         .filter(|value| !value.is_empty())
-        .or(if sender.is_empty() { None } else { Some(sender) })
+        .or(if sender.is_empty() {
+            None
+        } else {
+            Some(sender)
+        })
         .map(str::to_owned);
     let mut attributes = BTreeMap::from([
         ("folder".into(), Value::String(folder.into())),
-        ("isRead".into(), Value::Bool(message.is_read.unwrap_or(false))),
+        (
+            "isRead".into(),
+            Value::Bool(message.is_read.unwrap_or(false)),
+        ),
         ("includePreview".into(), Value::Bool(include_preview)),
     ]);
     if !sender.is_empty() {
@@ -1981,15 +2047,17 @@ fn normalize_calendar_event(
         .as_deref()
         .map(|value| bounded(value, MAX_SUBJECT_CHARS))
         .unwrap_or_default();
-    if subject_contains
-        .is_some_and(|needle| !subject.to_ascii_lowercase().contains(&needle.to_ascii_lowercase()))
-    {
+    if subject_contains.is_some_and(|needle| {
+        !subject
+            .to_ascii_lowercase()
+            .contains(&needle.to_ascii_lowercase())
+    }) {
         return None;
     }
-    let occurred = event
-        .last_modified_date_time
-        .as_deref()
-        .or(event.start.as_ref().and_then(|value| value.date_time.as_deref()))?;
+    let occurred = event.last_modified_date_time.as_deref().or(event
+        .start
+        .as_ref()
+        .and_then(|value| value.date_time.as_deref()))?;
     let occurred_at = DateTime::parse_from_rfc3339(occurred)
         .ok()
         .map(|value| value.to_rfc3339())
@@ -2157,7 +2225,10 @@ fn required_graph_id(input: &BTreeMap<String, Value>, key: &str) -> Result<Strin
     optional_graph_id(input, key)?.ok_or_else(|| ActionError::new(ActionErrorCode::InvalidInput))
 }
 
-fn optional_graph_id(input: &BTreeMap<String, Value>, key: &str) -> Result<Option<String>, ActionError> {
+fn optional_graph_id(
+    input: &BTreeMap<String, Value>,
+    key: &str,
+) -> Result<Option<String>, ActionError> {
     let value = input
         .get(key)
         .and_then(Value::as_str)
@@ -2612,7 +2683,11 @@ B7yVX3VgB0sXp9JXTDisdK+irll+cHuW5WnU1QvtNlOy6TQ0lTHcZO2PeArGIRe/
             external_account_id: Some(TEST_OID.into()),
             external_tenant_id: Some(TEST_TID.into()),
             connection_mode: "native_oauth".into(),
-            identity_key: canonical_identity_key("microsoft", "native_oauth", &[TEST_TID, TEST_OID]),
+            identity_key: canonical_identity_key(
+                "microsoft",
+                "native_oauth",
+                &[TEST_TID, TEST_OID],
+            ),
             scopes: vec![
                 MAIL_SEND_SCOPE.into(),
                 MAIL_READ_SCOPE.into(),
@@ -2723,10 +2798,9 @@ B7yVX3VgB0sXp9JXTDisdK+irll+cHuW5WnU1QvtNlOy6TQ0lTHcZO2PeArGIRe/
             descriptor.provider_id == "microsoft"
                 && descriptor.fields.iter().all(|field| {
                     !field.secret
-                        && field
-                            .key
-                            .bytes()
-                            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
+                        && field.key.bytes().all(|byte| {
+                            byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_'
+                        })
                 })
         }));
         assert!(descriptors.iter().any(|descriptor| {
@@ -2771,12 +2845,10 @@ B7yVX3VgB0sXp9JXTDisdK+irll+cHuW5WnU1QvtNlOy6TQ0lTHcZO2PeArGIRe/
             "America/New_York"
         )
         .is_err());
-        assert!(validate_event_window(
-            "2026-04-15T09:00:00",
-            "2026-04-15T10:00:00",
-            "Not/AZone"
-        )
-        .is_err());
+        assert!(
+            validate_event_window("2026-04-15T09:00:00", "2026-04-15T10:00:00", "Not/AZone")
+                .is_err()
+        );
     }
 
     #[test]
@@ -2814,7 +2886,10 @@ B7yVX3VgB0sXp9JXTDisdK+irll+cHuW5WnU1QvtNlOy6TQ0lTHcZO2PeArGIRe/
             let mut token_request = server.recv().expect("token");
             assert!(token_request.url().ends_with("/oauth2/v2.0/token"));
             let mut body = String::new();
-            token_request.as_reader().read_to_string(&mut body).expect("body");
+            token_request
+                .as_reader()
+                .read_to_string(&mut body)
+                .expect("body");
             assert!(body.contains("grant_type=authorization_code"));
             assert!(body.contains("code_verifier="));
             assert!(!body.contains("client_secret"));
@@ -2857,7 +2932,8 @@ B7yVX3VgB0sXp9JXTDisdK+irll+cHuW5WnU1QvtNlOy6TQ0lTHcZO2PeArGIRe/
             .query_pairs()
             .any(|(key, value)| key == "code_challenge_method" && value == "S256"));
         assert!(url.query_pairs().any(|(key, _)| key == "nonce"));
-        *nonce_slot.lock().expect("nonce") = Some(query_value(&prepared.authorization_url, "nonce"));
+        *nonce_slot.lock().expect("nonce") =
+            Some(query_value(&prepared.authorization_url, "nonce"));
         let session_id = prepared.session_id.clone();
         let callback_url = prepared.authorization_url.clone();
         let waiter = std::thread::spawn(move || send_callback(&callback_url, "authorization-code"));
@@ -2872,10 +2948,17 @@ B7yVX3VgB0sXp9JXTDisdK+irll+cHuW5WnU1QvtNlOy6TQ0lTHcZO2PeArGIRe/
         assert_eq!(result.display_name.as_deref(), Some("Ada Lovelace"));
         assert_eq!(result.external_tenant_id.as_deref(), Some(TEST_TID));
         assert!(result.scopes.contains(&MAIL_SEND_SCOPE.to_string()));
-        let saved = db.list_app_connections().expect("connections").pop().expect("saved");
+        let saved = db
+            .list_app_connections()
+            .expect("connections")
+            .pop()
+            .expect("saved");
         let credential = store.get(&saved.credential_ref).expect("credential");
         assert_eq!(credential.access_token, "ms-access-fixture");
-        assert_eq!(credential.refresh_token.as_deref(), Some("ms-refresh-fixture"));
+        assert_eq!(
+            credential.refresh_token.as_deref(),
+            Some("ms-refresh-fixture")
+        );
         let serialized = serde_json::to_string(&result).expect("dto");
         assert!(!serialized.contains("ms-access-fixture"));
         assert!(!serialized.contains("ms-refresh-fixture"));
@@ -2963,9 +3046,10 @@ B7yVX3VgB0sXp9JXTDisdK+irll+cHuW5WnU1QvtNlOy6TQ0lTHcZO2PeArGIRe/
             send.as_reader().read_to_string(&mut body).expect("body");
             assert!(!body.contains("ms-access-fixture"));
             assert!(body.contains("&lt;script&gt;"));
-            send.respond(TinyResponse::empty(202).with_header(
-                TinyHeader::from_bytes("request-id", "req-send-1").expect("id"),
-            ))
+            send.respond(
+                TinyResponse::empty(202)
+                    .with_header(TinyHeader::from_bytes("request-id", "req-send-1").expect("id")),
+            )
             .expect("send response");
         });
         let service = test_service(format!("http://127.0.0.1:{port}"));
@@ -3038,9 +3122,8 @@ B7yVX3VgB0sXp9JXTDisdK+irll+cHuW5WnU1QvtNlOy6TQ0lTHcZO2PeArGIRe/
             let limited = server.recv().expect("429");
             limited
                 .respond(
-                    TinyResponse::empty(429).with_header(
-                        TinyHeader::from_bytes("Retry-After", "12").expect("retry"),
-                    ),
+                    TinyResponse::empty(429)
+                        .with_header(TinyHeader::from_bytes("Retry-After", "12").expect("retry")),
                 )
                 .expect("429");
         });
@@ -3183,7 +3266,10 @@ B7yVX3VgB0sXp9JXTDisdK+irll+cHuW5WnU1QvtNlOy6TQ0lTHcZO2PeArGIRe/
                 )
                 .expect("first");
             let second = server.recv().expect("second delta");
-            assert!(second.url().contains("%24deltatoken=token-1") || second.url().contains("$deltatoken=token-1"));
+            assert!(
+                second.url().contains("%24deltatoken=token-1")
+                    || second.url().contains("$deltatoken=token-1")
+            );
             second
                 .respond(
                     TinyResponse::from_string(
@@ -3241,4 +3327,3 @@ B7yVX3VgB0sXp9JXTDisdK+irll+cHuW5WnU1QvtNlOy6TQ0lTHcZO2PeArGIRe/
         assert!(bounded_single_line(&input, "subject", 40).is_err());
     }
 }
-

@@ -108,6 +108,86 @@ describe("design-system foundations", () => {
       /^\s*border-radius:\s*(?:[1-9]\d*px|0?\.\d+rem|50%)/m,
     );
   });
+
+  test("routes type and spacing decisions through tokens", () => {
+    // A literal here is drift, not a decision: values like 0.72rem (11.5px)
+    // and 0.45rem (7.2px) sit between steps, so the UI grows a private scale
+    // that no token describes. Unique geometry stays literal but must say so
+    // with a `geometry:` comment on the line above.
+    const lines = css.split("\n");
+    const offenders = (label: string, pattern: RegExp) =>
+      lines
+        .map((line, index) => ({ line, index }))
+        .filter(
+          ({ line, index }) =>
+            pattern.test(line) && !/geometry:/.test(lines[index - 1] ?? ""),
+        )
+        .map(({ line, index }) => `${label} src/App.css:${index + 1}: ${line.trim()}`);
+
+    const found = [
+      ...offenders("type", /^\s*font-size:\s*[0-9.]+(rem|px|em)/),
+      // The `font:` shorthand sets size and family at once, so it slips past a
+      // font-size check while doing the same damage. Only `font: inherit`.
+      ...offenders("type", /^\s*font:(?!\s*inherit\s*;)/),
+      ...offenders(
+        "spacing",
+        /^\s*(padding|padding-\w+|margin|margin-\w+|gap|row-gap|column-gap):\s*[^;]*(?<![-\w.])[0-9.]+(rem|px)/,
+      ),
+    ];
+    expect(found).toEqual([]);
+  });
+
+  test("fills come from the surface role scale, not a hand-picked color", () => {
+    // Fills are chosen by what an element sits ON. A raw color here is how a
+    // control ends up brighter than its own card: the value looks fine alone
+    // and wrong the moment it is stacked.
+    const roles = [
+      "--surface-panel",
+      "--surface-inset",
+      "--surface-card",
+      "--surface-raised",
+      "--surface",
+    ];
+    for (const role of roles) {
+      expect(cssBlock(":root")).toContain(`${role}: `);
+    }
+
+    // One definition per role per theme — the sprawl this scale replaced had
+    // three near-identical alphas all meaning "raised".
+    for (const role of roles) {
+      const defined = [...css.matchAll(new RegExp(`^\\s*${role}: `, "gm"))];
+      expect([role, defined.length]).toEqual([role, 2]);
+    }
+
+    // Retired names must not come back.
+    for (const dead of [
+      "--surface-soft",
+      "--surface-strong",
+      "--surface-glass",
+      "--surface-faint",
+      "--surface-muted",
+      "--panel-solid",
+      "--panel-2",
+    ]) {
+      expect([dead, css.includes(dead)]).toEqual([dead, false]);
+    }
+
+    // Raw color fills outside the token blocks. A fill that genuinely must not
+    // follow the theme (a scannable QR plate, an always-white logo tile) says
+    // so with a `theme-exempt:` comment, the same escape hatch as `geometry:`.
+    const lines = css.split("\n");
+    const rawFills = lines
+      .map((line, index) => ({ line, index }))
+      .filter(
+        ({ line, index }) =>
+          /^\s*background(-color)?:\s*(#|rgba?\()/.test(line) &&
+          !/theme-exempt:/.test(
+            lines.slice(Math.max(0, index - 4), index).join("\n"),
+          ),
+      )
+      .map(({ line, index }) => `src/App.css:${index + 1}: ${line.trim()}`);
+    expect(rawFills).toEqual([]);
+  });
 });
 
 describe("shared component contracts", () => {
@@ -115,15 +195,19 @@ describe("shared component contracts", () => {
     for (const declaration of [
       "--sidebar-item-font-size: var(--text-md);",
       "--sidebar-item-font-weight: var(--font-weight-regular);",
-      "--sidebar-item-color: var(--ink);",
+      "--sidebar-item-color: color-mix(in srgb, var(--ink) 60%, var(--muted));",
       "--sidebar-icon-size: var(--icon-size-compact);",
       "--sidebar-section-font-size: var(--text-lg);",
-      "--sidebar-section-font-weight: var(--font-weight-semibold);",
+      "--sidebar-section-font-weight: var(--font-weight-regular);",
       "--sidebar-item-min-height: var(--control-height-default);",
       "--sidebar-item-stack-gap: 2px;",
     ]) {
       expect(css).toContain(declaration);
     }
+
+    // Navigation stays quiet: item ink is softened off full --ink.
+    expect(css).not.toContain("--sidebar-item-color: var(--ink);");
+    expect(css).toContain("--sidebar-section-color: color-mix(");
 
     for (const selector of [".sidebar-nav-item", ".settings-sidebar-item"]) {
       const block = cssBlock(selector);
@@ -147,6 +231,43 @@ describe("shared component contracts", () => {
       const block = cssBlock(selector);
       expect(block).toContain("font-size: var(--sidebar-section-font-size)");
       expect(block).toContain("font-weight: var(--sidebar-section-font-weight)");
+    }
+  });
+
+  test("quiet hover, pressed, and selected states share one neutral scale", () => {
+    // The scale itself: transparent (tints the panel beneath rather than
+    // painting an opaque tile) and mixed against --ink so it inverts by theme.
+    for (const token of [
+      "--surface-hover",
+      "--surface-selected",
+      "--surface-pressed",
+    ]) {
+      expect(css).toContain(`${token}: color-mix(in srgb, var(--ink)`);
+      expect(cssBlock(":root")).toContain(`${token}: color-mix`);
+    }
+
+    // Every borderless row, nav item, ghost icon button, and list row consumes
+    // the scale. A feature-local wash here is the drift this test exists to
+    // catch: it looks fine on one panel and invisible or heavy on the next.
+    for (const selector of [
+      ".sidebar-nav-item:hover",
+      ".sidebar-nav-item.is-active",
+      ".settings-sidebar-item:hover:not(:disabled)",
+      ".settings-sidebar-item.is-active",
+      ".settings-sidebar-back:hover:not(:disabled)",
+      ".workflow-folder-options:hover:not(:disabled)",
+      ".integration-provider-row:hover",
+      ".ui-menu-item:hover",
+      ".theme-switch-option:hover:not(:disabled)",
+      ".skill-picker-row:hover",
+      ".memory-picker-row:hover",
+    ]) {
+      const block = cssBlock(selector);
+      expect(block).toMatch(
+        /background: var\(--surface-(hover|selected|pressed)\)/,
+      );
+      // Hover is never an accent tint; accent marks a real selection.
+      expect(block).not.toContain("background: var(--accent");
     }
   });
 

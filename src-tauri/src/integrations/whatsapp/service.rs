@@ -9,9 +9,11 @@ use std::sync::{Arc, Mutex};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
-use super::pairing::{PairedAccount, PairingError, PairingPaths, PairingSession, PairingState, QrSink};
-use super::provider::{self, RISK_ACKNOWLEDGEMENT_VERSION};
 use super::owner::{RuntimeStatus, RuntimeTarget, WhatsAppRuntimeOwner};
+use super::pairing::{
+    PairedAccount, PairingError, PairingPaths, PairingSession, PairingState, QrSink,
+};
+use super::provider::{self, RISK_ACKNOWLEDGEMENT_VERSION};
 use super::runtime::{RuntimeLauncher, WhatsAppLauncher};
 use crate::db::Db;
 use crate::integrations::models::{
@@ -207,7 +209,13 @@ impl WhatsAppService {
 
         let already_linked = db
             .list_app_connections()
-            .map_err(|_| IntegrationCommandError::new("storage_unavailable", "Alfred could not read its connections.", true))?
+            .map_err(|_| {
+                IntegrationCommandError::new(
+                    "storage_unavailable",
+                    "Alfred could not read its connections.",
+                    true,
+                )
+            })?
             .iter()
             .any(|connection| connection.provider_id == provider::PROVIDER_ID);
 
@@ -249,9 +257,9 @@ impl WhatsAppService {
         &self,
         body: &str,
     ) -> Result<WhatsAppTestSendDto, IntegrationCommandError> {
-        let session = self.current().ok_or_else(|| {
-            command_error(&PairingError::InvalidState)
-        })?;
+        let session = self
+            .current()
+            .ok_or_else(|| command_error(&PairingError::InvalidState))?;
 
         let receipt = session
             .send_test(body)

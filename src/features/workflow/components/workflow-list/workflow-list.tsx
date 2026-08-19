@@ -21,6 +21,8 @@ type Props = {
   folders: WorkflowFolder[];
   activeWorkflowId: string | null;
   activeLiveNodes?: WorkflowNode[];
+  /** Unsaved edits belong to the active workflow only. */
+  activeIsDirty?: boolean;
   schedules: Schedule[];
   runningProviderByWorkflowId?: Record<string, AgentProviderId | null>;
   onSelect: (id: string) => void;
@@ -118,6 +120,7 @@ export function WorkflowList({
   folders,
   activeWorkflowId,
   activeLiveNodes,
+  activeIsDirty,
   schedules,
   runningProviderByWorkflowId = {},
   onSelect,
@@ -314,6 +317,7 @@ export function WorkflowList({
           workflow.id === activeWorkflowId ? activeLiveNodes : undefined
         }
         active={workflow.id === activeWorkflowId}
+        dirty={workflow.id === activeWorkflowId && Boolean(activeIsDirty)}
         scheduleLabel={scheduleLabels.get(workflow.id)}
         running={running}
         runningProvider={runningProviderByWorkflowId[workflow.id] ?? null}
@@ -447,6 +451,10 @@ export function WorkflowList({
                     : undefined
                 }
                 active={draggingWorkflow.id === activeWorkflowId}
+                dirty={
+                  draggingWorkflow.id === activeWorkflowId &&
+                  Boolean(activeIsDirty)
+                }
                 scheduleLabel={scheduleLabels.get(draggingWorkflow.id)}
                 running={Object.prototype.hasOwnProperty.call(
                   runningProviderByWorkflowId,

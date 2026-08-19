@@ -17,13 +17,14 @@ use super::models::{
     canonical_identity_key, AppConnection, AppConnectionDto, IntegrationCommandError,
     UpsertAppConnection,
 };
-use super::oauth_native::{
-    NativeOAuthAttempt, NativeOAuthConfig, NativeOAuthError,
-};
+use super::oauth_native::{NativeOAuthAttempt, NativeOAuthConfig, NativeOAuthError};
 use super::refresh::{ProviderRefreshError, RefreshFuture, RefreshHandler};
 use super::token_store::{CredentialEnvelope, TokenStore, TokenStoreError};
 use crate::db::Db;
-use base64::{engine::general_purpose::{STANDARD as BASE64_STANDARD, URL_SAFE_NO_PAD}, Engine as _};
+use base64::{
+    engine::general_purpose::{STANDARD as BASE64_STANDARD, URL_SAFE_NO_PAD},
+    Engine as _,
+};
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use futures_util::StreamExt;
 use reqwest::{Client, Method, RequestBuilder, Response, StatusCode};
@@ -57,10 +58,7 @@ pub fn is_configured() -> bool {
     option_env!("ALFRED_GMAIL_CLIENT_ID").is_some_and(|value| !value.trim().is_empty())
 }
 
-pub fn register(
-    actions: &ActionRegistry,
-    service: Arc<GmailService>,
-) -> Result<(), ActionError> {
+pub fn register(actions: &ActionRegistry, service: Arc<GmailService>) -> Result<(), ActionError> {
     for descriptor in action_descriptors() {
         actions.register(descriptor, ActionLimits::default(), service.clone())?;
     }
@@ -116,13 +114,7 @@ impl GmailService {
                 false,
             )
         })?;
-        if self
-            .sessions
-            .lock()
-            .map_err(|_| gmail_state_error())?
-            .len()
-            >= MAX_PAIRING_SESSIONS
-        {
+        if self.sessions.lock().map_err(|_| gmail_state_error())?.len() >= MAX_PAIRING_SESSIONS {
             return Err(command_error(
                 "gmail_pairing_busy",
                 "Too many Gmail authorization attempts are active. Close another attempt and try again.",
@@ -132,7 +124,10 @@ impl GmailService {
         let config = NativeOAuthConfig {
             authorization_endpoint: self.auth_endpoint.clone(),
             client_id: client_id.to_owned(),
-            scopes: REQUESTED_SCOPES.iter().map(|scope| (*scope).to_owned()).collect(),
+            scopes: REQUESTED_SCOPES
+                .iter()
+                .map(|scope| (*scope).to_owned())
+                .collect(),
             extra_params: BTreeMap::from([
                 ("access_type".into(), "offline".into()),
                 ("prompt".into(), "consent".into()),
@@ -144,9 +139,9 @@ impl GmailService {
         };
         let attempt = NativeOAuthAttempt::start(config).map_err(map_native_oauth_error)?;
         let authorization_url = attempt.authorization_url().to_string();
-        let expires_at =
-            (Utc::now() + ChronoDuration::seconds(GMAIL_OAUTH_TIMEOUT.as_secs() as i64))
-                .to_rfc3339();
+        let expires_at = (Utc::now()
+            + ChronoDuration::seconds(GMAIL_OAUTH_TIMEOUT.as_secs() as i64))
+        .to_rfc3339();
         let session_id = Uuid::new_v4().to_string();
         self.sessions
             .lock()
@@ -192,12 +187,11 @@ impl GmailService {
     }
 
     pub fn cancel_authorization(&self, session_id: &str) {
-        if let Some(session) = self
-            .sessions
-            .lock()
-            .ok()
-            .and_then(|sessions| sessions.get(session_id).map(|session| session.cancel.clone()))
-        {
+        if let Some(session) = self.sessions.lock().ok().and_then(|sessions| {
+            sessions
+                .get(session_id)
+                .map(|session| session.cancel.clone())
+        }) {
             session.store(true, Ordering::SeqCst);
         }
     }
@@ -251,13 +245,9 @@ impl GmailService {
                 false,
             ));
         }
-        let user: GmailUser = get_json(
-            &self.userinfo_endpoint,
-            access_token.as_str(),
-            &[],
-        )
-        .await
-        .map_err(map_connect_action_error)?;
+        let user: GmailUser = get_json(&self.userinfo_endpoint, access_token.as_str(), &[])
+            .await
+            .map_err(map_connect_action_error)?;
         if user.sub.trim().is_empty()
             || user.sub.len() > 128
             || !valid_email_address(&user.email)
@@ -269,8 +259,7 @@ impl GmailService {
                 false,
             ));
         }
-        let identity_key =
-            canonical_identity_key("gmail", "native_oauth", &[&user.sub]);
+        let identity_key = canonical_identity_key("gmail", "native_oauth", &[&user.sub]);
         let existing = db
             .get_app_connection_by_identity("gmail", "native_oauth", &identity_key)
             .map_err(|_| connection_store_error())?;
@@ -436,10 +425,7 @@ impl RefreshHandler for GmailRefreshHandler {
                 }
                 _ => ProviderRefreshError::retryable("gmail_unavailable"),
             })?;
-            let access_token = response
-                .access_token
-                .trim()
-                .to_owned();
+            let access_token = response.access_token.trim().to_owned();
             if access_token.is_empty()
                 || !response
                     .token_type
@@ -486,13 +472,7 @@ fn action_descriptors() -> Vec<ActionDescriptor> {
                 false,
                 true,
             ),
-            text_field(
-                "subject",
-                "Subject",
-                "Email subject line.",
-                true,
-                true,
-            ),
+            text_field("subject", "Subject", "Email subject line.", true, true),
             textarea_field("body", "Body", "Plain-text email body.", true),
         ],
         required_scopes: vec![GMAIL_SEND_SCOPE.into()],
@@ -522,7 +502,12 @@ fn text_field(
     }
 }
 
-fn textarea_field(key: &str, label: &str, description: &str, required: bool) -> ActionFieldDescriptor {
+fn textarea_field(
+    key: &str,
+    label: &str,
+    description: &str,
+    required: bool,
+) -> ActionFieldDescriptor {
     ActionFieldDescriptor {
         key: key.into(),
         label: label.into(),
@@ -569,7 +554,8 @@ impl ActionExecutor for GmailService {
             if body.trim().is_empty() {
                 return Err(ActionError::new(ActionErrorCode::InvalidInput));
             }
-            let raw = URL_SAFE_NO_PAD.encode(build_raw_message(&from, &to, &cc, &bcc, &subject, &body));
+            let raw =
+                URL_SAFE_NO_PAD.encode(build_raw_message(&from, &to, &cc, &bcc, &subject, &body));
             let (message, _): (GmailSentMessage, _) = self
                 .post_json(
                     token.as_str(),
@@ -630,7 +616,9 @@ fn optional_recipients(
         .map(str::to_owned)
         .collect::<Vec<_>>();
     if recipients.len() > MAX_RECIPIENTS
-        || recipients.iter().any(|recipient| !valid_email_address(recipient))
+        || recipients
+            .iter()
+            .any(|recipient| !valid_email_address(recipient))
     {
         return Err(ActionError::new(ActionErrorCode::InvalidInput));
     }
@@ -681,15 +669,13 @@ fn valid_email_address(value: &str) -> bool {
         && !domain.starts_with('.')
         && !domain.ends_with('.')
         && !domain.contains("..")
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_' | b'+' | b'@'))
+        && value.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_' | b'+' | b'@')
+        })
 }
 
 fn valid_gmail_id(value: &str) -> bool {
-    !value.is_empty()
-        && value.len() <= 128
-        && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+    !value.is_empty() && value.len() <= 128 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
 fn build_raw_message(
@@ -741,7 +727,10 @@ fn encode_subject(subject: &str) -> String {
 
 fn sanitize_granted_scopes(granted: Option<&str>) -> Vec<String> {
     let Some(granted) = granted else {
-        return REQUESTED_SCOPES.iter().map(|scope| (*scope).to_owned()).collect();
+        return REQUESTED_SCOPES
+            .iter()
+            .map(|scope| (*scope).to_owned())
+            .collect();
     };
     let mut scopes = granted
         .split_whitespace()
@@ -751,7 +740,10 @@ fn sanitize_granted_scopes(granted: Option<&str>) -> Vec<String> {
     scopes.sort();
     scopes.dedup();
     if scopes.is_empty() {
-        REQUESTED_SCOPES.iter().map(|scope| (*scope).to_owned()).collect()
+        REQUESTED_SCOPES
+            .iter()
+            .map(|scope| (*scope).to_owned())
+            .collect()
     } else {
         scopes
     }
@@ -854,15 +846,13 @@ async fn parse_gmail_response<T: DeserializeOwned>(
             StatusCode::UNAUTHORIZED => ActionErrorCode::ProviderUnauthorized,
             StatusCode::TOO_MANY_REQUESTS => ActionErrorCode::RateLimited,
             StatusCode::BAD_REQUEST => ActionErrorCode::InvalidInput,
-            StatusCode::FORBIDDEN => {
-                match gmail_error_reason(response).await.as_deref() {
-                    Some("quotaExceeded")
-                    | Some("rateLimitExceeded")
-                    | Some("userRateLimitExceeded")
-                    | Some("dailyLimitExceeded") => ActionErrorCode::RateLimited,
-                    _ => ActionErrorCode::ScopeMissing,
-                }
-            }
+            StatusCode::FORBIDDEN => match gmail_error_reason(response).await.as_deref() {
+                Some("quotaExceeded")
+                | Some("rateLimitExceeded")
+                | Some("userRateLimitExceeded")
+                | Some("dailyLimitExceeded") => ActionErrorCode::RateLimited,
+                _ => ActionErrorCode::ScopeMissing,
+            },
             StatusCode::NOT_FOUND => ActionErrorCode::InvalidInput,
             status if status.is_server_error() && mutation => ActionErrorCode::DeliveryUnknown,
             status if status.is_server_error() => ActionErrorCode::ProviderUnavailable,
@@ -1226,7 +1216,9 @@ mod tests {
         assert!(!valid_email_address("@example.com"));
         assert!(!valid_email_address("no-at-sign"));
         assert!(!valid_email_address("user@nodot"));
-        assert!(!valid_email_address("a\r\nBcc: evil@example.com@example.com"));
+        assert!(!valid_email_address(
+            "a\r\nBcc: evil@example.com@example.com"
+        ));
         assert!(!valid_email_address(&"a".repeat(255)));
         let mut input = BTreeMap::new();
         input.insert(
@@ -1254,10 +1246,7 @@ mod tests {
             Value::String("x".repeat(MAX_SUBJECT_CHARS + 1)),
         );
         assert!(bounded_single_line(&input, "subject", MAX_SUBJECT_CHARS).is_err());
-        input.insert(
-            "body".into(),
-            Value::String("x".repeat(MAX_BODY_CHARS + 1)),
-        );
+        input.insert("body".into(), Value::String("x".repeat(MAX_BODY_CHARS + 1)));
         assert!(bounded_text(&input, "body", MAX_BODY_CHARS).is_err());
     }
 
@@ -1284,7 +1273,10 @@ mod tests {
             assert_eq!(token_request.url(), "/token");
             assert_eq!(token_request.method().as_str(), "POST");
             let mut body = String::new();
-            token_request.as_reader().read_to_string(&mut body).expect("body");
+            token_request
+                .as_reader()
+                .read_to_string(&mut body)
+                .expect("body");
             assert!(body.contains("grant_type=authorization_code"));
             assert!(body.contains("code=authorization-code"));
             assert!(body.contains("code_verifier="));
@@ -1524,9 +1516,7 @@ mod tests {
         let port = server.server_addr().to_ip().expect("address").port();
         let responder = std::thread::spawn(move || {
             let unauthorized = server.recv().expect("unauthorized");
-            unauthorized
-                .respond(TinyResponse::empty(401))
-                .expect("401");
+            unauthorized.respond(TinyResponse::empty(401)).expect("401");
             let scope = server.recv().expect("scope");
             scope
                 .respond(
@@ -1550,9 +1540,8 @@ mod tests {
             let limited = server.recv().expect("limited");
             limited
                 .respond(
-                    TinyResponse::empty(429).with_header(
-                        Header::from_bytes("Retry-After", "9").expect("retry header"),
-                    ),
+                    TinyResponse::empty(429)
+                        .with_header(Header::from_bytes("Retry-After", "9").expect("retry header")),
                 )
                 .expect("429");
         });
@@ -1671,14 +1660,19 @@ mod tests {
         assert!(!serialized.contains("client_secret"));
         assert!(serialized.contains("accounts.google.com"));
         let descriptors = action_descriptors();
-        for field in descriptors.iter().flat_map(|descriptor| descriptor.fields.iter()) {
+        for field in descriptors
+            .iter()
+            .flat_map(|descriptor| descriptor.fields.iter())
+        {
             assert!(!field.secret);
         }
         assert!(descriptors.iter().all(|descriptor| {
-            descriptor
-                .fields
-                .iter()
-                .all(|field| field.default.is_none() || !serde_json::to_string(&field.default).unwrap().contains("token"))
+            descriptor.fields.iter().all(|field| {
+                field.default.is_none()
+                    || !serde_json::to_string(&field.default)
+                        .unwrap()
+                        .contains("token")
+            })
         }));
     }
 }

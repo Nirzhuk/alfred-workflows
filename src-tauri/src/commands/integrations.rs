@@ -184,7 +184,9 @@ pub async fn complete_gmail_connection(
     state: State<'_, IntegrationsState>,
     session_id: String,
 ) -> Result<AppConnectionDto, IntegrationCommandError> {
-    state.complete_gmail_connection(db.inner(), &session_id).await
+    state
+        .complete_gmail_connection(db.inner(), &session_id)
+        .await
 }
 
 #[tauri::command]
@@ -300,9 +302,7 @@ pub async fn complete_whatsapp_pairing(
 /// Cancels an in-flight attempt: stops the runtime, best-effort remote logout,
 /// then deletes the staging store and key. Safe when nothing is running.
 #[tauri::command]
-pub fn whatsapp_runtime_status(
-    state: State<'_, IntegrationsState>,
-) -> WhatsAppRuntimeStatus {
+pub fn whatsapp_runtime_status(state: State<'_, IntegrationsState>) -> WhatsAppRuntimeStatus {
     state.whatsapp.runtime_status()
 }
 

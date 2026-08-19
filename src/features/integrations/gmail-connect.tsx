@@ -1,5 +1,6 @@
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useRef, useState } from "react";
+import { Icon } from "../../components/icon";
 import { Modal, ModalHeader } from "../../components/modal";
 import { ConnectedAppTutorialLayout } from "./components/connected-app-tutorial-layout";
 import { ExternalLinkIcon } from "./components/external-link-icon";
@@ -84,8 +85,13 @@ export function GmailConnect({ onClose }: { onClose: () => void }) {
         title="Connect Gmail"
         titleId="gmail-title"
         actions={
-          <button type="button" className="ghost" onClick={() => void close()}>
-            Close
+          <button
+            type="button"
+            className="ghost modal-close-button"
+            aria-label="Close"
+            onClick={() => void close()}
+          >
+            <Icon name="x" size={16} />
           </button>
         }
       />

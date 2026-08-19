@@ -339,9 +339,7 @@ pub fn run() {
             // Alfred sends nothing while it is not running.
             if let tauri::RunEvent::Exit = event {
                 if let Some(integrations) = app_handle.try_state::<IntegrationsState>() {
-                    tauri::async_runtime::block_on(
-                        integrations.whatsapp.shutdown_runtime(),
-                    );
+                    tauri::async_runtime::block_on(integrations.whatsapp.shutdown_runtime());
                 }
             }
             if let tauri::RunEvent::Reopen { .. } = event {

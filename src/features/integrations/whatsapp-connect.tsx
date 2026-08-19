@@ -1,5 +1,6 @@
 import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Icon } from "../../components/icon";
 import { Modal, ModalHeader } from "../../components/modal";
 import { integrationsApi } from "./api";
 import { useIntegrationsStore } from "./store";
@@ -143,8 +144,13 @@ export function WhatsAppConnect({ onClose }: { onClose: () => void }) {
         title="Connect WhatsApp"
         titleId="whatsapp-title"
         actions={
-          <button type="button" className="ghost" onClick={onClose}>
-            Close
+          <button
+            type="button"
+            className="ghost modal-close-button"
+            aria-label="Close"
+            onClick={onClose}
+          >
+            <Icon name="x" size={16} />
           </button>
         }
       />

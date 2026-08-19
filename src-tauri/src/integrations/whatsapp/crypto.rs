@@ -14,8 +14,8 @@
 use chacha20poly1305::aead::{Aead, Payload};
 use chacha20poly1305::{ChaCha20Poly1305, Key, KeyInit, Nonce};
 use hmac::{Hmac, Mac};
-use rand::RngCore;
 use rand::rngs::OsRng;
+use rand::RngCore;
 use sha2::Sha256;
 use thiserror::Error;
 use zeroize::Zeroize;
@@ -331,7 +331,10 @@ mod tests {
     fn digest_is_namespaced_and_key_bound() {
         let key = StoreKey::generate();
         assert_ne!(key.digest("sessions", JID), key.digest("identities", JID));
-        assert_ne!(key.digest("sessions", JID), StoreKey::generate().digest("sessions", JID));
+        assert_ne!(
+            key.digest("sessions", JID),
+            StoreKey::generate().digest("sessions", JID)
+        );
     }
 
     #[test]

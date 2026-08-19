@@ -259,7 +259,7 @@ jobs:
           codesign --verify --deep --strict --verbose=2 "$mount_point/Alfred.app"
           spctl --assess --type execute --verbose=4 "$mount_point/Alfred.app"
 
-          actual_arch=$(lipo -archs "$mount_point/Alfred.app/Contents/MacOS/workflows-local-agents")
+          actual_arch=$(lipo -archs "$mount_point/Alfred.app/Contents/MacOS/alfred")
           if [ "$actual_arch" != "${{ matrix.expected_arch }}" ]; then
             echo "Expected ${{ matrix.expected_arch }}, found $actual_arch"
             exit 1
@@ -353,7 +353,7 @@ jobs:
             throw "NSIS installer exited with $($install.ExitCode)"
           }
 
-          $executable = Join-Path $env:LOCALAPPDATA 'Alfred\workflows-local-agents.exe'
+          $executable = Join-Path $env:LOCALAPPDATA 'Alfred\alfred.exe'
           if (-not (Test-Path $executable)) {
             throw "Installed executable not found at $executable"
           }

@@ -47,7 +47,7 @@ prerequisites guide.
 
 ```bash
 git clone <alfred-repository-url>
-cd workflows-local-agents
+cd alfred
 bun install --frozen-lockfile
 ```
 

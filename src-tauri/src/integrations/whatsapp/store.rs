@@ -15,20 +15,20 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use bytes::Bytes;
-use rusqlite::{Connection, OptionalExtension, params};
-use serde::Serialize;
+use rusqlite::{params, Connection, OptionalExtension};
 use serde::de::DeserializeOwned;
+use serde::Serialize;
 use wacore::appstate::hash::HashState;
-use wacore::store::Device;
 use wacore::store::error::{Result as StoreResult, StoreError};
 use wacore::store::traits::{
-    AppStateSyncKey, AppSyncStore, DeviceListRecord, DeviceStore, LidPnMappingEntry,
-    MsgSecretEntry, MsgSecretStore, ProtocolStore, SignalStore, TcTokenEntry,
-    merge_msg_secret_expiry, merge_msg_secret_message_ts,
+    merge_msg_secret_expiry, merge_msg_secret_message_ts, AppStateSyncKey, AppSyncStore,
+    DeviceListRecord, DeviceStore, LidPnMappingEntry, MsgSecretEntry, MsgSecretStore,
+    ProtocolStore, SignalStore, TcTokenEntry,
 };
+use wacore::store::Device;
 use wacore_appstate::processor::AppStateMutationMAC;
 
-use super::crypto::{StoreKey, row_aad};
+use super::crypto::{row_aad, StoreKey};
 
 /// Plan 023 caps outbound retry payload retention. The store clamps to this
 /// regardless of what a caller asks for, so no caller can widen the window.
@@ -647,7 +647,10 @@ impl ProtocolStore for EncryptedProtocolStore {
     }
 
     async fn clear_all_sender_key_devices(&self) -> StoreResult<()> {
-        self.with_conn(|conn| conn.execute("DELETE FROM sender_key_devices", []).map(|_| ()))
+        self.with_conn(|conn| {
+            conn.execute("DELETE FROM sender_key_devices", [])
+                .map(|_| ())
+        })
     }
 
     async fn get_lid_mapping(&self, lid: &str) -> StoreResult<Option<LidPnMappingEntry>> {
@@ -861,9 +864,10 @@ impl ProtocolStore for EncryptedProtocolStore {
         message_id: &str,
         payload: &[u8],
     ) -> StoreResult<()> {
-        let k = self
-            .key
-            .digest_parts(ns::SENT_MESSAGE, &[chat_jid.as_bytes(), message_id.as_bytes()]);
+        let k = self.key.digest_parts(
+            ns::SENT_MESSAGE,
+            &[chat_jid.as_bytes(), message_id.as_bytes()],
+        );
         let v = self.seal(ns::SENT_MESSAGE, &k, payload);
         let now = now_secs();
         self.with_conn(|conn| {
@@ -881,9 +885,10 @@ impl ProtocolStore for EncryptedProtocolStore {
         chat_jid: &str,
         message_id: &str,
     ) -> StoreResult<Option<Vec<u8>>> {
-        let k = self
-            .key
-            .digest_parts(ns::SENT_MESSAGE, &[chat_jid.as_bytes(), message_id.as_bytes()]);
+        let k = self.key.digest_parts(
+            ns::SENT_MESSAGE,
+            &[chat_jid.as_bytes(), message_id.as_bytes()],
+        );
         // Atomic take: a retry receipt must never yield the same payload twice.
         let stored: Option<Vec<u8>> = self.with_conn(|conn| {
             let tx = conn.unchecked_transaction()?;
@@ -1197,7 +1202,10 @@ mod tests {
         let store = store();
         let group = "123-456@g.us";
         store
-            .set_sender_key_status(group, &[("a@s.whatsapp.net", true), ("b@s.whatsapp.net", false)])
+            .set_sender_key_status(
+                group,
+                &[("a@s.whatsapp.net", true), ("b@s.whatsapp.net", false)],
+            )
             .await
             .unwrap();
 
@@ -1218,21 +1226,40 @@ mod tests {
         assert_eq!(store.get_sender_key_devices(group).await.unwrap().len(), 1);
 
         store.clear_all_sender_key_devices().await.unwrap();
-        assert!(store.get_sender_key_devices(group).await.unwrap().is_empty());
+        assert!(store
+            .get_sender_key_devices(group)
+            .await
+            .unwrap()
+            .is_empty());
     }
 
     #[tokio::test]
     async fn base_keys_compare_only_on_exact_match() {
         let store = store();
-        store.save_base_key(ADDRESS, "msg-1", b"base").await.unwrap();
+        store
+            .save_base_key(ADDRESS, "msg-1", b"base")
+            .await
+            .unwrap();
 
-        assert!(store.has_same_base_key(ADDRESS, "msg-1", b"base").await.unwrap());
-        assert!(!store.has_same_base_key(ADDRESS, "msg-1", b"other").await.unwrap());
+        assert!(store
+            .has_same_base_key(ADDRESS, "msg-1", b"base")
+            .await
+            .unwrap());
+        assert!(!store
+            .has_same_base_key(ADDRESS, "msg-1", b"other")
+            .await
+            .unwrap());
         // The composite key must not collide across message ids.
-        assert!(!store.has_same_base_key(ADDRESS, "msg-2", b"base").await.unwrap());
+        assert!(!store
+            .has_same_base_key(ADDRESS, "msg-2", b"base")
+            .await
+            .unwrap());
 
         store.delete_base_key(ADDRESS, "msg-1").await.unwrap();
-        assert!(!store.has_same_base_key(ADDRESS, "msg-1", b"base").await.unwrap());
+        assert!(!store
+            .has_same_base_key(ADDRESS, "msg-1", b"base")
+            .await
+            .unwrap());
     }
 
     #[tokio::test]
@@ -1244,11 +1271,19 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            store.take_sent_message(CHAT, "3EB0").await.unwrap().unwrap(),
+            store
+                .take_sent_message(CHAT, "3EB0")
+                .await
+                .unwrap()
+                .unwrap(),
             b"retry-payload".to_vec()
         );
         assert!(
-            store.take_sent_message(CHAT, "3EB0").await.unwrap().is_none(),
+            store
+                .take_sent_message(CHAT, "3EB0")
+                .await
+                .unwrap()
+                .is_none(),
             "a consumed retry payload must never be handed out twice"
         );
     }
@@ -1272,7 +1307,11 @@ mod tests {
         // A caller asking to keep everything (cutoff far in the past) is still
         // clamped to the 24-hour ceiling.
         assert_eq!(store.delete_expired_sent_messages(0).await.unwrap(), 1);
-        assert!(store.take_sent_message(CHAT, "fresh").await.unwrap().is_none());
+        assert!(store
+            .take_sent_message(CHAT, "fresh")
+            .await
+            .unwrap()
+            .is_none());
     }
 
     #[tokio::test]
@@ -1298,7 +1337,10 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(secret, [3u8; 32].to_vec());
-        assert_eq!(message_ts, 90, "a zero parent timestamp must not clobber a known one");
+        assert_eq!(
+            message_ts, 90,
+            "a zero parent timestamp must not clobber a known one"
+        );
 
         assert_eq!(store.delete_expired_msg_secrets(6_000).await.unwrap(), 1);
     }
@@ -1319,13 +1361,11 @@ mod tests {
             .unwrap();
 
         assert_eq!(store.delete_expired_msg_secrets(i64::MAX).await.unwrap(), 0);
-        assert!(
-            store
-                .get_msg_secret(CHAT, CHAT, "forever")
-                .await
-                .unwrap()
-                .is_some()
-        );
+        assert!(store
+            .get_msg_secret(CHAT, CHAT, "forever")
+            .await
+            .unwrap()
+            .is_some());
     }
 
     #[tokio::test]
@@ -1382,22 +1422,18 @@ mod tests {
             Some(vec![4, 5, 6])
         );
         // Collections are independent.
-        assert!(
-            store
-                .get_mutation_mac("critical", &[1, 2, 3])
-                .await
-                .unwrap()
-                .is_none()
-        );
+        assert!(store
+            .get_mutation_mac("critical", &[1, 2, 3])
+            .await
+            .unwrap()
+            .is_none());
 
         store.clear_mutation_macs("regular").await.unwrap();
-        assert!(
-            store
-                .get_mutation_mac("regular", &[1, 2, 3])
-                .await
-                .unwrap()
-                .is_none()
-        );
+        assert!(store
+            .get_mutation_mac("regular", &[1, 2, 3])
+            .await
+            .unwrap()
+            .is_none());
     }
 
     #[tokio::test]
@@ -1442,16 +1478,17 @@ mod tests {
         let store = store();
         // Plan 023 stores no inbound content. The trait defaults must surface an
         // error rather than silently degrading to at-most-once delivery.
-        assert!(
-            store
-                .store_pending_inbound("c", "s", "i", b"body")
-                .await
-                .is_err()
-        );
+        assert!(store
+            .store_pending_inbound("c", "s", "i", b"body")
+            .await
+            .is_err());
         assert!(store.get_pending_inbound("c", "s", "i").await.is_err());
         // The keepalive sweep calls this unconditionally, so it must not error.
         assert_eq!(
-            store.delete_expired_pending_inbound(now_secs()).await.unwrap(),
+            store
+                .delete_expired_pending_inbound(now_secs())
+                .await
+                .unwrap(),
             0
         );
     }
@@ -1461,7 +1498,11 @@ mod tests {
         let store = store();
         store.put_group_metadata("123@g.us", b"blob").await.unwrap();
         assert!(
-            store.get_group_metadata("123@g.us").await.unwrap().is_none(),
+            store
+                .get_group_metadata("123@g.us")
+                .await
+                .unwrap()
+                .is_none(),
             "Plan 023 stores no group metadata"
         );
     }
@@ -1563,7 +1604,10 @@ mod tests {
             let store =
                 EncryptedProtocolStore::open(&path, StoreKey::from_base64(&encoded).unwrap())
                     .unwrap();
-            assert_eq!(store.load_prekey(11).await.unwrap().unwrap(), &b"record"[..]);
+            assert_eq!(
+                store.load_prekey(11).await.unwrap().unwrap(),
+                &b"record"[..]
+            );
         }
 
         cleanup(&dir);
@@ -1593,7 +1637,11 @@ mod tests {
         EncryptedProtocolStore::open(&path, StoreKey::generate()).unwrap();
 
         let mode = std::fs::metadata(&path).unwrap().permissions().mode();
-        assert_eq!(mode & 0o777, 0o600, "protocol store must not be group- or world-readable");
+        assert_eq!(
+            mode & 0o777,
+            0o600,
+            "protocol store must not be group- or world-readable"
+        );
 
         cleanup(&dir);
     }

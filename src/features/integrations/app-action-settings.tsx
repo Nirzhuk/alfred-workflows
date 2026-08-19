@@ -52,6 +52,7 @@ export function AppActionSettings({ data, onUpdate }: Props) {
 
   const replaceData = (next: AppActionNodeData) => {
     onUpdate({
+      label: next.label,
       providerId: next.providerId,
       actionId: next.actionId,
       connectionId: next.connectionId,
@@ -65,28 +66,23 @@ export function AppActionSettings({ data, onUpdate }: Props) {
   return (
     <>
       <label className="field">
-        <span>Label</span>
-        <input
-          type="text"
-          value={data.label}
-          onChange={(event) => onUpdate({ label: event.currentTarget.value })}
-        />
-      </label>
-
-      <label className="field">
         <span>Provider</span>
         <select
           value={data.providerId}
           disabled={loading}
-          onChange={(event) =>
-            replaceData(
-              selectAppActionProvider(
+          onChange={(event) => {
+            const provider = providers.find(
+              (candidate) => candidate.id === event.currentTarget.value,
+            );
+            replaceData({
+              ...selectAppActionProvider(
                 data,
                 event.currentTarget.value,
                 connections,
               ),
-            )
-          }
+              label: provider?.name ?? "",
+            });
+          }}
         >
           <option value="">Choose a provider…</option>
           {providers.map((provider) => (
@@ -147,6 +143,15 @@ export function AppActionSettings({ data, onUpdate }: Props) {
             </option>
           ))}
         </select>
+      </label>
+
+      <label className="field">
+        <span>Label</span>
+        <input
+          type="text"
+          value={data.label}
+          onChange={(event) => onUpdate({ label: event.currentTarget.value })}
+        />
       </label>
 
       {descriptor ? (

@@ -1,4 +1,5 @@
 import { Handle, Position, type NodeProps } from "@xyflow/react";
+import type { ReactNode } from "react";
 import { NodeOutputPreview } from "../node-output-preview";
 
 type Props = {
@@ -7,10 +8,11 @@ type Props = {
   title: string;
   body: string;
   meta?: string;
+  icon?: ReactNode;
 };
 
 /** Compact display-only step card used by Context / Action / Sink utilities. */
-export function SimpleStepNode({ id, className, title, body, meta }: Props) {
+export function SimpleStepNode({ id, className, title, body, meta, icon }: Props) {
   return (
     <div className={`wf-node ${className}`}>
       <Handle
@@ -19,7 +21,14 @@ export function SimpleStepNode({ id, className, title, body, meta }: Props) {
         position={Position.Left}
         isConnectable
       />
-      <div className="wf-node-title">{title}</div>
+      {icon ? (
+        <div className="wf-node-title-row">
+          <span className="wf-node-title-icon">{icon}</span>
+          <div className="wf-node-title">{title}</div>
+        </div>
+      ) : (
+        <div className="wf-node-title">{title}</div>
+      )}
       <p className="wf-node-body">{body}</p>
       {meta ? <p className="wf-node-skill muted">{meta}</p> : null}
       <NodeOutputPreview nodeId={id} title={title} />

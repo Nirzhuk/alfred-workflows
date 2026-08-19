@@ -560,6 +560,7 @@ export function WorkflowCanvas() {
                   folders={workflowFolders}
                   activeWorkflowId={activeWorkflowId}
                   activeLiveNodes={nodes}
+                  activeIsDirty={dirty}
                   schedules={workflowSchedules}
                   runningProviderByWorkflowId={runningProviderByWorkflowId}
                   onSelect={(id) => {

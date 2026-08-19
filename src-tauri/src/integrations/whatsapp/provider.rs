@@ -77,7 +77,10 @@ pub fn masked_account(own_jid: &str) -> String {
         .split_once(':')
         .map_or(user, |(head, _)| head)
         .split_once('.')
-        .map_or_else(|| user.split_once(':').map_or(user, |(head, _)| head), |(head, _)| head);
+        .map_or_else(
+            || user.split_once(':').map_or(user, |(head, _)| head),
+            |(head, _)| head,
+        );
 
     let tail: String = {
         let chars: Vec<char> = user.chars().collect();
@@ -173,7 +176,10 @@ mod tests {
     #[test]
     fn release_builds_hide_whatsapp_until_a_packaged_gate_passes() {
         // The gate is what keeps an unvalidated OS from offering the provider.
-        assert_eq!(is_available(), PACKAGED_GATE_PASSED || cfg!(debug_assertions));
+        assert_eq!(
+            is_available(),
+            PACKAGED_GATE_PASSED || cfg!(debug_assertions)
+        );
         if !cfg!(debug_assertions) {
             assert!(!is_available(), "no OS has passed its packaged smoke yet");
         }

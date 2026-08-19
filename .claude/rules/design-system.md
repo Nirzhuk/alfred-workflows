@@ -15,8 +15,28 @@ For user-interface work, read and follow `docs/design-system.md`.
   states unless the product hierarchy explicitly requires a difference.
 - Keep navigation quiet and flat. Do not use borders, shadows, all caps, or
   heavier text merely to show selection.
+- Use one of two surface scales for every hover, pressed, and selected state.
+  Quiet and transparent (`--surface-hover`, `--surface-selected`,
+  `--surface-pressed`) for borderless rows, nav and menu items, list rows, and
+  ghost icon buttons. Filled and opaque (`--control-background-hover`,
+  `--control-background-pressed`, `--control-background-selected`) for controls
+  that already paint their own background. Never invent a feature-local wash
+  from `--surface-soft`, `--surface-wash`, `--ink-faint`, or a raw rgba, and
+  never use an accent tint for hover — accent marks a real selection.
 - Use only the documented typography weights, spacing, radius, control height,
   icon, elevation, motion, and layer tokens for shared UI.
+- Resolve every `font-size`, `padding`, `margin`, and `gap` to a token. A literal
+  is drift even when it looks reasonable alone, because near-miss values like
+  `0.72rem` land between steps. Unique geometry (column indents, clearance for
+  an absolute control, panel widths) may stay literal only with a `geometry:`
+  comment on the line above explaining it; the tests fail on untagged literals.
+- Pick a background from the surface role scale by asking what the element sits
+  on: `--surface-panel` (chrome), `--surface-inset` (recessed well),
+  `--surface-card` (container on the panel), `--surface-raised` (control above a
+  card), `--surface` (opaque, occludes). Never add a fourth fill or a raw
+  rgba/hex background — a fill that must not follow the theme needs a
+  `theme-exempt:` comment. These are containers; `--surface-hover` /
+  `-selected` / `-pressed` are interaction states. Do not mix the two.
 - Every interactive component must account for hover, pressed, focus-visible,
   disabled, and applicable selected/error/loading states without layout shifts.
 - Preserve keyboard focus, accessible names, contrast, and reduced-motion
@@ -34,7 +54,7 @@ For user-interface work, read and follow `docs/design-system.md`.
 
 - Item text: `14px`, weight `400`.
 - Icons: `18px` square.
-- Section labels: `16px`, weight `600`.
+- Section labels: `16px`, weight `400`.
 - Use the `--sidebar-*` tokens; never restate these values in sidebar component
   selectors.
 - Selected items retain weight `400` and use only the shared surface background.

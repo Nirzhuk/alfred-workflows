@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
+import { Icon } from "../../../../components/icon";
 import { Modal, ModalHeader } from "../../../../components/modal";
 import { useWorkflowStore } from "../../store";
 import { formatStatsWithSource } from "../../format-stats";
@@ -172,8 +173,13 @@ export function OutputModal() {
             <button type="button" className="ghost" onClick={() => void copySelected()}>
               {copied ? "Copied" : "Copy"}
             </button>
-            <button type="button" className="ghost" onClick={() => closeOutput()}>
-              Close
+            <button
+              type="button"
+              className="ghost modal-close-button"
+              aria-label="Close"
+              onClick={() => closeOutput()}
+            >
+              <Icon name="x" size={16} />
             </button>
           </>
         }

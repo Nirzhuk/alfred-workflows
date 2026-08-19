@@ -70,9 +70,13 @@ connections first, remove all entries for that exact service, and reconnect the
 ones still needed. Finally, use **Remove local data** in Alfred if revoked
 metadata remains.
 
-Keychain access can differ between development and signed/package identities.
-Release testing must verify create, read, overwrite, and delete behavior in the
-packaged app on every shipping operating system.
+On macOS, Alfred writes Connected Apps secrets to the data-protection keychain.
+That store authorizes the app by its code signature, so macOS does not show the
+login-keychain dialog asking to use `com.alfred.connected-apps`. Secrets that
+were previously stored in the login keychain are copied on first read, which
+may prompt once; later launches do not. Release testing must still verify
+create, read, overwrite, and delete in the packaged app on every shipping
+operating system.
 
 ## Adding a provider
 
@@ -90,9 +94,8 @@ Logo.dev keys. Import the local SVG with `?no-inline`; this keeps it out of the
 JavaScript bundle and maintains offline operation. SVGs must contain no
 scripts, raster images, or remote references, and must be at most 5 KiB raw.
 
-Transparent artwork is the default. Recolor an insufficiently legible mark for
-Alfred's light and dark themes when possible (Sentry is the example). Set
-`requiresSurface: true` only when a mark cannot meet a 3:1 non-text contrast
-ratio safely without altering its identity; GitHub, Linear, and Notion are the
-current exceptions. Unknown stored/future providers must retain the accessible
-initial fallback until a reviewed local logo is added.
+Every mark, including the unknown-provider fallback, sits on the same
+always-white card so the list reads as one family of tiles. Recolor a mark when
+needed so it stays legible on that white tile without changing its identity.
+Unknown stored/future providers must retain the accessible initial fallback
+until a reviewed local logo is added.

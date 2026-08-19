@@ -27,12 +27,16 @@ pub enum RuntimeStatus {
     /// No ready connection, or Alfred shut the runtime down.
     Stopped,
     Connecting,
-    Connected { masked_account: String },
+    Connected {
+        masked_account: String,
+    },
     Reconnecting,
     /// WhatsApp unlinked the device. Requires an acknowledged relink; the owner
     /// never silently starts a pairing flow.
     RelinkRequired,
-    Error { code: String },
+    Error {
+        code: String,
+    },
 }
 
 impl RuntimeStatus {
@@ -349,7 +353,10 @@ mod tests {
         wait_for(&owner, |status| *status == RuntimeStatus::RelinkRequired).await;
 
         // And it never silently pairs again.
-        assert_eq!(owner.reconnect().await.unwrap_err(), RuntimeError::LoggedOut);
+        assert_eq!(
+            owner.reconnect().await.unwrap_err(),
+            RuntimeError::LoggedOut
+        );
     }
 
     #[tokio::test]
@@ -367,10 +374,7 @@ mod tests {
 
     /// Polls the owner's status until `predicate` holds. The pump runs on its
     /// own task, so a direct assertion would race it.
-    async fn wait_for(
-        owner: &WhatsAppRuntimeOwner,
-        predicate: impl Fn(&RuntimeStatus) -> bool,
-    ) {
+    async fn wait_for(owner: &WhatsAppRuntimeOwner, predicate: impl Fn(&RuntimeStatus) -> bool) {
         for _ in 0..200 {
             if predicate(&owner.status()) {
                 return;
@@ -472,7 +476,10 @@ mod tests {
             owner.send_self_message("hello").await.unwrap_err(),
             RuntimeError::LoggedOut
         );
-        assert_eq!(owner.reconnect().await.unwrap_err(), RuntimeError::LoggedOut);
+        assert_eq!(
+            owner.reconnect().await.unwrap_err(),
+            RuntimeError::LoggedOut
+        );
         // And it survives a shutdown, so restart does not silently re-pair.
         owner.shutdown().await;
         assert_eq!(owner.status(), RuntimeStatus::RelinkRequired);

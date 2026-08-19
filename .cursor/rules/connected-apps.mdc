@@ -18,5 +18,4 @@ alwaysApply: false
 - Every shipped catalog provider needs a matching `APP_LOGOS` entry and a local SVG in `src/assets/apps/`.
 - Import each mark with `?no-inline`. Never fetch a logo at runtime, add a Logo.dev key, use a raster image, or include remote assets/scripts in the SVG.
 - Optimize SVGs to 5 KiB raw or less. The app-logo test enforces this budget and catalog coverage.
-- Transparent artwork is the default. Check the mark against both Alfred themes and recolor it when this preserves its identity and provides at least 3:1 non-text contrast.
-- Set `requiresSurface: true` only when recoloring is not safe. Current exceptions are GitHub, Linear, and Notion; Sentry is intentionally recolored instead of receiving a white tile.
+- Every mark, including the unknown-provider fallback, sits on the same always-white card. Recolor a mark when needed so it stays legible on that white tile without changing its identity.

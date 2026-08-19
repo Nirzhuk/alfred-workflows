@@ -38,7 +38,6 @@ export function ConnectedAppsSettings() {
   );
   const error = useIntegrationsStore((state) => state.error);
   const load = useIntegrationsStore((state) => state.load);
-  const refresh = useIntegrationsStore((state) => state.refresh);
   const getUsage = useIntegrationsStore((state) => state.getUsage);
   const disconnect = useIntegrationsStore((state) => state.disconnect);
   const clearError = useIntegrationsStore((state) => state.clearError);
@@ -128,24 +127,6 @@ export function ConnectedAppsSettings() {
 
   return (
     <section className="settings-section">
-      <div className="settings-section-heading">
-        <div>
-          <h2>Connected Apps</h2>
-          <p className="settings-section-copy">
-            Credentials stay in your system credential store. Workflow data
-            remains local.
-          </p>
-        </div>
-        <button
-          type="button"
-          className="ghost integrations-refresh"
-          disabled={loading}
-          onClick={() => void refresh()}
-        >
-          {loading ? "Refreshing…" : "Refresh"}
-        </button>
-      </div>
-
       {error ? (
         <div className="integrations-error" role="alert">
           <span>{error.message}</span>
@@ -167,6 +148,7 @@ export function ConnectedAppsSettings() {
               <AppLogo
                 providerId={provider.id}
                 providerName={provider.name}
+                size={36}
               />
               <div className="integration-provider-text">
                 <p className="settings-label">
@@ -181,50 +163,56 @@ export function ConnectedAppsSettings() {
               </div>
             </div>
             {providerConnections.length === 0 ? (
-              <button
-                type="button"
-                className="ghost integration-action"
-                disabled={
-                  !provider.connectAvailable || !connectHandlers[provider.id]
-                }
-                title={
-                  provider.connectAvailable
-                    ? `Connect ${provider.name}`
-                    : "Authorization arrives in the provider plan"
-                }
-                onClick={connectHandlers[provider.id]}
-              >
-                {provider.connectAvailable ? "Connect" : "Coming next"}
-              </button>
+              provider.connectAvailable && connectHandlers[provider.id] ? (
+                <button
+                  type="button"
+                  className="integration-action integration-connect"
+                  title={`Connect ${provider.name}`}
+                  onClick={connectHandlers[provider.id]}
+                >
+                  Connect
+                </button>
+              ) : (
+                <span
+                  className="integration-pending"
+                  title="Authorization arrives in the provider plan"
+                >
+                  Coming next
+                </span>
+              )
             ) : (
               <div className="integration-connections">
                 {providerConnections.map((connection) => (
                   <div className="integration-connection" key={connection.id}>
                     <div className="integration-connection-copy">
-                      <div className="integration-connection-identity">
+                      <p
+                        className="integration-account"
+                        title={
+                          connection.displayName ??
+                          connection.externalAccountId ??
+                          undefined
+                        }
+                      >
+                        {connection.displayName ??
+                          connection.externalAccountId ??
+                          "Connected account"}
+                      </p>
+                      <div className="integration-connection-meta">
                         <span
                           className={`integration-status is-${connection.status}`}
                         >
                           {STATUS_LABELS[connection.status]}
                         </span>
-                        <p
-                          className="integration-account"
-                          title={
-                            connection.displayName ??
-                            connection.externalAccountId ??
-                            undefined
-                          }
-                        >
-                          {connection.displayName ??
-                            connection.externalAccountId ??
-                            "Connected account"}
-                        </p>
+                        {connection.scopes.length > 0 ? (
+                          <span
+                            className="integration-scopes"
+                            title={`Access: ${connection.scopes.join(", ")}`}
+                          >
+                            {connection.scopes.length} scope
+                            {connection.scopes.length === 1 ? "" : "s"}
+                          </span>
+                        ) : null}
                       </div>
-                      {connection.scopes.length > 0 ? (
-                        <p className="settings-hint">
-                          Access: {connection.scopes.join(", ")}
-                        </p>
-                      ) : null}
                     </div>
                     <div className="integration-actions">
                       {provider.id === "slack" ||

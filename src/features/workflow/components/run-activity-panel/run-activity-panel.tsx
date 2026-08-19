@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Icon } from "../../../../components/icon";
 import { useWorkflowStore } from "../../store";
 import { isAgentNodeData, type OutputMemory } from "../../types";
 import { formatStats } from "../../format-stats";
@@ -36,27 +37,6 @@ function formatWhen(value: string) {
   });
 }
 
-function PinStarIcon({ filled }: { filled: boolean }) {
-  return (
-    <svg
-      width="15"
-      height="15"
-      viewBox="0 0 16 16"
-      fill="none"
-      aria-hidden
-      className="run-memory-pin-icon"
-    >
-      <path
-        d="M8 1.85c.28 0 .53.16.65.42l1.32 2.82 3.05.34c.6.07.84.82.39 1.23l-2.28 2.08.68 3.02c.13.59-.5 1.05-1.02.74L8 11.15l-2.79 1.35c-.52.25-1.15-.2-1.02-.74l.68-3.02-2.28-2.08c-.45-.41-.21-1.16.39-1.23l3.05-.34 1.32-2.82c.12-.26.37-.42.65-.42Z"
-        fill={filled ? "currentColor" : "none"}
-        stroke="currentColor"
-        strokeWidth="1.25"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
 function MemoryCard({
   memory,
   onTogglePin,
@@ -84,7 +64,7 @@ function MemoryCard({
               }
               onClick={() => onTogglePin(memory.id)}
             >
-              <PinStarIcon filled={memory.pinned} />
+              <Icon name="push-pin" size={14} className="run-memory-pin-icon" />
             </button>
           ) : null}
           <button
@@ -515,8 +495,8 @@ export function RunActivityPanel() {
               <div>
                 <h3>Library</h3>
                 <p className="run-section-desc">
-                  Saved notes for later. Star to inject on the next run
-                  {pinnedCount > 0 ? ` · ${pinnedCount} starred` : ""}.
+                  Saved notes for later. Pin to inject on the next run
+                  {pinnedCount > 0 ? ` · ${pinnedCount} pinned` : ""}.
                 </p>
               </div>
               <div className="run-memories-actions">
@@ -601,8 +581,8 @@ export function RunActivityPanel() {
 
           {!hasRunContext && memories.length === 0 && !isRunning ? (
             <p className="muted run-panel-empty">
-              Run a workflow to see steps and results here. Starred library items
-              are injected into the next run.
+              Run a workflow to see steps and results here. Pinned library
+              items are injected into the next run.
             </p>
           ) : null}
         </div>

@@ -24,12 +24,7 @@ use log::{Level, LevelFilter, Log, Metadata, Record};
 ///
 /// `Client/` has no `::` because the crate logs some records under bare
 /// display-style targets (`Client/Recv`, `Client/Send`, `Client/AccountSync`).
-const DENIED_TARGET_PREFIXES: &[&str] = &[
-    "whatsapp_rust",
-    "wacore",
-    "waproto",
-    "Client/",
-];
+const DENIED_TARGET_PREFIXES: &[&str] = &["whatsapp_rust", "wacore", "waproto", "Client/"];
 
 /// Whether a record from `target` may reach a sink.
 pub fn is_sensitive_target(target: &str) -> bool {
@@ -181,13 +176,13 @@ mod tests {
         let guard = RedactingLogger::new(Some(Box::new(RecordingLogger::default())));
 
         // Sanity: the recording logger works when used directly.
-        emit(&inner, "workflows_local_agents::runner", Level::Info, "ran");
+        emit(&inner, "alfred::runner", Level::Info, "ran");
         assert_eq!(inner.seen.lock().unwrap().len(), 1);
 
         assert!(guard.enabled(
             &Metadata::builder()
                 .level(Level::Info)
-                .target("workflows_local_agents::runner")
+                .target("alfred::runner")
                 .build()
         ));
     }
@@ -220,7 +215,7 @@ mod tests {
     #[test]
     fn unrelated_targets_are_not_over_blocked() {
         for target in [
-            "workflows_local_agents::db",
+            "alfred::db",
             "reqwest::connect",
             "tauri::app",
             // Near-misses that must not be caught by the prefixes.

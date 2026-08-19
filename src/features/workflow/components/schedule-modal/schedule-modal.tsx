@@ -1,23 +1,38 @@
 import { useEffect, useMemo, useState } from "react";
+import { Icon } from "../../../../components/icon";
 import { Modal, ModalHeader } from "../../../../components/modal";
+import { SelectControl } from "../../../../components/select-control";
+import {
+  formatNextRunLabel,
+  previewNextRunAt,
+} from "../../schedule-label";
+import {
+  cronToPicker,
+  DEFAULT_SCHEDULE_PICKER,
+  parseTimeInput,
+  pickerToCron,
+  pickerUsesTime,
+  SCHEDULE_REPEAT_OPTIONS,
+  SCHEDULE_WEEKDAYS,
+  timeInputValue,
+  type SchedulePickerValue,
+  type ScheduleRepeat,
+} from "../../schedule-picker";
 import { useWorkflowStore } from "../../store";
-import { SCHEDULE_PRESETS } from "../../types";
-
-function formatNextRun(value: string | null | undefined) {
-  if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  });
-}
 
 type Props = {
   workflowId: string;
   workflowName: string;
   onClose: () => void;
 };
+
+function toggleDay(days: number[], day: number): number[] {
+  if (days.includes(day)) {
+    const next = days.filter((value) => value !== day);
+    return next.length > 0 ? next : days;
+  }
+  return [...days, day];
+}
 
 export function ScheduleModal({ workflowId, workflowName, onClose }: Props) {
   const schedule = useWorkflowStore((s) => s.schedule);
@@ -27,9 +42,9 @@ export function ScheduleModal({ workflowId, workflowName, onClose }: Props) {
   const clearSchedule = useWorkflowStore((s) => s.clearSchedule);
 
   const [enabled, setEnabled] = useState(false);
-  const [presetId, setPresetId] = useState(SCHEDULE_PRESETS[2].id);
+  const [picker, setPicker] = useState<SchedulePickerValue>(DEFAULT_SCHEDULE_PICKER);
+  const [cronMode, setCronMode] = useState(false);
   const [customCron, setCustomCron] = useState("");
-  const [useCustom, setUseCustom] = useState(false);
 
   useEffect(() => {
     void loadSchedule(workflowId);
@@ -38,34 +53,38 @@ export function ScheduleModal({ workflowId, workflowName, onClose }: Props) {
   useEffect(() => {
     if (!schedule || schedule.workflowId !== workflowId) {
       setEnabled(false);
-      setUseCustom(false);
-      setPresetId(SCHEDULE_PRESETS[2].id);
+      setPicker(DEFAULT_SCHEDULE_PICKER);
+      setCronMode(false);
       setCustomCron("");
       return;
     }
 
     setEnabled(schedule.enabled);
-    const matched = SCHEDULE_PRESETS.find((p) => p.cron === schedule.cron);
-    if (matched) {
-      setUseCustom(false);
-      setPresetId(matched.id);
+    const parsed = cronToPicker(schedule.cron);
+    if (parsed) {
+      setPicker(parsed);
+      setCronMode(false);
       setCustomCron("");
     } else {
-      setUseCustom(true);
+      setCronMode(true);
       setCustomCron(schedule.cron);
     }
   }, [schedule, workflowId]);
 
   const cron = useMemo(() => {
-    if (useCustom) return customCron.trim();
-    return (
-      SCHEDULE_PRESETS.find((p) => p.id === presetId)?.cron ??
-      SCHEDULE_PRESETS[2].cron
-    );
-  }, [useCustom, customCron, presetId]);
+    if (cronMode) return customCron.trim();
+    return pickerToCron(picker);
+  }, [cronMode, customCron, picker]);
 
   const scheduleForWorkflow =
     schedule?.workflowId === workflowId ? schedule : null;
+  const savedNextRun =
+    scheduleForWorkflow?.cron === cron
+      ? formatNextRunLabel(scheduleForWorkflow.nextRunAt)
+      : null;
+  const nextRunLabel =
+    savedNextRun ?? formatNextRunLabel(previewNextRunAt(cron));
+  const showTime = !cronMode && pickerUsesTime(picker.repeat);
 
   return (
     <Modal
@@ -78,8 +97,13 @@ export function ScheduleModal({ workflowId, workflowName, onClose }: Props) {
         title={workflowName}
         titleId="schedule-modal-title"
         actions={
-          <button type="button" className="ghost" onClick={onClose}>
-            Close
+          <button
+            type="button"
+            className="ghost modal-close-button"
+            aria-label="Close"
+            onClick={onClose}
+          >
+            <Icon name="x" size={16} />
           </button>
         }
       />
@@ -98,48 +122,124 @@ export function ScheduleModal({ workflowId, workflowName, onClose }: Props) {
           <span>Enable schedule</span>
         </label>
 
-        <label className="field">
-          <span>When</span>
-          <select
-            value={useCustom ? "__custom__" : presetId}
-            onChange={(e) => {
-              if (e.target.value === "__custom__") {
-                setUseCustom(true);
-                return;
-              }
-              setUseCustom(false);
-              setPresetId(e.target.value);
-            }}
-          >
-            {SCHEDULE_PRESETS.map((preset) => (
-              <option key={preset.id} value={preset.id}>
-                {preset.label}
-              </option>
-            ))}
-            <option value="__custom__">Custom cron…</option>
-          </select>
-        </label>
-
-        {useCustom ? (
+        {cronMode ? (
           <label className="field">
-            <span>Cron (sec min hour day month dow)</span>
+            <span>Cron expression</span>
             <input
               type="text"
               value={customCron}
               placeholder="0 0 9 * * 1-5"
+              spellCheck={false}
+              autoCapitalize="off"
+              autoCorrect="off"
               onChange={(e) => setCustomCron(e.target.value)}
             />
           </label>
         ) : (
-          <p className="hint">
-            Cron: <code>{cron}</code>
-          </p>
+          <>
+            <label className="field">
+              <span>Repeat</span>
+              <SelectControl
+                value={picker.repeat}
+                onChange={(e) => {
+                  const repeat = e.target.value as ScheduleRepeat;
+                  setPicker((current) => ({
+                    ...current,
+                    repeat,
+                    days:
+                      repeat === "weekly" && current.days.length === 0
+                        ? [1]
+                        : current.days,
+                  }));
+                }}
+              >
+                {SCHEDULE_REPEAT_OPTIONS.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
+                  </option>
+                ))}
+              </SelectControl>
+            </label>
+
+            {picker.repeat === "weekly" ? (
+              <div className="field">
+                <span id="schedule-days-label">Days</span>
+                <div
+                  className="schedule-day-row"
+                  role="group"
+                  aria-labelledby="schedule-days-label"
+                >
+                  {SCHEDULE_WEEKDAYS.map((day) => {
+                    const selected = picker.days.includes(day.value);
+                    return (
+                      <button
+                        key={day.value}
+                        type="button"
+                        className={
+                          selected ? "schedule-day is-selected" : "schedule-day"
+                        }
+                        aria-pressed={selected}
+                        aria-label={day.name}
+                        title={day.name}
+                        onClick={() =>
+                          setPicker((current) => ({
+                            ...current,
+                            days: toggleDay(current.days, day.value),
+                          }))
+                        }
+                      >
+                        {day.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
+
+            {showTime ? (
+              <label className="field">
+                <span>Time</span>
+                <input
+                  type="time"
+                  className="schedule-time-input"
+                  value={timeInputValue(picker.hour, picker.minute)}
+                  step={60}
+                  onChange={(e) => {
+                    const next = parseTimeInput(e.target.value);
+                    if (!next) return;
+                    setPicker((current) => ({ ...current, ...next }));
+                  }}
+                />
+              </label>
+            ) : null}
+          </>
         )}
 
-        <p className="hint">
-          Next run:{" "}
-          <strong>{formatNextRun(scheduleForWorkflow?.nextRunAt)}</strong>
-        </p>
+        {nextRunLabel ? (
+          <div className="field">
+            <span>Next run</span>
+            <p className="schedule-next-run">{nextRunLabel}</p>
+          </div>
+        ) : null}
+
+        <label className="field checkbox-field">
+          <input
+            type="checkbox"
+            checked={cronMode}
+            onChange={(e) => {
+              const next = e.target.checked;
+              if (next) {
+                setCustomCron(cron || "0 0 9 * * 1-5");
+                setCronMode(true);
+                return;
+              }
+              const parsed = cronToPicker(customCron);
+              if (parsed) setPicker(parsed);
+              setCronMode(false);
+            }}
+          />
+          <span>Use a cron expression</span>
+        </label>
 
         <div className="schedule-actions">
           <button

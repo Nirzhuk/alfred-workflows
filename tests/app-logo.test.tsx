@@ -59,10 +59,13 @@ describe("AppLogo", () => {
     }
   });
 
-  test("uses a white surface only for marks that cannot be safely recolored", () => {
-    expect(APP_LOGOS.github?.requiresSurface).toBe(true);
-    expect(APP_LOGOS.linear?.requiresSurface).toBe(true);
-    expect(APP_LOGOS.notion?.requiresSurface).toBe(true);
-    expect(APP_LOGOS.sentry?.requiresSurface).toBeUndefined();
+  test("keeps the white card on the shared app-logo surface, not per-provider exceptions", async () => {
+    const css = await Bun.file(new URL("src/App.css", root)).text();
+    const logoRule = css.match(/\.app-logo\s*\{[^}]+\}/)?.[0] ?? "";
+
+    expect(logoRule).toContain("background: #fff");
+    expect(logoRule).toContain("border-radius:");
+    expect(appLogoSource).not.toContain("requiresSurface");
+    expect(css).not.toContain("requires-surface");
   });
 });

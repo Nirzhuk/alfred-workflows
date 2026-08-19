@@ -94,7 +94,6 @@ and replace its usages with `<Icon name="…" />`.
 | `workflow-canvas.tsx` → `FolderGlyph` | Folder button | `folder` |
 | `workflow-canvas.tsx` → `FolderAddGlyph` | New folder | `folder-plus` |
 | `prompt-node.tsx` → `BlockIcon` | Locked/unlocked node | `lock` / `lock-open` |
-| `run-activity-panel.tsx` → `PinStarIcon` | Pin memory | `star` |
 | `node-settings-modal.tsx` → `ChevronDownIcon` | Select chevron | `caret-down` |
 | `node-settings-modal.tsx` → `CheckIcon` | Selected option | `check` |
 | `select-control.tsx` → inline chevron | Select chevron | `caret-down` |

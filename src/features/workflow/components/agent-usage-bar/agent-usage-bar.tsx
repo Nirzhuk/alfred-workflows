@@ -345,8 +345,10 @@ function UsageItem({
           </>
         ) : (
           <div className="agent-usage-state">
+            {/* Track first: both share one grid cell, so the label must come
+                after it to paint on top of the band. */}
             <span className="agent-usage-track" aria-hidden />
-            <span className="agent-usage-percent">{status}</span>
+            <span className="agent-usage-percent">{status || " "}</span>
           </div>
         )}
       </div>

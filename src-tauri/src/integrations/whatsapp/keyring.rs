@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use uuid::Uuid;
 
 use super::crypto::{CryptoError, StoreKey};
-use crate::db::{DbError, app_data_dir};
+use crate::db::{app_data_dir, DbError};
 use crate::integrations::token_store::{CredentialEnvelope, TokenStore, TokenStoreError};
 
 /// Prefix that scopes this provider's entries inside Alfred's credential
@@ -107,7 +107,10 @@ mod tests {
             .credential_ref
             .strip_prefix(&format!("{REF_PREFIX}/"))
             .unwrap();
-        assert!(Uuid::parse_str(suffix).is_ok(), "reference must be a bare UUID");
+        assert!(
+            Uuid::parse_str(suffix).is_ok(),
+            "reference must be a bare UUID"
+        );
 
         let loaded = load(&tokens, &provisioned.credential_ref).unwrap();
         let aad = super::super::crypto::row_aad("session", &[1u8; 32]);
@@ -155,7 +158,10 @@ mod tests {
         let tokens = InMemoryTokenStore::default();
         let credential_ref = format!("{REF_PREFIX}/{}", Uuid::new_v4());
         tokens
-            .put(&credential_ref, &CredentialEnvelope::new("not-a-key".into()))
+            .put(
+                &credential_ref,
+                &CredentialEnvelope::new("not-a-key".into()),
+            )
             .unwrap();
 
         assert!(matches!(

@@ -275,7 +275,9 @@ impl NativeOAuthAttempt {
         let mut buffer = [0_u8; MAX_CALLBACK_BYTES];
         let mut received = 0;
         while received < buffer.len()
-            && !buffer[..received].windows(4).any(|window| window == b"\r\n\r\n")
+            && !buffer[..received]
+                .windows(4)
+                .any(|window| window == b"\r\n\r\n")
         {
             let count = stream
                 .read(&mut buffer[received..])
@@ -285,8 +287,8 @@ impl NativeOAuthAttempt {
             }
             received += count;
         }
-        let request =
-            std::str::from_utf8(&buffer[..received]).map_err(|_| NativeOAuthError::InvalidCallback)?;
+        let request = std::str::from_utf8(&buffer[..received])
+            .map_err(|_| NativeOAuthError::InvalidCallback)?;
         let request_line = request
             .lines()
             .next()
@@ -432,7 +434,9 @@ mod tests {
 
     #[test]
     fn rejects_state_mismatch() {
-        let _gate = LOOPBACK_TEST_GATE.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let _gate = LOOPBACK_TEST_GATE
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let result = callback(
             NativeOAuthAttempt::start(config()).expect("start"),
             "wrong".into(),
@@ -445,7 +449,9 @@ mod tests {
 
     #[test]
     fn returns_code_and_keeps_attempt_context_in_memory() {
-        let _gate = LOOPBACK_TEST_GATE.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let _gate = LOOPBACK_TEST_GATE
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let attempt = NativeOAuthAttempt::start(config()).expect("start");
         let state = attempt.context.state.clone();
         let result = callback(attempt, state).expect("callback");
@@ -456,7 +462,9 @@ mod tests {
 
     #[test]
     fn listener_is_one_shot() {
-        let _gate = LOOPBACK_TEST_GATE.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let _gate = LOOPBACK_TEST_GATE
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let attempt = NativeOAuthAttempt::start(config()).expect("start");
         let redirect = Url::parse(attempt.redirect_uri()).expect("redirect");
         let address = SocketAddr::from(([127, 0, 0, 1], redirect.port().expect("port")));
@@ -488,7 +496,9 @@ mod tests {
 
     #[test]
     fn retries_after_preferred_port_collision() {
-        let _gate = LOOPBACK_TEST_GATE.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let _gate = LOOPBACK_TEST_GATE
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let occupied = TcpListener::bind(("127.0.0.1", 0)).expect("occupy port");
         let occupied_port = occupied.local_addr().expect("address").port();
         let mut request = config();
@@ -502,7 +512,9 @@ mod tests {
 
     #[test]
     fn expires_attempt_after_timeout() {
-        let _gate = LOOPBACK_TEST_GATE.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let _gate = LOOPBACK_TEST_GATE
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let mut request = config();
         request.timeout = Duration::from_millis(20);
         let attempt = NativeOAuthAttempt::start(request).expect("start");
@@ -514,7 +526,9 @@ mod tests {
 
     #[test]
     fn a_cancelled_attempt_abandons_without_waiting_for_the_timeout() {
-        let _gate = LOOPBACK_TEST_GATE.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let _gate = LOOPBACK_TEST_GATE
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let attempt = NativeOAuthAttempt::start(config()).expect("start");
         let cancelled = Arc::new(AtomicBool::new(true));
         assert!(matches!(

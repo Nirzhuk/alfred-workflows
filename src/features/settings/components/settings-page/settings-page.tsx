@@ -1,6 +1,7 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { SelectControl } from "../../../../components/select-control";
 import { ConnectedAppsSettings } from "../../../integrations/connected-apps-settings";
+import { useIntegrationsStore } from "../../../integrations/store";
 import {
   showQuickAccess,
   useQuickAccessPreferences,
@@ -55,6 +56,12 @@ export function SettingsPage({ activeSection }: Props) {
     (s) => s.resetPosition,
   );
 
+  const integrationsLoading = useIntegrationsStore((s) => s.loading);
+  const refreshIntegrations = useIntegrationsStore((s) => s.refresh);
+
+  const [shortcutHeaderActions, setShortcutHeaderActions] =
+    useState<HTMLDivElement | null>(null);
+
   const notificationsEnabled = useNotificationsStore((s) => s.enabled);
   const notificationSound = useNotificationsStore((s) => s.sound);
   const permission = useNotificationsStore((s) => s.permission);
@@ -88,6 +95,22 @@ export function SettingsPage({ activeSection }: Props) {
           <p className="settings-kicker">Settings</p>
           <h1>{SETTINGS_SECTION_LABELS[activeSection]}</h1>
         </div>
+        {activeSection === "connected-apps" ? (
+          <button
+            type="button"
+            className="ghost settings-header-action"
+            disabled={integrationsLoading}
+            onClick={() => void refreshIntegrations()}
+          >
+            {integrationsLoading ? "Refreshing…" : "Refresh"}
+          </button>
+        ) : null}
+        {activeSection === "shortcuts" ? (
+          <div
+            className="settings-page-header-actions"
+            ref={setShortcutHeaderActions}
+          />
+        ) : null}
       </header>
 
       <div className="settings-page-body settings-page-panel">
@@ -135,7 +158,9 @@ export function SettingsPage({ activeSection }: Props) {
 
         {activeSection === "connected-apps" ? <ConnectedAppsSettings /> : null}
 
-        {activeSection === "shortcuts" ? <ShortcutSettings /> : null}
+        {activeSection === "shortcuts" ? (
+          <ShortcutSettings headerActionsContainer={shortcutHeaderActions} />
+        ) : null}
 
         {activeSection === "quick-access" ? (
           <section

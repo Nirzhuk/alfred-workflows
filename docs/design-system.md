@@ -59,9 +59,11 @@ while Fraunces is reserved for display accents.
 | Page title | `--font-display` | `--text-2xl` / 24px | 600 | 1.2 |
 | Dialog title | `--font-display` | `--text-xl` / 20px | 600 | 1.2 |
 | Section title | `--font-sans` | `--text-lg` / 16px | 600 | 1.2 |
+| Navigation section label | `--font-sans` | `--text-lg` / 16px | 400 | 1.2 |
 | Body, item, control | `--font-sans` | `--text-md` / 14px | 400 | 1.4 |
 | Supporting text | `--font-sans` | `--text-sm` / 12px | 400 | 1.4 |
 | Micro/status text | `--font-sans` | `--text-xs` / 11px | 500–700 | 1.2 |
+| Dock/badge micro text | `--font-sans` | `--text-2xs` / 10px | 400–600 | 1 |
 | Technical content | `--font-mono` | appropriate role size | 400–600 | 1.4–1.55 |
 
 Rules:
@@ -74,10 +76,18 @@ Rules:
 - Use only weights 400, 500, 600, and 700 through the weight tokens. Fractional
   weights such as 550 or 650 are prohibited.
 - Controls and navigation use weight 400. Selected state never adds weight.
+  This includes navigation section labels: in the rails, size and color carry
+  the hierarchy, so a section label separates itself from its items by being
+  larger and lighter in color, never heavier.
 - Use 600 for headings and meaningful hierarchy. Reserve 700 for short status
   labels or urgent emphasis.
 - All caps and added letter spacing are limited to short status badges. Do not
   use them for navigation or section headings.
+- `--text-2xs` is the floor and exists only for dense always-on chrome such
+  as the agent usage dock, where a secondary line must not compete with the
+  status it annotates. Never use it for body copy, controls, form labels, or
+  anything a user must read to act. If a surface needs it in more than one
+  place, that surface is too dense, not the scale too coarse.
 - Numeric logs, schedules, identifiers, shortcuts, and code use Geist Mono.
 
 ## Spacing
@@ -98,8 +108,25 @@ Use the four-pixel spacing grid. Half steps exist for dense desktop alignment:
 | `--space-8` | 32px | large separation |
 | `--space-10` | 40px | page-level separation |
 
-Prefer tokens in component CSS. Unique layout constraints such as a panel width
-or graph coordinate may remain literal.
+`font-size` and `padding` / `margin` / `gap` must resolve to a token. These are
+the two properties that drift fastest, because a literal always looks defensible
+in isolation: `0.72rem` is 11.5px and `0.45rem` is 7.2px, so each one lands
+between steps and the app quietly grows a second scale nobody declared.
+
+Unique layout constraints — a panel width, a graph coordinate, a column indent,
+clearance for an absolutely positioned control — may stay literal, but must say
+so with a `geometry:` comment on the line above:
+
+```css
+.run-console-detail {
+  /* geometry: 9.72rem indent aligns detail under the timestamp column. */
+  margin: var(--space-1) 0 0 9.72rem;
+}
+```
+
+`tests/design-system.test.ts` fails on any untagged literal and names the file
+and line. The comment is the whole escape hatch: if a value cannot be explained
+in one line, it is drift, not geometry.
 
 ## Shape and control density
 
@@ -138,6 +165,37 @@ at least 28px in dense chrome and 32px for ordinary controls.
 - Use semantic color tokens such as `--ink`, `--muted`, `--surface-*`,
   `--accent-*`, and `--danger-*`; never branch component CSS by theme.
 - Use `--control-*` tokens for shared control states.
+
+### Surface fills
+
+Fills are named by stacking role, not by how light they are. Choose one by
+asking what the element sits **on**, never by picking the white that looks
+right in isolation:
+
+| Token | Role |
+| --- | --- |
+| `--surface-panel` | app chrome behind everything |
+| `--surface-inset` | recessed well: segmented-control track, list well |
+| `--surface-card` | container resting on the panel |
+| `--surface-raised` | control or row lifted above a card |
+| `--surface` | opaque; occludes what is beneath it (menus, popovers) |
+
+These replaced seven overlapping tokens (`--surface-soft`, `-strong`, `-glass`,
+`-faint`, `-muted`, `--panel-solid`, `--panel-2`) that named intensity instead
+of role. Three of them meant "raised" at three arbitrary alphas, which is how a
+shortcut recorder ended up filled at 92% white while sitting on a 55% white
+card — a control brighter than its own container. Picking by role makes that
+mistake unrepresentable.
+
+Rules:
+
+- Never add a fourth fill or a raw `rgba()` / hex background. If nothing fits,
+  the element's stacking is wrong, not the scale.
+- A fill that genuinely must not follow the theme — an always-white logo tile,
+  a scannable QR plate — needs a `theme-exempt:` comment saying why, the same
+  escape hatch as `geometry:`.
+- Do not confuse these with `--surface-hover` / `-selected` / `-pressed`. Those
+  are interaction states; these are containers.
 - Navigation and list selection use a subtle background without a new border,
   shadow, or weight change.
 - Use `--elevation-raised` for small floating controls,
@@ -165,6 +223,38 @@ Every interactive component supports the states that apply to it:
 Do not remove focus indication. `:focus-visible` is preferred so pointer clicks
 do not create unnecessary rings.
 
+### Which surface scale to use
+
+Two scales cover every hover, pressed, and selected surface. Pick by whether
+the element owns a background of its own.
+
+| Scale | Tokens | Use for |
+| --- | --- | --- |
+| Quiet (transparent) | `--surface-hover`, `--surface-selected`, `--surface-pressed` | Borderless rows, navigation items, menu items, list rows, ghost icon buttons — anything sitting directly on a panel |
+| Filled (opaque) | `--control-background-hover`, `--control-background-pressed`, `--control-background-selected` | Buttons, inputs, selects, and other controls that already paint their own background |
+
+Both are mixed against `--ink`, so they invert with the theme and stay visible
+on a panel that is already near-white (light) or near-black (dark), where a
+same-tone white or black alpha wash reads as invisible. The quiet scale stays
+transparent so the panel, canvas, or card beneath tints through instead of
+being covered by an opaque tile.
+
+Rules:
+
+- Hover is never an accent tint. Accent marks a genuinely selected, active, or
+  primary state; using it for hover makes every pointer move look like a
+  selection.
+- Do not introduce a feature-local wash (`--surface-soft`, `--surface-wash`,
+  `--ink-faint`, a raw rgba) for one component's hover. That is the drift this
+  contract exists to prevent: a value tuned against one panel is invisible or
+  heavy on the next.
+- `--surface-*` and `--surface-hover`/`-selected`/`-pressed` are different
+  things. The former are theme fills for panels and cards; the latter three are
+  interaction states. Do not substitute one for the other.
+
+`tests/design-system.test.ts` enforces this across the navigation rails, menus,
+folder rows, integration rows, and picker lists.
+
 ## Shared component contracts
 
 ### Sidebar navigation
@@ -175,10 +265,15 @@ Workflow navigation, Settings navigation, folders, and workflow rows share:
 | --- | --- | --- |
 | Item text | `--sidebar-item-font-size` | 14px |
 | Item weight | `--sidebar-item-font-weight` | 400 |
-| Item color | `--sidebar-item-color` | theme ink; `#dce5e1` in dark mode |
+| Item color | `--sidebar-item-color` | ink softened 40% toward muted; `#c6d1cd` in dark mode |
 | Item icon | `--sidebar-icon-size` | 16px square |
+| Icon color (default) | `--sidebar-icon-color` | muted, mixed 12% toward ink |
+| Icon color (hover/selected) | — | `currentColor` (full item color) |
 | Section text | `--sidebar-section-font-size` | 16px |
-| Section weight | `--sidebar-section-font-weight` | 600 |
+| Section weight | `--sidebar-section-font-weight` | 400 |
+| Section color | `--sidebar-section-color` | muted at 72% alpha |
+| Hover surface | `--surface-hover` | ink at 4% alpha |
+| Selected surface | `--surface-selected` | ink at 7% alpha |
 | Item minimum height | `--sidebar-item-min-height` | 32px |
 | Icon-to-label gap | `--sidebar-item-gap` | 4px |
 | Row-to-row gap | `--sidebar-item-stack-gap` | 2px |
@@ -187,6 +282,18 @@ Workflow navigation, Settings navigation, folders, and workflow rows share:
 Sidebar rows are borderless. Secondary metadata may use the supporting or micro
 scale but must not compete with the item label. Keep only 2px between adjacent
 rows so their hover and selected surfaces read as one compact navigation stack.
+
+Navigation is the quietest surface in the app, so its colors step back from the
+global scale in three stages: item ink is softened off full `--ink`, icons and
+section labels sit lighter still, and the section label never reaches item
+contrast even at weight 400. Hover and selected use the shared quiet scale
+(`--surface-hover`, `--surface-selected`) described under **Which surface scale
+to use** — the rails define no wash of their own. Neither state adds a border,
+shadow, or weight change.
+
+Settings pages carry no rule between the header and the body. The heading's
+type scale already separates them; a divider there re-adds the boxed-in look
+the rails are tuned to avoid.
 
 ### Menus
 
@@ -218,6 +325,9 @@ rows so their hover and selected surfaces read as one compact navigation stack.
 - Cards use 12px radius. Borders communicate grouping; shadows are normally off.
 - Dialogs and floating panels use 16px radius and the modal elevation token.
 - Dialog titles use 20px/600; page titles use 24px/600.
+- A workflow card with unsaved edits replaces its solid border with a marching
+  dashed accent stroke. The dashes themselves are the status cue, so they stay
+  visible when reduced motion turns the march off.
 
 ## Motion
 
@@ -227,6 +337,8 @@ rows so their hover and selected surfaces read as one compact navigation stack.
 - Use `--ease-standard` for fades and color changes and `--ease-emphasized` for
   spatial transitions.
 - Prefer opacity and transform. Avoid animating layout during direct manipulation.
+- Looping status motion (orbit, marching dashes) may use a longer linear
+  duration than the transition scale. The static rest pose must still read.
 - The global reduced-motion rule must remain in place. Critical state changes
   must remain understandable when animation is effectively disabled.
 

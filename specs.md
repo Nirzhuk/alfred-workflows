@@ -15,7 +15,7 @@ Related docs: [README.md](README.md), [docs/install.md](docs/install.md),
 | | |
 | --- | --- |
 | **Name** | Alfred |
-| **Repo / package** | `workflows-local-agents` |
+| **Repo / package** | `alfred` |
 | **Bundle id** | `com.nirzhuk.alfred` |
 | **Version** | `0.5.0` (see `package.json` / `tauri.conf.json`) |
 | **License** | GPL-3.0-or-later |

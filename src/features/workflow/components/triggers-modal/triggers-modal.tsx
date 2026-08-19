@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Icon } from "../../../../components/icon";
 import { Modal, ModalHeader } from "../../../../components/modal";
 import {
   compatibleEventConnections,
@@ -173,8 +174,13 @@ export function TriggersModal({ workflowId, workflowName, onClose }: Props) {
         title={workflowName}
         titleId="triggers-modal-title"
         actions={
-          <button type="button" className="ghost" onClick={onClose}>
-            Close
+          <button
+            type="button"
+            className="ghost modal-close-button"
+            aria-label="Close"
+            onClick={onClose}
+          >
+            <Icon name="x" size={16} />
           </button>
         }
       />

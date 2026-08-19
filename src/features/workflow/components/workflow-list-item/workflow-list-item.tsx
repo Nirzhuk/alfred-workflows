@@ -11,6 +11,8 @@ type Props = {
   /** Live graph for the active workflow (unsaved edits). */
   liveNodes?: WorkflowNode[];
   active: boolean;
+  /** Unsaved edits on the live graph. */
+  dirty?: boolean;
   scheduleLabel?: string;
   running?: boolean;
   runningProvider?: AgentProviderId | null;
@@ -92,6 +94,7 @@ export function WorkflowListItem({
   workflow,
   liveNodes,
   active,
+  dirty,
   scheduleLabel,
   running,
   runningProvider,
@@ -110,6 +113,7 @@ export function WorkflowListItem({
       className={[
         "workflow-card",
         active ? "is-active" : "",
+        dirty ? "is-dirty" : "",
         dragging ? "is-placeholder" : "",
       ]
         .filter(Boolean)
@@ -136,6 +140,16 @@ export function WorkflowListItem({
           onOpenMenu({ x: e.clientX, y: e.clientY });
         }}
       >
+        {dirty ? (
+          <svg className="workflow-card-dirty-border" aria-hidden>
+            <rect width="100%" height="100%" />
+          </svg>
+        ) : null}
+        {dirty ? (
+          <span id={`${workflow.id}-unsaved`} className="sr-only">
+            Unsaved changes
+          </span>
+        ) : null}
         <div className="workflow-card-content">
           <div className="workflow-card-top">
             <span className="workflow-card-dot" aria-hidden />

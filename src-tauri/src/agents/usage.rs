@@ -1,4 +1,6 @@
-use super::process::{find_bin, lock_claude_invocation, prefer_stdout, run_cmd};
+use super::process::{
+    find_bin, lock_claude_invocation, prefer_stdout, run_cmd, run_cmd_with_stdin,
+};
 use super::AgentProvider;
 use chrono::{DateTime, Datelike, Duration as ChronoDuration, TimeZone, Utc};
 use directories::BaseDirs;
@@ -282,31 +284,257 @@ fn cursor_usage() -> AgentUsageSnapshot {
     let Some(bin) = find_bin("cursor-agent").or_else(|| find_bin("agent")) else {
         return not_installed(provider, "Cursor Agent");
     };
+    match query_cursor_usage(&bin) {
+        Ok((connected, windows, error)) => snapshot(
+            provider,
+            connected,
+            windows,
+            "cursor internal usage helper",
+            error,
+        ),
+        Err(error) => snapshot(
+            provider,
+            false,
+            vec![],
+            "cursor internal usage helper",
+            Some(error),
+        ),
+    }
+}
+
+const CURSOR_USAGE_SCRIPT: &str = r#"
+(async () => {
+  try {
+    const fs = require('fs');
+    const vm = require('vm');
+    const path = require('path');
+    const { createRequire } = require('module');
+    const versionDir = process.argv[2];
+    const mainPath = path.join(versionDir, 'index.js');
+    const chunkPath = path.join(versionDir, '6260.index.js');
+    const bundleRequire = createRequire(mainPath);
+    let code = fs.readFileSync(mainPath, 'utf8');
+    code = code.replace('var __webpack_exports__=__webpack_require__("./src/main.tsx")})();', 'globalThis.__cursor_wreq=__webpack_require__;})();');
+    const g = globalThis;
+    const context = {
+      require: bundleRequire,
+      process: { ...process, argv: ['node', 'cursor-agent', '--help'], exit: () => {} },
+      console,
+      Buffer,
+      setTimeout,
+      clearTimeout,
+      setInterval,
+      clearInterval,
+      URL,
+      URLSearchParams,
+      TextEncoder,
+      TextDecoder,
+      AbortController,
+      AbortSignal,
+      fetch,
+      Headers,
+      Request,
+      Response,
+      ReadableStream,
+      WritableStream,
+      TransformStream,
+      Blob,
+      File,
+      FormData,
+      crypto: g.crypto,
+      performance: g.performance,
+      structuredClone: g.structuredClone,
+      queueMicrotask,
+      atob,
+      btoa,
+      Event,
+      EventTarget,
+      MessageChannel,
+      MessageEvent,
+      DOMException,
+      __filename: mainPath,
+      __dirname: versionDir,
+      exports: {},
+      module: { exports: {} },
+    };
+    context.global = context;
+    context.globalThis = context;
+    vm.runInNewContext(code, context, { filename: mainPath });
+    const wreq = context.__cursor_wreq;
+    const chunkExports = require(chunkPath);
+    Object.assign(wreq.m, chunkExports.modules);
+    const createDash = wreq('./src/dashboard-client.ts').m;
+    const creds = wreq('../cli-credentials/dist/index.js').jo({ domain: 'cursor' });
+    const urls = wreq('./src/utils/service-urls.ts');
+    const usageData = wreq('./src/usage/usage-data.ts');
+    const client = createDash({ endpoint: urls.e9(), credentialManager: creds });
+    const result = await usageData.d({ client, locale: 'en-US' });
+    console.log(JSON.stringify(result));
+  } catch (error) {
+    console.log(JSON.stringify({
+      kind: 'error',
+      message: error && error.message ? error.message : String(error),
+    }));
+  }
+})();
+"#;
+
+fn query_cursor_usage(bin: &Path) -> Result<(bool, Vec<AgentUsageWindow>, Option<String>), String> {
     let output = run_cmd(
-        &bin,
+        bin,
         &["status".into()],
         None,
         Duration::from_secs(8),
         None,
         None,
-    );
-    let text = output
-        .ok()
-        .map(|value| prefer_stdout(&value).to_lowercase())
-        .unwrap_or_default();
-    let connected =
-        !text.contains("not logged in") && !text.contains("sign in") && !text.is_empty();
-    snapshot(
-        provider,
-        connected,
-        vec![],
-        "cursor-agent status",
-        Some(if connected {
-            "Cursor does not expose subscription windows through its CLI".into()
-        } else {
-            "Cursor CLI login required".into()
-        }),
-    )
+    )?;
+    let status_text = prefer_stdout(&output);
+    let status_lower = status_text.to_lowercase();
+    let connected = !status_lower.contains("not logged in")
+        && !status_lower.contains("sign in")
+        && !status_lower.is_empty();
+    if !connected {
+        return Ok((false, vec![], Some("Cursor CLI login required".into())));
+    }
+
+    let version_dir = std::fs::canonicalize(bin)
+        .map_err(|error| format!("Could not resolve Cursor Agent: {error}"))?
+        .parent()
+        .map(Path::to_path_buf)
+        .ok_or("Cursor Agent installation is missing its version directory")?;
+    let node_bin = version_dir.join("node");
+    if !node_bin.is_file() {
+        return Err("Cursor Agent installation is missing its bundled Node runtime".into());
+    }
+
+    let args = vec!["-".into(), version_dir.to_string_lossy().into_owned()];
+    let output = run_cmd_with_stdin(
+        &node_bin,
+        &args,
+        None,
+        Duration::from_secs(20),
+        None,
+        None,
+        CURSOR_USAGE_SCRIPT,
+    )?;
+    let parsed = serde_json::from_str::<Value>(&prefer_stdout(&output))
+        .map_err(|error| format!("Could not parse Cursor usage: {error}"))?;
+    parse_cursor_usage_response(&parsed)
+}
+
+fn parse_cursor_usage_response(
+    value: &Value,
+) -> Result<(bool, Vec<AgentUsageWindow>, Option<String>), String> {
+    match value.get("kind").and_then(Value::as_str) {
+        Some("error") => Err(value
+            .get("message")
+            .and_then(Value::as_str)
+            .unwrap_or("Could not load Cursor usage")
+            .to_string()),
+        Some("unavailable") => Ok((
+            true,
+            vec![],
+            Some(
+                value
+                    .get("message")
+                    .and_then(Value::as_str)
+                    .unwrap_or("Cursor usage is unavailable for this account")
+                    .to_string(),
+            ),
+        )),
+        Some("available") => Ok(cursor_windows_from_usage_model(value)),
+        Some(other) => Err(format!("Unsupported Cursor usage payload: {other}")),
+        None => Err("Cursor usage payload did not include a kind".into()),
+    }
+}
+
+fn cursor_windows_from_usage_model(value: &Value) -> (bool, Vec<AgentUsageWindow>, Option<String>) {
+    let model = value.get("model").unwrap_or(&Value::Null);
+    let reset_description = model
+        .get("resetLabel")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    match model.get("kind").and_then(Value::as_str) {
+        Some("standard") => {
+            let included = model.get("included").unwrap_or(&Value::Null);
+            let mut windows = vec![
+                cursor_window(
+                    "Included",
+                    number(included, &["totalPercentUsed"]).unwrap_or(0.0),
+                    reset_description.clone(),
+                ),
+                cursor_window(
+                    "Auto",
+                    number(included, &["autoPercentUsed"]).unwrap_or(0.0),
+                    reset_description.clone(),
+                ),
+                cursor_window(
+                    "API",
+                    number(included, &["apiPercentUsed"]).unwrap_or(0.0),
+                    reset_description.clone(),
+                ),
+            ];
+            if let Some(window) = cursor_on_demand_window(
+                model.get("onDemand").unwrap_or(&Value::Null),
+                reset_description.clone(),
+            ) {
+                windows.push(window);
+            }
+            let error = windows
+                .is_empty()
+                .then(|| "Cursor returned no subscription windows".into());
+            (true, windows, error)
+        }
+        Some("spend") => (
+            true,
+            vec![],
+            Some("Cursor CLI only exposes spend-mode usage for this plan".into()),
+        ),
+        Some(other) => (
+            true,
+            vec![],
+            Some(format!(
+                "Cursor returned an unsupported usage model: {other}"
+            )),
+        ),
+        None => (
+            true,
+            vec![],
+            Some("Cursor returned an incomplete usage model".into()),
+        ),
+    }
+}
+
+fn cursor_window(
+    label: &str,
+    used_percent: f64,
+    reset_description: Option<String>,
+) -> AgentUsageWindow {
+    AgentUsageWindow {
+        label: label.into(),
+        used_percent: clamp_percent(used_percent),
+        resets_at: None,
+        reset_description,
+    }
+}
+
+fn cursor_on_demand_window(
+    value: &Value,
+    reset_description: Option<String>,
+) -> Option<AgentUsageWindow> {
+    match value.get("kind").and_then(Value::as_str) {
+        Some("fixed") => Some(cursor_window(
+            "On-Demand",
+            number(value, &["percent"]).or_else(|| {
+                let used = number(value, &["usedDollars"])?;
+                let limit = number(value, &["limitDollars"])?;
+                (limit > 0.0).then_some(used / limit * 100.0)
+            })?,
+            reset_description,
+        )),
+        Some("unlimited") | Some("disabled") | Some("unavailable") | None => None,
+        Some(_) => None,
+    }
 }
 
 fn opencode_usage() -> AgentUsageSnapshot {
@@ -809,6 +1037,54 @@ mod tests {
         assert_eq!(windows.len(), 2);
         assert_eq!(windows[0].used_percent, 1.0);
         assert_eq!(windows[1].used_percent, 13.0);
+    }
+
+    #[test]
+    fn cursor_standard_usage_maps_to_windows() {
+        let payload = json!({
+            "kind": "available",
+            "model": {
+                "kind": "standard",
+                "planName": "Pro",
+                "resetLabel": "Resets Sep 1",
+                "included": {
+                    "totalPercentUsed": 53.7855,
+                    "autoPercentUsed": 56.6833,
+                    "apiPercentUsed": 34.4666
+                },
+                "onDemand": {
+                    "kind": "disabled",
+                    "usedDollars": 0
+                }
+            }
+        });
+
+        let (connected, windows, error) =
+            parse_cursor_usage_response(&payload).expect("cursor payload should parse");
+
+        assert!(connected);
+        assert!(error.is_none());
+        assert_eq!(windows.len(), 3);
+        assert_eq!(windows[0].label, "Included");
+        assert_eq!(windows[0].used_percent, 53.7855);
+        assert_eq!(
+            windows[0].reset_description.as_deref(),
+            Some("Resets Sep 1")
+        );
+        assert_eq!(windows[1].label, "Auto");
+        assert_eq!(windows[2].label, "API");
+    }
+
+    #[test]
+    fn cursor_usage_error_payload_surfaces_message() {
+        let payload = json!({
+            "kind": "error",
+            "message": "token expired"
+        });
+
+        let error = parse_cursor_usage_response(&payload).expect_err("error payload should fail");
+
+        assert_eq!(error, "token expired");
     }
 
     #[test]

@@ -13,14 +13,12 @@ import sharepointLogo from "../../assets/apps/sharepoint.svg?no-inline";
 
 export type AppLogoConfig = {
   source: string;
-  /** Use only when the mark cannot meet the 3:1 non-text contrast target. */
-  requiresSurface?: boolean;
 };
 
 /**
- * Shipped provider marks must be local, optimized SVGs. Keep the visual
- * treatment explicit here: transparent is the default; a white surface is an
- * exception for dark monochrome artwork that cannot be recolored safely.
+ * Shipped provider marks must be local, optimized SVGs. Every mark, including
+ * the unknown-provider fallback, sits on the same always-white card so the
+ * connected-apps list reads as one family of tiles.
  */
 export const APP_LOGOS: Readonly<Record<string, AppLogoConfig>> = {
   slack: { source: slackLogo },
@@ -28,10 +26,10 @@ export const APP_LOGOS: Readonly<Record<string, AppLogoConfig>> = {
   whatsapp: { source: whatsappLogo },
   microsoft: { source: microsoftLogo },
   gmail: { source: gmailLogo },
-  github: { source: githubLogo, requiresSurface: true },
-  linear: { source: linearLogo, requiresSurface: true },
+  github: { source: githubLogo },
+  linear: { source: linearLogo },
   sentry: { source: sentryLogo },
-  notion: { source: notionLogo, requiresSurface: true },
+  notion: { source: notionLogo },
   obsidian: { source: obsidianLogo },
   google_drive: { source: googleDriveLogo },
   sharepoint: { source: sharepointLogo },
@@ -50,9 +48,7 @@ export function AppLogo({ providerId, providerName, size = 32 }: Props) {
 
   return (
     <span
-      className={`app-logo${logo ? ` app-logo-${providerId}` : " is-fallback"}${
-        logo?.requiresSurface ? " requires-surface" : ""
-      }`}
+      className={`app-logo${logo ? ` app-logo-${providerId}` : " is-fallback"}`}
       role="img"
       aria-label={`${providerName} logo`}
       style={{ width: size, height: size }}

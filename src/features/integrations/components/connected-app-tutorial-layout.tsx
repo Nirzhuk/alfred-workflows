@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Icon } from "../../../components/icon";
 import { Modal } from "../../../components/modal";
 import { AppLogo } from "../app-logo";
 import {
@@ -58,7 +59,7 @@ export function ConnectedAppTutorialLayout({
             aria-label="Close"
             onClick={onClose}
           >
-            ×
+            <Icon name="x" size={16} />
           </button>
         </div>
       </header>

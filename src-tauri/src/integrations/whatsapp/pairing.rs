@@ -35,11 +35,17 @@ pub enum PairingState {
     /// A QR has been streamed to the modal and is waiting to be scanned.
     AwaitingScan,
     /// Linked. The explicit test send has not run yet.
-    AwaitingTest { masked_account: String },
+    AwaitingTest {
+        masked_account: String,
+    },
     /// The test succeeded definitively; the connection may be created.
-    Ready { masked_account: String },
+    Ready {
+        masked_account: String,
+    },
     /// Terminal failure. `code` is a stable, non-sensitive identifier.
-    Failed { code: String },
+    Failed {
+        code: String,
+    },
     Cancelled,
 }
 
@@ -57,7 +63,10 @@ impl PairingState {
     }
 
     pub fn is_terminal(&self) -> bool {
-        matches!(self, Self::Ready { .. } | Self::Failed { .. } | Self::Cancelled)
+        matches!(
+            self,
+            Self::Ready { .. } | Self::Failed { .. } | Self::Cancelled
+        )
     }
 }
 
@@ -228,7 +237,11 @@ impl PairingSession {
     /// Starts one pairing runtime against the staging store and drains its
     /// lifecycle events until the device links, the attempt fails, or the
     /// stream ends.
-    pub async fn run(&self, launcher: &dyn RuntimeLauncher, tokens: &dyn TokenStore) -> Result<(), PairingError> {
+    pub async fn run(
+        &self,
+        launcher: &dyn RuntimeLauncher,
+        tokens: &dyn TokenStore,
+    ) -> Result<(), PairingError> {
         if !matches!(self.state(), PairingState::Starting) {
             return Err(PairingError::InvalidState);
         }
@@ -571,10 +584,7 @@ mod tests {
             "linking alone must not make the connection ready"
         );
         // Nothing may be promoted before the test.
-        assert_eq!(
-            session.finish().await.unwrap_err().code(),
-            "invalid_state"
-        );
+        assert_eq!(session.finish().await.unwrap_err().code(), "invalid_state");
 
         session.send_test("hello").await.expect("test send");
         assert_eq!(
@@ -686,7 +696,10 @@ mod tests {
         let staging = session.paths.staging.clone();
         let credential_ref = session.credential_ref.clone();
 
-        assert!(staging.exists(), "acknowledgement creates the staging store");
+        assert!(
+            staging.exists(),
+            "acknowledgement creates the staging store"
+        );
         assert!(tokens.get(&credential_ref).is_ok());
 
         let launcher = FakeRuntime::with_script(vec![RuntimeEvent::Connected {

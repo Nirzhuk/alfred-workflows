@@ -29,7 +29,9 @@ pub enum RuntimeEvent {
     },
     /// Authenticated. Carries the own JID so the backend can derive the
     /// self-chat destination without ever asking the frontend for one.
-    Connected { own_jid: String },
+    Connected {
+        own_jid: String,
+    },
     /// The device was unlinked remotely. Requires a fresh acknowledged pairing;
     /// never auto-restart one.
     LoggedOut,

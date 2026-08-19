@@ -1,4 +1,5 @@
-import { useEffect, useState, type KeyboardEvent } from "react";
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   DEFAULT_SHORTCUTS,
   SHORTCUT_DEFINITIONS,
@@ -10,7 +11,13 @@ import {
   useShortcutPreferences,
 } from "../../shortcuts";
 
-export function ShortcutSettings() {
+type Props = {
+  /** Page-header container the Reset button portals into, matching where
+   * the Connected Apps section renders its header action. */
+  headerActionsContainer: HTMLDivElement | null;
+};
+
+export function ShortcutSettings({ headerActionsContainer }: Props) {
   const shortcuts = useShortcutPreferences((state) => state.shortcuts);
   const busy = useShortcutPreferences((state) => state.busy);
   const setShortcut = useShortcutPreferences((state) => state.setShortcut);
@@ -47,10 +54,7 @@ export function ShortcutSettings() {
       document.removeEventListener("pointerdown", stopRecordingOutside, true);
   }, [recording]);
 
-  const recordShortcut = async (
-    id: ShortcutId,
-    event: KeyboardEvent<HTMLButtonElement>,
-  ) => {
+  const recordShortcut = async (id: ShortcutId, event: globalThis.KeyboardEvent) => {
     if (recording !== id || event.repeat) return;
     event.preventDefault();
     event.stopPropagation();
@@ -58,11 +62,13 @@ export function ShortcutSettings() {
     if (event.key === "Escape") {
       setRecording(null);
       setError(null);
-      event.currentTarget.blur();
+      if (document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
+      }
       return;
     }
 
-    const accelerator = shortcutFromKeyboardEvent(event.nativeEvent);
+    const accelerator = shortcutFromKeyboardEvent(event);
     if (!accelerator) {
       if (!["Alt", "Control", "Meta", "Shift"].includes(event.key)) {
         setError("Use Command, Control, or Alt with a key (or use an F-key).");
@@ -104,6 +110,15 @@ export function ShortcutSettings() {
     }
   };
 
+  useEffect(() => {
+    if (!recording) return;
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      void recordShortcut(recording, event);
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [recording, recordShortcut]);
+
   const reset = async () => {
     setRecording(null);
     setError(null);
@@ -121,22 +136,26 @@ export function ShortcutSettings() {
       className="settings-section"
       aria-labelledby="shortcut-settings-heading"
     >
-      <div className="settings-section-heading shortcut-settings-heading">
-        <div>
-          <h2 id="shortcut-settings-heading">Keyboard shortcuts</h2>
-          <p className="settings-section-copy">
-            Click a shortcut, then press the key combination you want to use.
-          </p>
-        </div>
-        <button
-          type="button"
-          className="ghost shortcut-reset-button"
-          disabled={busy || !hasCustomShortcuts}
-          onClick={() => void reset()}
-        >
-          Reset defaults
-        </button>
+      <div>
+        <h2 id="shortcut-settings-heading">Keyboard shortcuts</h2>
+        <p className="settings-section-copy">
+          Click a shortcut, then press the key combination you want to use.
+        </p>
       </div>
+
+      {headerActionsContainer
+        ? createPortal(
+            <button
+              type="button"
+              className="ghost settings-header-action"
+              disabled={busy || !hasCustomShortcuts}
+              onClick={() => void reset()}
+            >
+              Reset defaults
+            </button>,
+            headerActionsContainer,
+          )
+        : null}
 
       <div className="settings-card shortcut-settings-card">
         {SHORTCUT_DEFINITIONS.map((definition) => {
@@ -178,9 +197,6 @@ export function ShortcutSettings() {
                     setRecording(null);
                   }
                 }}
-                onKeyDown={(event) =>
-                  void recordShortcut(definition.id, event)
-                }
               >
                 {isRecording ? (
                   <span className="shortcut-recording-label">Press keys…</span>

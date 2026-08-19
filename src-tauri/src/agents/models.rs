@@ -65,10 +65,10 @@ pub fn default_model(provider: AgentProvider) -> &'static str {
 pub fn fallback_models(provider: AgentProvider) -> ProviderModels {
     let models = match provider {
         AgentProvider::ClaudeCode => vec![
-            opt("sonnet", "sonnet", "Claude Code alias"),
-            opt("opus", "opus", "Claude Code alias"),
-            opt("haiku", "haiku", "Claude Code alias"),
-            opt("fable", "fable", "Claude Code alias"),
+            opt("sonnet", "Sonnet 5", "Claude Code alias"),
+            opt("opus", "Opus 5", "Claude Code alias"),
+            opt("haiku", "Haiku 4.5", "Claude Code alias"),
+            opt("fable", "Fable 5", "Claude Code alias"),
         ],
         AgentProvider::Cursor => cursor_fallback_models(),
         AgentProvider::Codex => vec![
@@ -160,7 +160,7 @@ fn discover_claude() -> Result<ProviderModels, String> {
         default_model: fallback.default_model,
         models: fallback.models,
         allow_custom: true,
-        source: "claude_aliases".into(),
+        source: String::new(),
         available: true,
         error: None,
     })
@@ -498,23 +498,23 @@ fn discover_cursor_from_ide_state() -> Result<ProviderModels, String> {
             }
         }
 
-        let id = item
+        let base_id = item
             .get("name")
             .or_else(|| item.get("serverModelName"))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .trim();
-        if id.is_empty() || !seen.insert(id.to_string()) {
+        if base_id.is_empty() {
             continue;
         }
 
-        let label = item
+        let base_label = item
             .get("clientDisplayName")
             .or_else(|| item.get("inputboxShortModelName"))
             .and_then(|v| v.as_str())
             .map(strip_html_tags)
             .filter(|s| !s.is_empty())
-            .unwrap_or_else(|| id.to_string());
+            .unwrap_or_else(|| base_id.to_string());
 
         let vendor = item
             .get("vendor")
@@ -533,11 +533,45 @@ fn discover_cursor_from_ide_state() -> Result<ProviderModels, String> {
             format!("{vendor} · from Cursor Settings → Models")
         };
 
-        models.push(ModelOption {
-            id: id.to_string(),
-            label,
-            description,
-        });
+        let mut pushed_variant = false;
+        if let Some(variants) = item.get("variants").and_then(|v| v.as_array()) {
+            for variant in variants {
+                let variant_id = variant
+                    .get("legacySlug")
+                    .and_then(|v| v.as_str())
+                    .or_else(|| {
+                        variant
+                            .get("variantStringRepresentation")
+                            .and_then(|v| v.as_str())
+                    })
+                    .map(str::trim)
+                    .filter(|id| !id.is_empty())
+                    .unwrap_or(base_id);
+                if !seen.insert(variant_id.to_string()) {
+                    continue;
+                }
+                let variant_label = variant
+                    .get("displayNameOutsidePicker")
+                    .or_else(|| variant.get("displayName"))
+                    .and_then(|v| v.as_str())
+                    .map(strip_html_tags)
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or_else(|| base_label.clone());
+                models.push(ModelOption {
+                    id: variant_id.to_string(),
+                    label: variant_label,
+                    description: description.clone(),
+                });
+                pushed_variant = true;
+            }
+        }
+        if !pushed_variant && seen.insert(base_id.to_string()) {
+            models.push(ModelOption {
+                id: base_id.to_string(),
+                label: base_label,
+                description,
+            });
+        }
     }
 
     if models.is_empty() {
@@ -553,8 +587,24 @@ fn discover_cursor_from_ide_state() -> Result<ProviderModels, String> {
     let default = value
         .pointer("/aiSettings/composerModel")
         .and_then(|v| v.as_str())
-        .map(str::to_string)
-        .filter(|id| models.iter().any(|m| m.id == *id))
+        .and_then(|selected| {
+            models
+                .iter()
+                .find(|m| m.id == selected)
+                .or_else(|| {
+                    // IDE stores base ids like `grok-4.5`, while the picker can
+                    // expose variant slugs like `cursor-grok-4.5-high-fast`.
+                    models
+                        .iter()
+                        .find(|m| m.id.contains(selected) && !m.id.ends_with("-fast"))
+                })
+                .or_else(|| {
+                    models
+                        .iter()
+                        .find(|m| m.id.contains(selected) && m.id.ends_with("-fast"))
+                })
+                .map(|m| m.id.clone())
+        })
         .or_else(|| {
             models
                 .iter()

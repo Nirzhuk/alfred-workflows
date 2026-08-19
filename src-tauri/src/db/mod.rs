@@ -80,8 +80,7 @@ impl Db {
 }
 
 pub fn app_data_dir() -> Result<PathBuf, DbError> {
-    let dirs =
-        ProjectDirs::from("com", "nirzhuk", "workflows-local-agents").ok_or(DbError::NoAppDir)?;
+    let dirs = ProjectDirs::from("com", "nirzhuk", "alfred").ok_or(DbError::NoAppDir)?;
     Ok(dirs.data_dir().to_path_buf())
 }
 
