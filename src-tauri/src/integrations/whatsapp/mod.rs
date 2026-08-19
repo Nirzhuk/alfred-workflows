@@ -6,6 +6,8 @@
 
 pub mod crypto;
 pub mod keyring;
+pub mod log_guard;
+pub mod owner;
 pub mod pairing;
 pub mod provider;
 pub mod runtime;

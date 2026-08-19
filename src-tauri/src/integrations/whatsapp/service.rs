@@ -11,9 +11,12 @@ use tauri::{AppHandle, Emitter};
 
 use super::pairing::{PairedAccount, PairingError, PairingPaths, PairingSession, PairingState, QrSink};
 use super::provider::{self, RISK_ACKNOWLEDGEMENT_VERSION};
+use super::owner::{RuntimeStatus, RuntimeTarget, WhatsAppRuntimeOwner};
 use super::runtime::{RuntimeLauncher, WhatsAppLauncher};
 use crate::db::Db;
-use crate::integrations::models::{AppConnectionDto, IntegrationCommandError, UpsertAppConnection};
+use crate::integrations::models::{
+    AppConnectionDto, ConnectionStatus, IntegrationCommandError, UpsertAppConnection,
+};
 use crate::integrations::token_store::TokenStore;
 
 /// Event carrying one short-lived QR payload to the open connect modal.
@@ -131,6 +134,7 @@ pub struct WhatsAppService {
     session: Mutex<Option<Arc<PairingSession>>>,
     launcher: Arc<dyn RuntimeLauncher>,
     tokens: Arc<dyn TokenStore>,
+    owner: Arc<WhatsAppRuntimeOwner>,
 }
 
 impl WhatsAppService {
@@ -141,9 +145,48 @@ impl WhatsAppService {
     pub fn with_launcher(tokens: Arc<dyn TokenStore>, launcher: Arc<dyn RuntimeLauncher>) -> Self {
         Self {
             session: Mutex::new(None),
+            owner: Arc::new(WhatsAppRuntimeOwner::new(tokens.clone(), launcher.clone())),
             launcher,
             tokens,
         }
+    }
+
+    /// Starts the long-lived runtime for a stored, connected account.
+    ///
+    /// Called once during application startup. A missing or revoked connection
+    /// is not an error: Alfred simply runs without WhatsApp.
+    pub async fn start_stored_runtime(&self, db: &Db) {
+        let Some(target) = stored_target(db) else {
+            return;
+        };
+        // A failure leaves the owner in an error state the settings UI can show;
+        // it must never prevent Alfred from starting.
+        let _ = self.owner.start(target).await;
+    }
+
+    pub fn runtime_status(&self) -> RuntimeStatus {
+        self.owner.status()
+    }
+
+    /// One bounded reconnect, triggered from the settings UI.
+    pub async fn reconnect_runtime(&self) -> Result<RuntimeStatus, IntegrationCommandError> {
+        match self.owner.reconnect().await {
+            Ok(()) => Ok(self.owner.status()),
+            Err(error) => Err(IntegrationCommandError::new(
+                if matches!(error, super::runtime::RuntimeError::LoggedOut) {
+                    "relink_required"
+                } else {
+                    "runtime_unavailable"
+                },
+                &error.to_string(),
+                error.is_retryable(),
+            )),
+        }
+    }
+
+    /// Stops the runtime during orderly application exit.
+    pub async fn shutdown_runtime(&self) {
+        self.owner.shutdown().await;
     }
 
     fn current(&self) -> Option<Arc<PairingSession>> {
@@ -243,6 +286,17 @@ impl WhatsAppService {
             })?;
 
         *self.session.lock().expect("whatsapp session lock") = None;
+
+        // Hand the freshly paired account straight to the long-lived runtime so
+        // the user does not have to restart Alfred to use it.
+        self.owner
+            .start(RuntimeTarget {
+                credential_ref: account.credential_ref.clone(),
+                store_path: account.store_path.clone(),
+            })
+            .await
+            .ok();
+
         Ok(connection.into())
     }
 
@@ -253,6 +307,23 @@ impl WhatsAppService {
             session.cancel(self.tokens.as_ref()).await;
         }
     }
+}
+
+/// Finds the stored, still-connected WhatsApp account, if any.
+fn stored_target(db: &Db) -> Option<RuntimeTarget> {
+    let connections = db.list_app_connections().ok()?;
+    let connection = connections.into_iter().find(|connection| {
+        connection.provider_id == provider::PROVIDER_ID
+            && connection.status == ConnectionStatus::Connected
+    })?;
+    let store_path = connection
+        .provider_metadata
+        .get(provider::metadata_key::STORE_PATH)?
+        .clone();
+    Some(RuntimeTarget {
+        credential_ref: connection.credential_ref,
+        store_path,
+    })
 }
 
 fn upsert_for(account: &PairedAccount) -> UpsertAppConnection {

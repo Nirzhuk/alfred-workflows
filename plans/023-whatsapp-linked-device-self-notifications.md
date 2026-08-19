@@ -611,6 +611,61 @@ socket loss/backoff, network transitions, stream replacement, revoked session,
 locked/missing keychain, corrupted store, concurrent actions, reconnect/send
 races, and zero inbound-content propagation.
 
+#### Step 5 build status (2026-08-19) — backend complete
+
+**Gate 8 from Step 1 is now mitigated.** `integrations/whatsapp/log_guard.rs`
+drops every record whose target starts with `whatsapp_rust`, `wacore`,
+`waproto`, or `Client/` before it can reach a sink, and `install_silent()` runs
+first in Tauri's `setup` — before any client can exist. Filtering by *target* is
+the point: the worst record (`wacore_libsignal::protocol::session_cipher`,
+carrying the raw LID plus ratchet and base keys) is a `WARN`, which passes every
+sane level filter.
+
+Alfred installs no logger today, so those calls were already no-ops — but that
+safety was accidental. Adding `tauri-plugin-log` for debugging would have
+started writing Signal key material to a file. The guard makes the policy
+explicit, testable, and the mandatory path for any future logger. Six tests
+cover it, including one asserting each exact leak site found in the spike.
+
+`integrations/whatsapp/owner.rs` owns the one runtime for Alfred's lifetime:
+
+- `start()` unlocks the encrypted store, purges expired retry payloads, and
+  launches exactly one client — stopping any previous one first, so two can
+  never coexist.
+- One async lock serializes every lifecycle transition and every send, so
+  pairing, reconnect, send, logout, and shutdown cannot interleave.
+- Safe states only: `stopped`, `connecting`, `connected` (masked account),
+  `reconnecting`, `relink_required`, `error` (stable code).
+- The event pump matches **only** lifecycle variants. No message, history,
+  contact, media, call, presence, or profile payload is observed, forwarded, or
+  stored, because the runtime never emits one.
+- A remote unlink, or an unexpected pairing code during normal operation, moves
+  to `relink_required` and stops. It never silently starts a pairing flow, and
+  the state survives shutdown so a restart cannot re-pair by accident.
+- `send_self_message` makes one bounded reconnect when disconnected, but refuses
+  outright once `relink_required`.
+
+Wiring: startup spawns `start_stored_runtime` (non-fatal — a missing, revoked,
+or broken connection leaves an error state the UI can show, and never blocks
+Alfred from launching); `RunEvent::Exit` calls `shutdown_runtime`. Completing a
+pairing hands the account straight to the owner, so no restart is needed.
+Commands added: `whatsapp_runtime_status`, `reconnect_whatsapp_runtime`.
+
+A defect worth recording: the event pump originally updated a **detached copy**
+of the status, so `Connected` and `LoggedOut` never reached callers — the runtime
+would have looked permanently `connecting`. All eleven tests passed anyway,
+because none asserted that an event changed the owner's own status. The status is
+now a shared `Arc<Mutex<_>>` and three regression tests cover the connect,
+remote-unlink, and stray-QR transitions.
+
+**Still open for Step 5**: the bounded maintenance-interval purge (startup purge
+is done), and the socket-loss/backoff and network-transition cases, which need a
+live account rather than the scripted fake. The status/reconnect **UI** belongs
+to Step 7.
+
+Gates: `cargo test` 266 passed, `cargo clippy` clean across the WhatsApp module,
+`cargo build` green.
+
 ### Step 6: Register `whatsapp.send_self_message`
 
 Register through Plan 009:

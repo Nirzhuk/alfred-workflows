@@ -6831,6 +6831,7 @@ dependencies = [
  "futures-util",
  "hmac 0.12.1",
  "keyring",
+ "log",
  "notify",
  "notify-rust",
  "objc2-app-kit",

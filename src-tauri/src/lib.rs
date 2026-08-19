@@ -142,7 +142,29 @@ pub fn run() {
                 }
             }
 
+            // Blocks WhatsApp protocol logging before any client exists. The
+            // crate prints raw identity and Signal key material through `log`,
+            // including at WARN, so this must be installed first.
+            if let Err(error) = integrations::whatsapp::log_guard::install_silent() {
+                eprintln!("whatsapp log guard not installed: {error}");
+            }
+
             let handle = app.handle().clone();
+
+            // One WhatsApp runtime for the process lifetime, only when an
+            // account is already linked. Never blocks startup.
+            {
+                let handle = handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    let (Some(db), Some(integrations)) = (
+                        handle.try_state::<Db>(),
+                        handle.try_state::<IntegrationsState>(),
+                    ) else {
+                        return;
+                    };
+                    integrations.whatsapp.start_stored_runtime(db.inner()).await;
+                });
+            }
 
             // Webhook listener + file watchers. Neither is fatal: manual and
             // scheduled runs still work if a trigger source fails to start.
@@ -251,6 +273,8 @@ pub fn run() {
             commands::integrations::send_whatsapp_pairing_test,
             commands::integrations::complete_whatsapp_pairing,
             commands::integrations::cancel_whatsapp_pairing,
+            commands::integrations::whatsapp_runtime_status,
+            commands::integrations::reconnect_whatsapp_runtime,
             commands::list_workflows,
             commands::get_workflow,
             commands::create_workflow,
@@ -305,6 +329,15 @@ pub fn run() {
         .run(|app_handle, event| {
             // macOS dock-icon click while the window is hidden sends Reopen,
             // not a fresh launch, so single-instance's re-show never fires.
+            // Orderly exit: stop the WhatsApp client and flush protocol state.
+            // Alfred sends nothing while it is not running.
+            if let tauri::RunEvent::Exit = event {
+                if let Some(integrations) = app_handle.try_state::<IntegrationsState>() {
+                    tauri::async_runtime::block_on(
+                        integrations.whatsapp.shutdown_runtime(),
+                    );
+                }
+            }
             if let tauri::RunEvent::Reopen { .. } = event {
                 if let Some(window) = app_handle.get_webview_window("main") {
                     let _ = window.unminimize();

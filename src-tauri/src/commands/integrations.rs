@@ -11,6 +11,7 @@ use crate::integrations::slack::SlackPrivateConnectionInput;
 use crate::integrations::telegram::{
     TelegramCompleteInput, TelegramPairingPrepared, TelegramPrepareInput,
 };
+use crate::integrations::whatsapp::owner::RuntimeStatus as WhatsAppRuntimeStatus;
 use crate::integrations::whatsapp::service::{WhatsAppPairingStateDto, WhatsAppTestSendDto};
 use crate::integrations::IntegrationsState;
 use tauri::State;
@@ -250,6 +251,22 @@ pub async fn complete_whatsapp_pairing(
 
 /// Cancels an in-flight attempt: stops the runtime, best-effort remote logout,
 /// then deletes the staging store and key. Safe when nothing is running.
+#[tauri::command]
+pub fn whatsapp_runtime_status(
+    state: State<'_, IntegrationsState>,
+) -> WhatsAppRuntimeStatus {
+    state.whatsapp.runtime_status()
+}
+
+/// One bounded reconnect. A revoked session reports `relink_required` instead of
+/// silently starting a new pairing flow.
+#[tauri::command]
+pub async fn reconnect_whatsapp_runtime(
+    state: State<'_, IntegrationsState>,
+) -> Result<WhatsAppRuntimeStatus, IntegrationCommandError> {
+    state.whatsapp.reconnect_runtime().await
+}
+
 #[tauri::command]
 pub async fn cancel_whatsapp_pairing(
     state: State<'_, IntegrationsState>,
