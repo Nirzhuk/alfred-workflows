@@ -182,6 +182,8 @@ scripts/guard-desktop-tauri.mjs
   400/500/600/700; fractional font weights are not allowed
 - Shared spacing follows the documented four-pixel grid; controls, cards,
   dialogs, icons, motion, elevation, and layering use their semantic token scales
+- Product dialogs use the shared top-anchored precision-sheet shell with a
+  blurred scrim, mono context rail, trapped keyboard focus, and opener focus return
 - Sidebar item text is always 14px/400, icons are 18px, and section labels are
   16px/600 across workflow and Settings navigation
 - Navigation is flat by default: selection uses a subtle surface background,

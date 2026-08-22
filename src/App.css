@@ -362,6 +362,12 @@ html[data-platform="macos"] {
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }
+
+  .modal-backdrop {
+    background: var(--backdrop);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
 }
 
 * {
@@ -4140,31 +4146,25 @@ button.danger:hover:not(:disabled) {
   padding: var(--space-0-5) var(--space-2);
 }
 
-.modal--md,
-.schedule-modal,
-.rename-modal {
-  width: min(440px, 100%);
-  max-height: min(85vh, 640px);
-}
-
-.modal--sm,
-.confirm-modal {
-  width: min(420px, 100%);
-  max-height: min(85vh, 640px);
-}
-
 .rename-modal-body,
 .confirm-modal-body {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-4) var(--space-4) var(--space-5);
-  background: var(--surface);
+  gap: var(--space-5);
+  padding: var(--space-6);
+  background: var(--surface-card);
 }
 
 .confirm-modal-body .muted {
   margin: 0;
-  line-height: 1.45;
+  color: color-mix(in srgb, var(--ink) 72%, var(--muted));
+  font-size: var(--text-md);
+  line-height: var(--leading-relaxed);
+}
+
+.confirm-modal.is-danger .modal-kicker {
+  border-left-color: var(--danger);
+  color: var(--danger);
 }
 
 button.primary.danger-solid {
@@ -4182,10 +4182,10 @@ button.primary.danger-solid:hover:not(:disabled) {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-  padding: var(--space-4) var(--space-4) var(--space-5);
+  padding: var(--space-6);
   overflow-x: hidden;
   overflow-y: auto;
-  background: var(--surface);
+  background: var(--surface-card);
   min-width: 0;
 }
 
@@ -4237,8 +4237,8 @@ button.primary.danger-solid:hover:not(:disabled) {
 }
 
 .modal.connection-tutorial-modal {
-  width: min(900px, 100%);
-  max-height: min(88vh, 780px);
+  width: min(960px, 100%);
+  max-height: min(88vh, 800px);
 }
 
 .connection-tutorial-body {
@@ -4263,7 +4263,7 @@ button.primary.danger-solid:hover:not(:disabled) {
   gap: var(--space-4);
   padding: var(--space-5) var(--space-5) var(--space-4);
   border-bottom: 1px solid var(--line);
-  background: var(--surface-card);
+  background: var(--surface-raised);
 }
 
 .connection-tutorial-intro .muted {
@@ -4291,7 +4291,7 @@ button.primary.danger-solid:hover:not(:disabled) {
   border: 1px solid var(--accent-border);
   border-radius: var(--radius-pill);
   color: var(--accent);
-  background: var(--accent-soft);
+  background: var(--surface-card);
   font-size: var(--text-xs);
   font-weight: var(--font-weight-semibold);
   white-space: nowrap;
@@ -4428,9 +4428,9 @@ button.primary.danger-solid:hover:not(:disabled) {
   gap: var(--space-3);
   margin: var(--space-2) var(--space-5) var(--space-5);
   padding: var(--space-4);
-  border: 1px solid var(--accent-border);
+  border: 1px solid var(--line);
   border-radius: var(--radius-lg);
-  background: var(--accent-glow);
+  background: var(--surface-raised);
 }
 
 .connection-tutorial-form-panel > p {
@@ -4504,8 +4504,8 @@ button.primary.danger-solid:hover:not(:disabled) {
 /* Connected-app setup flows share the reference split-pane layout: provider
    work on the left, the connection handoff on the right. */
 .modal.connection-tutorial-split-modal {
-  width: min(920px, calc(100vw - 32px));
-  height: min(620px, calc(100vh - 32px));
+  width: min(980px, calc(100vw - 32px));
+  height: min(680px, calc(100vh - 32px));
   max-height: none;
 }
 
@@ -4515,7 +4515,7 @@ button.primary.danger-solid:hover:not(:disabled) {
   min-width: 0;
   min-height: 0;
   height: 100%;
-  background: var(--surface);
+  background: var(--surface-card);
 }
 
 .connection-tutorial-split-modal .connection-tutorial-split-body {
@@ -4528,10 +4528,10 @@ button.primary.danger-solid:hover:not(:disabled) {
   align-items: center;
   justify-content: space-between;
   gap: var(--space-4);
-  min-height: 5rem;
-  padding: var(--space-4) var(--space-6);
+  min-height: 6rem;
+  padding: var(--space-5) var(--space-6);
   border-bottom: 1px solid var(--line);
-  background: var(--surface);
+  background: var(--surface-raised);
 }
 
 .connection-tutorial-header-copy,
@@ -4545,6 +4545,11 @@ button.primary.danger-solid:hover:not(:disabled) {
   gap: var(--space-4);
 }
 
+.connection-tutorial-header-copy .app-logo {
+  flex: 0 0 auto;
+  box-shadow: 0 0 0 1px var(--line);
+}
+
 .connection-tutorial-header-copy > div {
   min-width: 0;
 }
@@ -4556,6 +4561,7 @@ button.primary.danger-solid:hover:not(:disabled) {
   font-size: var(--text-2xl);
   font-weight: var(--font-weight-semibold);
   line-height: var(--leading-compact);
+  letter-spacing: -0.025em;
 }
 
 .connection-tutorial-header p {
@@ -4572,7 +4578,7 @@ button.primary.danger-solid:hover:not(:disabled) {
 
 .connection-tutorial-header .connection-tutorial-badge {
   padding: var(--space-2) var(--space-3);
-  border-color: var(--accent-border-loud);
+  border-color: var(--line);
   color: var(--accent);
   background: transparent;
   font-size: var(--text-md);
@@ -4585,8 +4591,8 @@ button.primary.danger-solid:hover:not(:disabled) {
   height: 2.1rem;
   padding: 0;
   border-color: var(--line);
-  background: transparent;
-  color: var(--ink);
+  background: var(--surface-card);
+  color: var(--muted);
 }
 
 .connection-tutorial-steps,
@@ -4599,17 +4605,20 @@ button.primary.danger-solid:hover:not(:disabled) {
 
 .connection-tutorial-steps {
   border-right: 1px solid var(--line);
+  background: var(--surface-card);
 }
 
 .connection-tutorial-form {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
+  background: var(--surface-raised);
 }
 
 .connection-tutorial-column-label {
   margin: 0 0 var(--space-5);
   color: var(--muted);
+  font-family: var(--font-mono);
   font-size: var(--text-sm);
   font-weight: var(--font-weight-bold);
   letter-spacing: 0.13em;
@@ -5324,12 +5333,6 @@ button.primary.danger-solid:hover:not(:disabled) {
 .palette-grid button {
   font-size: var(--text-sm);
   padding: var(--space-2) var(--space-2);
-}
-
-.modal--settings,
-.node-settings-modal {
-  width: min(520px, calc(100vw - 32px));
-  max-height: min(84vh, 760px);
 }
 
 .node-settings-modal-body {
@@ -7274,47 +7277,95 @@ button.primary.danger-solid:hover:not(:disabled) {
   z-index: var(--layer-overlay);
   background: var(--backdrop);
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
-  padding: var(--space-5);
+  padding: max(var(--space-10), 7vh) var(--space-5) var(--space-5);
+  -webkit-backdrop-filter: blur(14px) saturate(0.72);
+  backdrop-filter: blur(14px) saturate(0.72);
 }
 
 .modal,
 .output-modal,
 .memories-inspector {
-  width: min(760px, 100%);
-  max-height: min(80vh, 720px);
+  position: relative;
+  width: min(820px, 100%);
+  max-height: min(86vh, 760px);
   display: flex;
   flex-direction: column;
-  background: var(--surface-panel);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-xl);
+  background: var(--surface-card);
+  border: 1px solid color-mix(in srgb, var(--ink) 18%, transparent);
+  border-radius: var(--radius-lg);
   box-shadow: var(--elevation-modal);
   overflow: hidden;
+  transform-origin: 50% 0;
+}
+
+.modal:focus {
+  outline: none;
+}
+
+.modal--sm,
+.confirm-modal {
+  width: min(460px, 100%);
+  max-height: min(82vh, 620px);
+}
+
+.modal--md,
+.schedule-modal,
+.rename-modal {
+  width: min(540px, 100%);
+  max-height: min(86vh, 720px);
+}
+
+.modal--settings,
+.node-settings-modal {
+  width: min(620px, 100%);
+  max-height: min(88vh, 780px);
 }
 
 .modal--lg {
-  width: min(760px, 100%);
-  max-height: min(80vh, 720px);
+  width: min(820px, 100%);
+  max-height: min(86vh, 760px);
 }
 
 .modal--xl,
 .memories-inspector {
-  width: min(980px, 100%);
-  height: min(82vh, 760px);
+  width: min(1120px, 100%);
+  height: min(84vh, 800px);
   max-height: none;
 }
 
 .modal-header,
 .output-modal-header,
 .memories-inspector-header {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(7rem, 0.26fr) minmax(0, 1fr) auto;
   align-items: flex-start;
-  justify-content: space-between;
   gap: var(--space-4);
-  padding: var(--space-4) var(--space-5);
+  padding: var(--space-6);
   border-bottom: 1px solid var(--line);
   background: var(--surface-raised);
+}
+
+.modal-header:not(:has(.modal-kicker)) {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.modal-kicker {
+  margin: var(--space-0-5) 0 0;
+  padding-left: var(--space-2);
+  border-left: 2px solid var(--accent);
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.08em;
+  line-height: var(--leading-compact);
+  text-transform: uppercase;
+}
+
+.modal-header-copy {
+  min-width: 0;
 }
 
 .modal-header--strong,
@@ -7326,23 +7377,26 @@ button.primary.danger-solid:hover:not(:disabled) {
 .modal-header h3,
 .output-modal-header h3,
 .memories-inspector-header h2 {
-  margin: var(--space-0-5) 0 0;
+  margin: 0;
   font-family: var(--font-display);
-  font-size: var(--text-xl);
+  font-size: var(--text-2xl);
   font-weight: var(--font-weight-semibold);
   line-height: var(--leading-compact);
+  letter-spacing: -0.025em;
 }
 
 .modal-header h2,
 .memories-inspector-header h2 {
   margin: 0;
-  font-size: var(--text-xl);
+  font-size: var(--text-2xl);
 }
 
 .modal-header .muted,
 .memories-inspector-header .muted {
-  margin: var(--space-1) 0 0;
+  max-width: 60ch;
+  margin: var(--space-2) 0 0;
   font-size: var(--text-sm);
+  line-height: var(--leading-default);
 }
 
 .output-modal-stats {
@@ -7358,22 +7412,23 @@ button.primary.danger-solid:hover:not(:disabled) {
 .memories-inspector-header-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-1-5);
+  gap: var(--space-2);
   justify-content: flex-end;
 }
 
 .modal-close-button {
   display: inline-grid;
   place-items: center;
-  width: var(--control-height-compact);
-  height: var(--control-height-compact);
+  width: var(--control-height-default);
+  height: var(--control-height-default);
   padding: 0;
-  border-color: transparent;
+  border-color: var(--line);
+  background: var(--surface-card);
   color: var(--muted);
 }
 
 .modal-close-button:hover:not(:disabled) {
-  border-color: transparent;
+  border-color: color-mix(in srgb, var(--ink) 22%, transparent);
   background: var(--control-background-hover);
   color: var(--ink);
 }
@@ -7382,33 +7437,47 @@ button.primary.danger-solid:hover:not(:disabled) {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-  padding: var(--space-4) var(--space-5) var(--space-5);
+  padding: var(--space-6);
   overflow: auto;
-  background: var(--surface);
+  background: var(--surface-card);
   min-width: 0;
+}
+
+.modal input:not([type="checkbox"]):not([type="radio"]),
+.modal textarea,
+.modal select,
+.modal .ui-select-button {
+  background-color: var(--surface-raised);
+}
+
+.modal .schedule-actions {
+  justify-content: flex-end;
+  margin-top: var(--space-2);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--line);
 }
 
 .output-modal-body {
   flex: 1 1 auto;
   min-height: 0;
   margin: 0;
-  padding: var(--space-4) var(--space-5) var(--space-5);
+  padding: var(--space-6);
   overflow: auto;
   white-space: pre-wrap;
   word-break: break-word;
   font-size: var(--text-md);
   line-height: var(--leading-default);
-  background: var(--surface);
+  background: var(--surface-card);
 }
 
 .output-modal-summary {
   flex: 0 0 auto;
   margin: 0;
-  padding: var(--space-4) var(--space-5) 0;
+  padding: var(--space-6) var(--space-6) 0;
   color: var(--ink);
   font-size: var(--text-md);
   line-height: var(--leading-default);
-  background: var(--surface);
+  background: var(--surface-card);
 }
 
 .output-modal-summary + .output-modal-body {
@@ -7427,7 +7496,64 @@ button.primary.danger-solid:hover:not(:disabled) {
   min-width: 0;
   min-height: 0;
   border: 0;
-  background: var(--surface);
+  background: var(--surface-card);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .modal-backdrop {
+    animation: modal-backdrop-in var(--duration-standard) var(--ease-standard)
+      both;
+  }
+
+  .modal {
+    animation: modal-panel-in var(--duration-slow) var(--ease-emphasized) both;
+  }
+}
+
+@keyframes modal-backdrop-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes modal-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.99);
+  }
+}
+
+@media (max-width: 620px) {
+  .modal-backdrop {
+    padding: var(--space-3);
+  }
+
+  .modal,
+  .modal--sm,
+  .modal--md,
+  .modal--lg,
+  .modal--settings,
+  .modal--xl {
+    width: 100%;
+    max-height: calc(100dvh - var(--space-6));
+  }
+
+  .modal-header {
+    grid-template-columns: minmax(0, 1fr) auto;
+    padding: var(--space-5);
+  }
+
+  .modal-kicker {
+    grid-column: 1 / -1;
+  }
+
+  .modal-header-copy {
+    grid-column: 1;
+  }
+
+  .modal-actions {
+    grid-column: 2;
+  }
 }
 
 .output-files-section {
@@ -8016,46 +8142,23 @@ button.primary.danger-solid:hover:not(:disabled) {
   line-height: 1.5;
 }
 
-.memories-link-picker-backdrop {
-  position: absolute;
-  inset: 0;
-  z-index: var(--layer-overlay);
-  padding: var(--space-6);
-  display: grid;
-  place-items: center;
-  background: var(--backdrop);
+.modal-backdrop:has(.memories-link-picker-modal) {
+  background: color-mix(in srgb, var(--backdrop) 74%, transparent);
+}
+
+.memories-link-picker-modal {
+  width: min(680px, 100%);
+  max-height: min(70vh, 620px);
 }
 
 .memories-link-picker {
-  width: min(680px, 100%);
-  max-height: min(70vh, 620px);
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-  padding: var(--space-4);
+  padding: var(--space-5) var(--space-6) var(--space-6);
   overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-xl);
-  background: var(--surface-panel);
-  box-shadow: var(--elevation-modal);
-}
-
-.memories-link-picker > header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-3);
-}
-
-.memories-link-picker h3 {
-  margin: 0;
-  font-family: var(--font-display);
-  font-size: var(--text-lg);
-}
-
-.memories-link-picker header .muted {
-  margin: var(--space-1) 0 0;
-  font-size: var(--text-sm);
+  background: var(--surface-card);
 }
 
 .memories-link-picker-results {
@@ -8192,11 +8295,7 @@ button.primary.danger-solid:hover:not(:disabled) {
     justify-content: flex-start;
   }
 
-  .memories-link-picker-backdrop {
-    padding: var(--space-3);
-  }
-
-  .memories-link-picker {
+  .memories-link-picker-modal {
     max-height: 100%;
   }
 }

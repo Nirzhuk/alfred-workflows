@@ -139,7 +139,7 @@ export function WhatsAppConnect({ onClose }: ConnectDialogProps) {
   const terminal = failure !== null && TERMINAL_FAILURES.has(failure);
 
   return (
-    <Modal onClose={onClose}>
+    <Modal onClose={onClose} labelledBy="whatsapp-title">
       <ModalHeader
         eyebrow="Personal notifications"
         title="Connect WhatsApp"

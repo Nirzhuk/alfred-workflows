@@ -342,8 +342,19 @@ the rails are tuned to avoid.
 ### Cards and dialogs
 
 - Cards use 12px radius. Borders communicate grouping; shadows are normally off.
-- Dialogs and floating panels use 16px radius and the modal elevation token.
-- Dialog titles use 20px/600; page titles use 24px/600.
+- Dialogs use the shared 12px precision-sheet shell and modal elevation token.
+  They open near the top of the workspace instead of floating at dead center.
+- Modal backdrops blur and mute the workspace. Reduced-transparency mode keeps
+  the scrim but removes the filter.
+- When a dialog has context such as "Schedule" or "Workflow", place it in the
+  narrow Geist Mono context rail. The Infer title sits in the main header column.
+- Dialog titles use 24px/600. Compact helper text stays at 12px/400.
+- Dialog bodies use the card surface. Inputs and nested controls step up to the
+  raised surface. Emerald is reserved for the context rail, focus, and the
+  primary decision.
+- Shared modals trap Tab, close with Escape when allowed, lock background
+  scrolling, and return focus to the opener. Feature dialogs must not rebuild
+  this behavior.
 - A workflow card with unsaved edits replaces its solid border with a marching
   dashed accent stroke. The dashes themselves are the status cue, so they stay
   visible when reduced motion turns the march off.
