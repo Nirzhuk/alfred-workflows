@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 type Tab = {
@@ -85,6 +86,7 @@ export function AppTitlebar({
   const [fullscreen, setFullscreen] = useState(false);
 
   useEffect(() => {
+    if (!isTauri()) return;
     const win = getCurrentWindow();
     const unsubs: Array<() => void> = [];
 

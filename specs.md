@@ -170,9 +170,9 @@ scripts/guard-desktop-tauri.mjs
 
 - `docs/design-system.md` is the visual source of truth; shared decisions use
   semantic CSS custom properties in `App.css`, not feature-local literals
-- Alfred bundles Geist for interface text, Fraunces for display accents, and
-  Geist Mono for technical content; the desktop UI has no runtime font
-  dependency
+- Alfred prefers Infer for interface text, uses bundled Geist as its local
+  fallback, and uses Geist Mono for utility accents; the desktop UI makes no
+  runtime font request
 - Application-owned UI uses identical tokens on macOS, Windows, and Linux;
   platform branches are limited to OS chrome, shortcuts, permissions, and
   native system surfaces

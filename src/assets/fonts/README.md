@@ -9,7 +9,11 @@ the desktop UI does not require a network request at runtime.
 | Geist Mono variable | `geist-mono-variable.woff2` | [Vercel Geist](https://github.com/vercel/geist-font) |
 | Fraunces variable | `fraunces-variable.woff2` | [Fraunces](https://github.com/undercasetype/Fraunces) |
 
-All three families are distributed under the SIL Open Font License 1.1. The
+Geist and Geist Mono are active in the release UI. Fraunces is retained as a
+licensed legacy asset but is no longer loaded. The primary CSS stack prefers
+Infer and falls back to Geist until a licensed Infer WOFF2 file is supplied.
+
+The bundled families are distributed under the SIL Open Font License 1.1. The
 license text for each project is stored beside the font files. If smaller or
 broader character-set support is required, replace the local assets with the
-appropriate subsets rather than adding a remote CSS import.
+appropriate subsets instead of adding a remote CSS import.

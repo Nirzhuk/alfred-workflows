@@ -32,18 +32,16 @@ function cssBlock(selector: string): string {
 }
 
 describe("design-system foundations", () => {
-  test("bundles Geist, Fraunces, and Geist Mono without a runtime font request", async () => {
+  test("prefers Infer and bundles its Geist fallbacks without a runtime font request", async () => {
     expect(css).not.toContain("@import url(");
     expect(css).toContain('font-family: "Geist";');
-    expect(css).toContain('font-family: "Fraunces";');
     expect(css).toContain('font-family: "Geist Mono";');
-    expect(css).toContain('--font-sans: "Geist"');
-    expect(css).toContain('--font-display: "Fraunces"');
+    expect(css).toContain('--font-sans: "Infer", "Geist"');
+    expect(css).toContain('--font-display: var(--font-sans)');
     expect(css).toContain('--font-mono: "Geist Mono"');
 
     for (const path of [
       "src/assets/fonts/geist-variable.woff2",
-      "src/assets/fonts/fraunces-variable.woff2",
       "src/assets/fonts/geist-mono-variable.woff2",
     ]) {
       const font = Bun.file(new URL(path, root));
@@ -51,10 +49,7 @@ describe("design-system foundations", () => {
       expect(font.size).toBeGreaterThan(10_000);
     }
 
-    for (const path of [
-      "src/assets/fonts/GEIST-LICENSE.txt",
-      "src/assets/fonts/FRAUNCES-LICENSE.txt",
-    ]) {
+    for (const path of ["src/assets/fonts/GEIST-LICENSE.txt"]) {
       const license = await Bun.file(new URL(path, root)).text();
       expect(license).toContain("SIL Open Font License");
       expect(license).not.toContain("404: Not Found");
@@ -83,12 +78,46 @@ describe("design-system foundations", () => {
     }
   });
 
+  test("locks the release palette to neutral surfaces and one emerald accent", () => {
+    const dark = cssBlock('[data-theme="dark"]');
+    for (const declaration of [
+      "--bg: #101010;",
+      "--surface-card: #202020;",
+      "--surface-raised: #262626;",
+      "--ink: #fcfcfc;",
+      "--muted: #aaaaaa;",
+      "--icon: #fcfcfc;",
+      "--icon-disabled: #8e8f8d;",
+      "--accent: #25836e;",
+    ]) {
+      expect(dark).toContain(declaration);
+    }
+
+    for (const role of [
+      "--prompt",
+      "--agent",
+      "--choose",
+      "--memory",
+      "--template",
+      "--file-inject",
+      "--git-status",
+      "--shell",
+      "--http",
+      "--notify",
+      "--write-file",
+      "--git-host",
+      "--custom-agent",
+    ]) {
+      expect(dark).toMatch(new RegExp(`${role}: #[0-9a-f]{6};`));
+    }
+  });
+
   test("does not allow fractional font-weight drift", () => {
     expect(css).not.toMatch(/font-weight:\s*(?:550|560|620|650|750)\b/);
+    expect(css).not.toContain("var(--fg)");
 
     const allowedFamilies = new Set([
       '"Geist"',
-      '"Fraunces"',
       '"Geist Mono"',
       "var(--font-sans)",
       "var(--font-display)",
@@ -279,6 +308,8 @@ describe("shared component contracts", () => {
     expect(css).toContain("border-radius: var(--radius-xl);");
     expect(css).toContain("box-shadow: var(--elevation-modal);");
     expect(css).toContain('@media (prefers-reduced-motion: reduce)');
+    expect(css).toContain('@media (prefers-reduced-transparency: reduce)');
+    expect(css).toContain("backdrop-filter: blur(28px)");
   });
 
   test("routes styled select fields through the shared native control", () => {
@@ -303,7 +334,7 @@ describe("design-system governance", () => {
   test("keeps product specs and coding-agent rules pointed at the source of truth", () => {
     expect(designSystem).toContain("## Interaction state contract");
     expect(designSystem).toContain("## Accessibility");
-    expect(designSystem).toContain("Fraunces");
+    expect(designSystem).toContain("Infer");
     expect(designSystem).toContain("Geist Mono");
     expect(designSystem).toContain("### Select controls");
     expect(designSystem).toContain("shared `SelectControl`");

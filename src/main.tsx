@@ -1,5 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
+import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   bootstrapTheme,
@@ -10,7 +11,8 @@ import { applyDesktopPlatform } from "./platform";
 applyDesktopPlatform(document.documentElement);
 bootstrapTheme();
 
-const isQuickAccessWindow = getCurrentWindow().label === "quick-access";
+const isQuickAccessWindow =
+  isTauri() && getCurrentWindow().label === "quick-access";
 document.documentElement.dataset.window = isQuickAccessWindow
   ? "quick-access"
   : "main";

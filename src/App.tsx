@@ -1,4 +1,5 @@
 import { listen } from "@tauri-apps/api/event";
+import { isTauri } from "@tauri-apps/api/core";
 import { useEffect } from "react";
 import { ToastViewport } from "./components/toast";
 import { syncQuickAccessPreference } from "./features/quick-access/preferences";
@@ -26,6 +27,7 @@ function App() {
   const shortcuts = useShortcutPreferences((s) => s.shortcuts);
 
   useEffect(() => {
+    if (!isTauri()) return;
     void loadWorkflows();
     void prepareNotifications();
     void installRunEventBridge();
@@ -36,6 +38,7 @@ function App() {
   useEffect(() => installThemeListeners(), []);
 
   useEffect(() => {
+    if (!isTauri()) return;
     const unsubs: Array<() => void> = [];
     void listen("app://open-settings", () => {
       window.dispatchEvent(new Event("alfred:open-settings"));
@@ -69,6 +72,7 @@ function App() {
   }, []);
 
   useEffect(() => {
+    if (!isTauri()) return;
     void installAppMenu(
       {
         onOpenSettings: () => {
