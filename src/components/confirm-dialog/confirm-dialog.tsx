@@ -23,6 +23,7 @@ export function ConfirmDialog({
     <Modal
       size="sm"
       role="alertdialog"
+      className={danger ? "confirm-modal is-danger" : "confirm-modal"}
       onClose={onCancel}
       labelledBy="confirm-dialog-title"
       describedBy="confirm-dialog-message"

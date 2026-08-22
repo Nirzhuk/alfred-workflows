@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { isTauri } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { ReactFlowProvider } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
@@ -257,14 +258,17 @@ export function WorkflowCanvas() {
   };
 
   useEffect(() => {
+    if (!isTauri()) return;
     void loadProviderModels();
   }, [loadProviderModels]);
 
   useEffect(() => {
+    if (!isTauri()) return;
     void loadSkills(activeWorkingDirectory || undefined);
   }, [activeWorkingDirectory, loadSkills]);
 
   useEffect(() => {
+    if (!isTauri()) return;
     void loadAgentUsage(usedProviders);
     if (usedProviders.length === 0) return;
     const refresh = window.setInterval(
@@ -277,6 +281,7 @@ export function WorkflowCanvas() {
   }, [usedProvidersKey, loadAgentUsage]);
 
   useEffect(() => {
+    if (!isTauri()) return;
     if (!openCodeUsageRefreshKey || !usedProviders.includes("opencode")) return;
     void loadAgentUsage(usedProviders);
     // Refresh local OpenCode Go history immediately after a completed step.
