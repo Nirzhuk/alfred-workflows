@@ -77,4 +77,10 @@ describe("desktop platform contract", () => {
     );
     expect(css).toContain("background: var(--surface-panel-opaque);");
   });
+
+  test("keeps the macOS-only reopen event out of other desktop builds", () => {
+    expect(tauriLib).toMatch(
+      /#\[cfg\(target_os = "macos"\)\][\s\S]*?RunEvent::Reopen/,
+    );
+  });
 });

@@ -344,6 +344,7 @@ pub fn run() {
                     tauri::async_runtime::block_on(integrations.whatsapp.shutdown_runtime());
                 }
             }
+            #[cfg(target_os = "macos")]
             if let tauri::RunEvent::Reopen { .. } = event {
                 if let Some(window) = app_handle.get_webview_window("main") {
                     let _ = window.unminimize();
