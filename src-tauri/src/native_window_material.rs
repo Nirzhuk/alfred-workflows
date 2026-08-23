@@ -6,6 +6,8 @@ use objc2_foundation::MainThreadMarker;
 use std::{ffi::c_void, ptr::NonNull};
 use tauri::WebviewWindow;
 
+const MATERIAL_ALPHA: f64 = 0.82;
+
 /// Builds one native macOS wallpaper-tint layer behind the transparent
 /// webview. Opaque canvas and settings surfaces mask it, leaving the shared
 /// material visible through Alfred's sidebar and titlebar chrome.
@@ -27,6 +29,7 @@ unsafe fn install_regions(view: NonNull<c_void>, marker: MainThreadMarker) {
     material.setBlendingMode(NSVisualEffectBlendingMode::BehindWindow);
     material.setMaterial(NSVisualEffectMaterial::Sidebar);
     material.setState(NSVisualEffectState::Active);
+    material.setAlphaValue(MATERIAL_ALPHA);
     material.setAutoresizingMask(
         NSAutoresizingMaskOptions::ViewWidthSizable | NSAutoresizingMaskOptions::ViewHeightSizable,
     );

@@ -76,6 +76,8 @@ describe("desktop platform contract", () => {
     expect(tauriLib).toContain("native_window_material::install(&window)");
     expect(nativeMaterial).toContain("NSVisualEffectMaterial::Sidebar");
     expect(nativeMaterial).toContain("NSVisualEffectState::Active");
+    expect(nativeMaterial).toContain("const MATERIAL_ALPHA: f64 = 0.82;");
+    expect(nativeMaterial).toContain("material.setAlphaValue(MATERIAL_ALPHA);");
     expect(nativeMaterial).toContain("let material_frame = bounds;");
     expect(nativeMaterial).toContain("NSAutoresizingMaskOptions::ViewWidthSizable");
     expect(nativeMaterial).toContain("NSAutoresizingMaskOptions::ViewHeightSizable");
@@ -83,7 +85,7 @@ describe("desktop platform contract", () => {
     expect(css).toContain('html[data-platform="macos"] #root');
     expect(css).toContain("background-color: transparent;");
     expect(css).toContain(
-      "background: color-mix(in srgb, var(--surface-panel) 38%, transparent);",
+      "background: color-mix(in srgb, var(--surface-panel) 22%, transparent);",
     );
     expect(css).toContain("background: var(--surface-panel-opaque);");
     expect(css).toMatch(
