@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Icon } from "../../../../components/icon";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -119,11 +120,18 @@ export function NodeSettingsModal({ nodeId, onClose }: Props) {
       size="settings"
       onClose={onClose}
       labelledBy="node-settings-title"
+      describedBy="node-settings-description"
     >
       <ModalHeader
-        eyebrow="Node settings"
-        title={heading}
+        leading={
+          <span className="modal-identity-icon">
+            <Icon name="sliders" size={20} />
+          </span>
+        }
+        title={`${heading} settings`}
         titleId="node-settings-title"
+        description="Configure how this node behaves when the workflow runs."
+        descriptionId="node-settings-description"
         actions={
           <button type="button" className="ghost" onClick={onClose}>
             Done

@@ -173,8 +173,8 @@ export function MemoriesInspector({ open, initialMemoryId, onClose }: Props) {
       .then((rows) => {
         if (!cancelled) setLinkable(rows);
       })
-      .catch((error) => {
-        if (!cancelled) setLinkerError(String(error));
+      .catch(() => {
+        if (!cancelled) setLinkerError("Could not load memories. Try again.");
       })
       .finally(() => {
         if (!cancelled) setLinkerLoading(false);
@@ -393,13 +393,15 @@ export function MemoriesInspector({ open, initialMemoryId, onClose }: Props) {
         htmlExpanded ? " is-html-expanded" : ""
       }`}
       onClose={() => void requestClose()}
-      label="Memories inspector"
+      labelledBy="memories-inspector-title"
+      describedBy="memories-inspector-description"
       closeOnEscape={!showLinker}
     >
       <ModalHeader
         strong
         titleAs="h2"
         title="Memories"
+        titleId="memories-inspector-title"
         description={
           memories.length === 0 ? (
             "No memories yet for this workflow."
@@ -411,6 +413,7 @@ export function MemoriesInspector({ open, initialMemoryId, onClose }: Props) {
             </span>
           )
         }
+        descriptionId="memories-inspector-description"
         actions={
           <>
             <button type="button" className="ghost" onClick={openLinker}>
@@ -807,25 +810,24 @@ export function MemoriesInspector({ open, initialMemoryId, onClose }: Props) {
       </div>
 
       {showLinker ? (
-        <div
-          className="memories-link-picker-backdrop"
-          role="presentation"
-          onMouseDown={() => setShowLinker(false)}
+        <Modal
+          size="lg"
+          className="memories-link-picker-modal"
+          onClose={() => setShowLinker(false)}
+          labelledBy="link-memory-title"
+          describedBy="link-memory-description"
         >
-          <section
-            className="memories-link-picker"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="link-memory-title"
-            onMouseDown={(event) => event.stopPropagation()}
-          >
-            <header>
-              <div>
-                <h3 id="link-memory-title">Link a memory</h3>
-                <p className="muted">
-                  Reuse context from another workflow without copying it.
-                </p>
-              </div>
+          <ModalHeader
+            leading={
+              <span className="modal-identity-icon">
+                <Icon name="database" size={20} />
+              </span>
+            }
+            title="Link a memory"
+            titleId="link-memory-title"
+            description="Reuse context from another workflow without copying it."
+            descriptionId="link-memory-description"
+            actions={
               <button
                 type="button"
                 className="ghost modal-close-button"
@@ -834,7 +836,9 @@ export function MemoriesInspector({ open, initialMemoryId, onClose }: Props) {
               >
                 <Icon name="x" size={16} />
               </button>
-            </header>
+            }
+          />
+          <div className="memories-link-picker">
             <div className="memories-search-wrap">
               <Icon name="magnifying-glass" size={15} />
               <input
@@ -854,8 +858,8 @@ export function MemoriesInspector({ open, initialMemoryId, onClose }: Props) {
                   <span />
                 </div>
               ) : linkerError ? (
-                <p className="memories-link-picker-error">
-                  Could not load memories. {linkerError}
+                <p className="memories-link-picker-error" role="alert">
+                  {linkerError}
                 </p>
               ) : filteredLinkable.length === 0 ? (
                 <div className="memories-list-empty">
@@ -899,8 +903,8 @@ export function MemoriesInspector({ open, initialMemoryId, onClose }: Props) {
                 </ul>
               )}
             </div>
-          </section>
-        </div>
+          </div>
+        </Modal>
       ) : null}
     </Modal>
   );

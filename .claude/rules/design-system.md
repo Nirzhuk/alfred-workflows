@@ -4,17 +4,17 @@ For user-interface work, read and follow `docs/design-system.md`.
 
 ## Required behavior
 
-- Use bundled Geist for interface text, Fraunces for display accents, and Geist
-  Mono for technical content through `--font-sans`, `--font-display`, and
-  `--font-mono`. Do not add remote font imports or a parallel typeface.
+- Use Infer as the preferred interface family with bundled Geist as the local
+  fallback. Use Geist Mono for utility accents through `--font-sans`,
+  `--font-display`, and `--font-mono`. Do not add remote font imports.
 - Reuse semantic CSS custom properties from `src/App.css`; do not duplicate a
   shared visual decision with feature-local literals.
 - When a repeated visual rule does not have a token, add one to `:root` and
   document it in `docs/design-system.md`.
 - Related surfaces must share typography, icon sizing, spacing, and interaction
   states unless the product hierarchy explicitly requires a difference.
-- Keep navigation quiet and flat. Do not use borders, shadows, all caps, or
-  heavier text merely to show selection.
+- Keep navigation quiet and flat. Selection may use the shared two-pixel
+  emerald inset marker, but never heavier text or a layout change.
 - Use one of two surface scales for every hover, pressed, and selected state.
   Quiet and transparent (`--surface-hover`, `--surface-selected`,
   `--surface-pressed`) for borderless rows, nav and menu items, list rows, and
@@ -57,7 +57,8 @@ For user-interface work, read and follow `docs/design-system.md`.
 - Section labels: `16px`, weight `400`.
 - Use the `--sidebar-*` tokens; never restate these values in sidebar component
   selectors.
-- Selected items retain weight `400` and use only the shared surface background.
+- Selected items retain weight `400` and may add only the shared emerald inset
+  marker to the shared surface background.
 
 ## Prohibited drift
 

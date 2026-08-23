@@ -91,11 +91,18 @@ export function ScheduleModal({ workflowId, workflowName, onClose }: Props) {
       size="md"
       onClose={onClose}
       labelledBy="schedule-modal-title"
+      describedBy="schedule-modal-description"
     >
       <ModalHeader
-        eyebrow="Schedule"
-        title={workflowName}
+        leading={
+          <span className="modal-identity-icon">
+            <Icon name="clock" size={20} />
+          </span>
+        }
+        title={`Schedule ${workflowName}`}
         titleId="schedule-modal-title"
+        description="Choose when this automation should run while Alfred is open."
+        descriptionId="schedule-modal-description"
         actions={
           <button
             type="button"
@@ -109,10 +116,6 @@ export function ScheduleModal({ workflowId, workflowName, onClose }: Props) {
       />
 
       <div className="schedule-modal-body">
-        <p className="muted">
-          Choose when this automation should run while Alfred is open.
-        </p>
-
         <label className="field checkbox-field">
           <input
             type="checkbox"

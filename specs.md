@@ -170,9 +170,9 @@ scripts/guard-desktop-tauri.mjs
 
 - `docs/design-system.md` is the visual source of truth; shared decisions use
   semantic CSS custom properties in `App.css`, not feature-local literals
-- Alfred bundles Geist for interface text, Fraunces for display accents, and
-  Geist Mono for technical content; the desktop UI has no runtime font
-  dependency
+- Alfred prefers Infer for interface text, uses bundled Geist as its local
+  fallback, and uses Geist Mono for utility accents; the desktop UI makes no
+  runtime font request
 - Application-owned UI uses identical tokens on macOS, Windows, and Linux;
   platform branches are limited to OS chrome, shortcuts, permissions, and
   native system surfaces
@@ -182,6 +182,8 @@ scripts/guard-desktop-tauri.mjs
   400/500/600/700; fractional font weights are not allowed
 - Shared spacing follows the documented four-pixel grid; controls, cards,
   dialogs, icons, motion, elevation, and layering use their semantic token scales
+- Product dialogs use the shared top-anchored precision-sheet shell with a
+  blurred scrim, mono context rail, trapped keyboard focus, and opener focus return
 - Sidebar item text is always 14px/400, icons are 18px, and section labels are
   16px/600 across workflow and Settings navigation
 - Navigation is flat by default: selection uses a subtle surface background,

@@ -2,6 +2,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "../../components/icon";
 import { Modal, ModalHeader } from "../../components/modal";
+import { AppLogo } from "./app-logo";
 import { ConnectedAppTutorialLayout } from "./components/connected-app-tutorial-layout";
 import { ExternalLinkIcon } from "./components/external-link-icon";
 import type { ConnectDialogProps } from "./connect-dialog";
@@ -111,11 +112,16 @@ export function MicrosoftConnect({
       className="connection-tutorial-modal"
       onClose={() => void close()}
       labelledBy="microsoft-title"
+      describedBy="microsoft-description"
     >
       <ModalHeader
-        eyebrow="Microsoft 365"
+        leading={
+          <AppLogo providerId="microsoft" providerName="Microsoft 365" size={40} />
+        }
         title="Connect Microsoft 365"
         titleId="microsoft-title"
+        description="Authorize only the mail and calendar capabilities you need."
+        descriptionId="microsoft-description"
         actions={
           <button
             type="button"

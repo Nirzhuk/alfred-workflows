@@ -4,6 +4,8 @@ mod db;
 // Provider-neutral seams are intentionally consumed by follow-on connector plans.
 #[allow(dead_code)]
 mod integrations;
+#[cfg(target_os = "macos")]
+mod native_window_material;
 mod notifications;
 mod quick_access;
 mod runner;
@@ -99,6 +101,7 @@ pub fn run() {
     #[cfg(desktop)]
     {
         use tauri_plugin_global_shortcut::ShortcutState;
+        use tauri_plugin_window_state::StateFlags;
 
         builder = builder
             .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
@@ -121,6 +124,12 @@ pub fn run() {
             )
             .plugin(
                 tauri_plugin_window_state::Builder::default()
+                    .with_state_flags(
+                        StateFlags::SIZE
+                            | StateFlags::POSITION
+                            | StateFlags::MAXIMIZED
+                            | StateFlags::FULLSCREEN,
+                    )
                     .with_denylist(&[quick_access::WINDOW_LABEL])
                     .build(),
             );
@@ -132,13 +141,9 @@ pub fn run() {
             {
                 notifications::prepare_notification_identity(app.handle());
                 if let Some(window) = app.get_webview_window("main") {
-                    use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial};
-                    let _ = apply_vibrancy(
-                        &window,
-                        NSVisualEffectMaterial::UnderWindowBackground,
-                        None,
-                        None,
-                    );
+                    if let Err(error) = native_window_material::install(&window) {
+                        eprintln!("native sidebar material could not be applied: {error}");
+                    }
                 }
             }
 
@@ -344,6 +349,7 @@ pub fn run() {
                     tauri::async_runtime::block_on(integrations.whatsapp.shutdown_runtime());
                 }
             }
+            #[cfg(target_os = "macos")]
             if let tauri::RunEvent::Reopen { .. } = event {
                 if let Some(window) = app_handle.get_webview_window("main") {
                     let _ = window.unminimize();

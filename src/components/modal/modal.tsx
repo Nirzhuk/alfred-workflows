@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useRef,
   type HTMLAttributes,
   type ReactNode,
 } from "react";
@@ -31,6 +32,15 @@ const SIZE_CLASS: Record<ModalSize, string> = {
   xl: "modal--xl",
 };
 
+const FOCUSABLE_SELECTOR = [
+  "a[href]",
+  "button:not([disabled])",
+  "input:not([disabled])",
+  "select:not([disabled])",
+  "textarea:not([disabled])",
+  '[tabindex]:not([tabindex="-1"])',
+].join(",");
+
 /**
  * Shared modal shell: portal to `document.body`, backdrop dismiss, Escape,
  * and size variants used across Alfred dialogs.
@@ -48,17 +58,80 @@ export function Modal({
   closeOnEscape = true,
   children,
 }: ModalProps) {
+  const panelRef = useRef<HTMLDivElement>(null);
+  const onCloseRef = useRef(onClose);
+  const previouslyFocusedRef = useRef<HTMLElement | null>(null);
+  const wasOpenRef = useRef(false);
+
+  if (open && !wasOpenRef.current) {
+    previouslyFocusedRef.current =
+      typeof document === "undefined"
+        ? null
+        : (document.activeElement as HTMLElement | null);
+  }
+  wasOpenRef.current = open;
+
   useEffect(() => {
-    if (!open || !closeOnEscape) return;
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const focusPanel = window.requestAnimationFrame(() => {
+      const panel = panelRef.current;
+      if (!panel || panel.contains(document.activeElement)) return;
+      const preferred = panel.querySelector<HTMLElement>(
+        `[autofocus], ${FOCUSABLE_SELECTOR}`,
+      );
+      (preferred ?? panel).focus();
+    });
+
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        if (
+          !closeOnEscape ||
+          !panelRef.current?.contains(document.activeElement)
+        ) {
+          return;
+        }
         e.stopPropagation();
-        onClose();
+        onCloseRef.current();
+        return;
+      }
+
+      if (e.key !== "Tab") return;
+      const panel = panelRef.current;
+      if (!panel || !panel.contains(document.activeElement)) return;
+      const focusable = Array.from(
+        panel.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
+      ).filter((element) => element.getAttribute("aria-hidden") !== "true");
+
+      if (focusable.length === 0) {
+        e.preventDefault();
+        panel.focus();
+        return;
+      }
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
       }
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, closeOnEscape, onClose]);
+    return () => {
+      window.cancelAnimationFrame(focusPanel);
+      window.removeEventListener("keydown", onKey);
+      if (previouslyFocusedRef.current?.isConnected) {
+        previouslyFocusedRef.current.focus();
+      }
+    };
+  }, [open, closeOnEscape]);
 
   useEffect(() => {
     if (!open) return;
@@ -82,8 +155,10 @@ export function Modal({
       onClick={closeOnBackdrop ? onClose : undefined}
     >
       <div
+        ref={panelRef}
         className={panelClass}
         role={role}
+        tabIndex={-1}
         aria-modal="true"
         aria-labelledby={labelledBy}
         aria-label={labelledBy ? undefined : label}
@@ -98,11 +173,12 @@ export function Modal({
 }
 
 type ModalHeaderProps = {
-  eyebrow?: ReactNode;
+  leading?: ReactNode;
   title: ReactNode;
   titleId?: string;
   titleAs?: "h2" | "h3";
   description?: ReactNode;
+  descriptionId?: string;
   /** Extra content under the title block (e.g. stats line). */
   children?: ReactNode;
   actions?: ReactNode;
@@ -112,11 +188,12 @@ type ModalHeaderProps = {
 };
 
 export function ModalHeader({
-  eyebrow,
+  leading,
   title,
   titleId,
   titleAs = "h3",
   description,
+  descriptionId,
   children,
   actions,
   strong = false,
@@ -125,6 +202,7 @@ export function ModalHeader({
   const TitleTag = titleAs;
   const headerClass = [
     "modal-header",
+    leading ? "modal-header--with-leading" : null,
     strong ? "modal-header--strong" : null,
     className,
   ]
@@ -133,10 +211,14 @@ export function ModalHeader({
 
   return (
     <header className={headerClass}>
-      <div>
-        {eyebrow ? <p className="run-active-label">{eyebrow}</p> : null}
+      {leading ? <div className="modal-header-leading">{leading}</div> : null}
+      <div className="modal-header-copy">
         <TitleTag id={titleId}>{title}</TitleTag>
-        {description ? <p className="muted">{description}</p> : null}
+        {description ? (
+          <div id={descriptionId} className="modal-header-description muted">
+            {description}
+          </div>
+        ) : null}
         {children}
       </div>
       {actions ? <div className="modal-actions">{actions}</div> : null}

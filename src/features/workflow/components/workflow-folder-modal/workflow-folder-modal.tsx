@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Icon } from "../../../../components/icon";
 import { Modal, ModalHeader } from "../../../../components/modal";
 import { useWorkflowStore } from "../../store";
 
@@ -35,42 +36,65 @@ export function WorkflowFolderModal({ folder, onClose }: Props) {
   const title = folder ? "Rename folder" : "New folder";
 
   return (
-    <Modal size="md" onClose={onClose} labelledBy="workflow-folder-modal-title">
+    <Modal
+      size="md"
+      className="compact-form-modal"
+      onClose={onClose}
+      labelledBy="workflow-folder-modal-title"
+      describedBy="workflow-folder-modal-description"
+    >
       <ModalHeader
-        eyebrow="Workflows"
+        leading={
+          <span className="modal-identity-icon">
+            <Icon name={folder ? "folder" : "folder-plus"} size={20} />
+          </span>
+        }
         title={title}
         titleId="workflow-folder-modal-title"
+        description={
+          folder
+            ? "Update this folder name across the workflow library."
+            : "Create a folder to keep related workflows together."
+        }
+        descriptionId="workflow-folder-modal-description"
         actions={
-          <button type="button" className="ghost" onClick={onClose}>
-            Cancel
+          <button
+            type="button"
+            className="ghost modal-close-button"
+            aria-label="Close"
+            onClick={onClose}
+          >
+            <Icon name="x" size={16} />
           </button>
         }
       />
 
       <form
-        className="rename-modal-body"
+        className="compact-form-modal-form"
         onSubmit={(event) => {
           event.preventDefault();
           submit();
         }}
       >
-        <label className="field">
-          <span>Name</span>
-          <input
-            ref={inputRef}
-            type="text"
-            value={name}
-            maxLength={80}
-            placeholder="e.g. Client projects"
-            onChange={(event) => setName(event.target.value)}
-          />
-        </label>
+        <div className="compact-form-modal-body">
+          <label className="field">
+            <span>Name</span>
+            <input
+              ref={inputRef}
+              type="text"
+              value={name}
+              maxLength={80}
+              placeholder="e.g. Client projects"
+              onChange={(event) => setName(event.target.value)}
+            />
+          </label>
+        </div>
 
-        <div className="schedule-actions">
+        <footer className="compact-form-modal-footer">
           <button type="submit" className="primary" disabled={!canSave}>
             {folder ? "Save name" : "Create folder"}
           </button>
-        </div>
+        </footer>
       </form>
     </Modal>
   );

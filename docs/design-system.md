@@ -18,6 +18,20 @@ in the semantic custom properties at the top of `src/App.css`.
 - **State never changes layout:** hover, selection, focus, and loading must not
   move surrounding content or change text metrics.
 
+## Visual direction
+
+Alfred uses a precise monochrome interface with one controlled emerald signal.
+The dark canvas is `#101010`, ordinary controls are `#202020`, raised cards are
+`#262626`, primary text is `#fcfcfc`, supporting text is `#aaaaaa`, and disabled
+icons are `#8e8f8d`. The dark theme's signal emerald is `#38c99b`; accessible
+primary buttons use its deeper `#137a5f` action tone. Emerald is reserved for
+primary actions, focus, current location, running state, and success. It is not
+a general surface tint.
+
+Red and amber remain available for destructive, failed, and warning states.
+Third-party marks may retain their identity colors. Everything else uses the
+neutral surface scale.
+
 ## Cross-platform contract
 
 Alfred supports macOS, Windows, and Linux. Cohesion means the application-owned
@@ -50,29 +64,31 @@ Wayland or X11 desktop before a visual release.
 
 ## Typography
 
-Geist, Fraunces, and Geist Mono are bundled under `src/assets/fonts/`; the UI
-must never depend on a remote font request. Geist is the default interface face,
-while Fraunces is reserved for display accents.
+Infer is Alfred's primary interface family. Geist is the bundled release-safe
+fallback until the licensed Infer WOFF2 asset is added to `src/assets/fonts/`.
+Geist Mono is bundled and provides the utility accent for metadata, status,
+shortcuts, identifiers, schedules, logs, and code. The UI never makes a remote
+font request.
 
 | Role | Family | Size | Weight | Line height |
 | --- | --- | --- | --- | --- |
 | Page title | `--font-display` | `--text-2xl` / 24px | 600 | 1.2 |
-| Dialog title | `--font-display` | `--text-xl` / 20px | 600 | 1.2 |
+| Dialog title | `--font-display` | `--text-2xl` / 24px | 600 | 1.2 |
 | Section title | `--font-sans` | `--text-lg` / 16px | 600 | 1.2 |
 | Navigation section label | `--font-sans` | `--text-lg` / 16px | 400 | 1.2 |
 | Body, item, control | `--font-sans` | `--text-md` / 14px | 400 | 1.4 |
 | Supporting text | `--font-sans` | `--text-sm` / 12px | 400 | 1.4 |
-| Micro/status text | `--font-sans` | `--text-xs` / 11px | 500–700 | 1.2 |
-| Dock/badge micro text | `--font-sans` | `--text-2xs` / 10px | 400–600 | 1 |
+| Micro/status text | `--font-mono` | `--text-xs` / 11px | 500–700 | 1.2 |
+| Dock/badge micro text | `--font-mono` | `--text-2xs` / 10px | 400–600 | 1 |
 | Technical content | `--font-mono` | appropriate role size | 400–600 | 1.4–1.55 |
 
 Rules:
 
-- `--font-sans` resolves to Geist, `--font-display` resolves to Fraunces, and
-  `--font-mono` resolves to Geist Mono.
-- Use Fraunces only through `--font-display` for page, dialog, and other
-  intentional display accents. Body copy, controls, and navigation stay in
-  Geist.
+- `--font-sans` prefers Infer and falls back to bundled Geist.
+  `--font-display` follows the same family, and `--font-mono` resolves to
+  Geist Mono.
+- Page and dialog titles use the primary family through `--font-display`.
+  Alfred does not mix a decorative display face into product chrome.
 - Use only weights 400, 500, 600, and 700 through the weight tokens. Fractional
   weights such as 550 or 650 are prohibited.
 - Controls and navigation use weight 400. Selected state never adds weight.
@@ -165,6 +181,25 @@ at least 28px in dense chrome and 32px for ordinary controls.
 - Use semantic color tokens such as `--ink`, `--muted`, `--surface-*`,
   `--accent-*`, and `--danger-*`; never branch component CSS by theme.
 - Use `--control-*` tokens for shared control states.
+- Use emerald only when the interface is communicating action, location,
+  focus, progress, or success. Hover is neutral.
+- On macOS, the transparent window installs one full-window native
+  `NSVisualEffectView` with Sidebar material at 90% opacity. The HTML roots
+  remain transparent and add a 30% panel tint, so the same wallpaper color
+  reaches the sidebar and titlebar, while
+  canvas and page surfaces mask it wherever content needs an opaque reading
+  plane. The view uses public AppKit material and does not require a Liquid
+  Glass or Electron plugin.
+- Quick Access uses the same AppKit Sidebar material, 90% native opacity, and
+  30% theme panel tint inside a rounded 16px borderless window. Its light and
+  dark appearances follow the shared semantic tokens. Windows, Linux, and the
+  reduced-transparency fallback use the opaque panel surface.
+- The main window stays hidden until the lazy React application has committed
+  and its fonts are ready. Window-state restoration deliberately excludes
+  visibility so native material and web content appear in the same frame.
+- Windows and Linux use the fully opaque panel surface. They do not imitate
+  native glass with a translucent window. Reduced-transparency mode on macOS
+  also uses the opaque panel token to respect the system accessibility setting.
 
 ### Surface fills
 
@@ -265,10 +300,10 @@ Workflow navigation, Settings navigation, folders, and workflow rows share:
 | --- | --- | --- |
 | Item text | `--sidebar-item-font-size` | 14px |
 | Item weight | `--sidebar-item-font-weight` | 400 |
-| Item color | `--sidebar-item-color` | ink softened 40% toward muted; `#c6d1cd` in dark mode |
+| Item color | `--sidebar-item-color` | `#aaaaaa` in dark mode |
 | Item icon | `--sidebar-icon-size` | 16px square |
-| Icon color (default) | `--sidebar-icon-color` | muted, mixed 12% toward ink |
-| Icon color (hover/selected) | — | `currentColor` (full item color) |
+| Icon color (default) | `--sidebar-icon-color` | `#8e8f8d` in dark mode |
+| Icon color (hover/selected) | none | `#fcfcfc` in dark mode |
 | Section text | `--sidebar-section-font-size` | 16px |
 | Section weight | `--sidebar-section-font-weight` | 400 |
 | Section color | `--sidebar-section-color` | muted at 72% alpha |
@@ -288,8 +323,8 @@ global scale in three stages: item ink is softened off full `--ink`, icons and
 section labels sit lighter still, and the section label never reaches item
 contrast even at weight 400. Hover and selected use the shared quiet scale
 (`--surface-hover`, `--surface-selected`) described under **Which surface scale
-to use** — the rails define no wash of their own. Neither state adds a border,
-shadow, or weight change.
+to use**. The selected row adds only a two-pixel emerald inset marker. It does
+not change weight or layout.
 
 Settings pages carry no rule between the header and the body. The heading's
 type scale already separates them; a divider there re-adds the boxed-in look
@@ -323,11 +358,32 @@ the rails are tuned to avoid.
 ### Cards and dialogs
 
 - Cards use 12px radius. Borders communicate grouping; shadows are normally off.
-- Dialogs and floating panels use 16px radius and the modal elevation token.
-- Dialog titles use 20px/600; page titles use 24px/600.
+- Dialogs use the shared 12px precision-sheet shell and modal elevation token.
+  They open near the top of the workspace instead of floating at dead center.
+- Modal backdrops blur and mute the workspace. Reduced-transparency mode keeps
+  the scrim but removes the filter.
+- Dialog headers use one horizontal composition: an optional 40px identity
+  tile, an Infer title with one concise explanatory line, and compact actions
+  aligned at the trailing edge. Provider setup dialogs use the provider mark;
+  workflow tools use a shared Phosphor icon tile.
+- Dialog titles use 24px/600. Header descriptions use 14px/400 and should
+  explain the decision or task instead of repeating a category label.
+- Dialog headers use the raised surface and bodies use the card surface. Inputs
+  and nested controls step up to the raised surface. Emerald is reserved for
+  focus and the primary decision.
+- Shared modals trap Tab, close with Escape when allowed, lock background
+  scrolling, and return focus to the opener. Feature dialogs must not rebuild
+  this behavior.
 - A workflow card with unsaved edits replaces its solid border with a marching
   dashed accent stroke. The dashes themselves are the status cue, so they stay
   visible when reduced motion turns the march off.
+
+### Workflow canvas
+
+- The canvas uses a single 22px dot grid for placement. It moves and zooms with
+  React Flow without adding graph-paper line guides behind the workflow.
+- Pattern contrast stays subordinate to nodes and connections. It organizes
+  the editing surface; it is never used as decoration on cards or pages.
 
 ## Motion
 

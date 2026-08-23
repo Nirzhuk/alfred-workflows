@@ -9,6 +9,16 @@ const css = await Bun.file(new URL("src/App.css", root)).text();
 const tauriConfig = await Bun.file(
   new URL("src-tauri/tauri.conf.json", root),
 ).json();
+const tauriLib = await Bun.file(
+  new URL("src-tauri/src/lib.rs", root),
+).text();
+const mainEntry = await Bun.file(new URL("src/main.tsx", root)).text();
+const nativeMaterial = await Bun.file(
+  new URL("src-tauri/src/native_window_material.rs", root),
+).text();
+const quickAccessNative = await Bun.file(
+  new URL("src-tauri/src/quick_access.rs", root),
+).text();
 
 describe("desktop platform contract", () => {
   test("detects each supported desktop family from stable navigator signals", () => {
@@ -62,5 +72,93 @@ describe("desktop platform contract", () => {
     expect(csp).not.toContain("fonts.googleapis.com");
     expect(csp).not.toContain("fonts.gstatic.com");
     expect(csp).toContain("font-src 'self' data:");
+  });
+
+  test("uses one macOS wallpaper-tint layer beneath the sidebar and titlebar", () => {
+    expect(tauriConfig.app.windows[0]?.transparent).toBe(true);
+    expect(tauriLib).toContain("native_window_material::install(&window)");
+    expect(nativeMaterial).toContain("NSVisualEffectMaterial::Sidebar");
+    expect(nativeMaterial).toContain("NSVisualEffectState::Active");
+    expect(nativeMaterial).toContain("const MATERIAL_ALPHA: f64 = 0.90;");
+    expect(nativeMaterial).toContain("material.setAlphaValue(MATERIAL_ALPHA);");
+    expect(nativeMaterial).toContain("let material_frame = bounds;");
+    expect(nativeMaterial).toContain("NSAutoresizingMaskOptions::ViewWidthSizable");
+    expect(nativeMaterial).toContain("NSAutoresizingMaskOptions::ViewHeightSizable");
+    expect(nativeMaterial).not.toContain("NSVisualEffectMaterial::Titlebar");
+    expect(css).toContain('html[data-platform="macos"] #root');
+    expect(css).toContain("background-color: transparent;");
+    expect(css).toContain(
+      "background: color-mix(in srgb, var(--surface-panel) 30%, transparent);",
+    );
+    expect(css).toContain("background: var(--surface-panel-opaque);");
+    expect(css).toMatch(
+      /\.run-panel \{[\s\S]*?background: var\(--surface-panel-opaque\);/,
+    );
+    expect(css).toMatch(
+      /\.canvas-toolbar \{[\s\S]*?background: var\(--surface-panel-opaque\);/,
+    );
+  });
+
+  test("gives Quick Access the same rounded macOS material with opaque fallbacks", () => {
+    expect(quickAccessNative).toContain(
+      "crate::native_window_material::install_rounded(",
+    );
+    expect(quickAccessNative).toContain("QUICK_ACCESS_CORNER_RADIUS");
+    expect(quickAccessNative).toContain(
+      '.transparent(cfg!(target_os = "macos"))',
+    );
+    expect(nativeMaterial).toContain("material.setWantsLayer(true);");
+    expect(nativeMaterial).toContain("layer.setCornerRadius(corner_radius);");
+    expect(nativeMaterial).toContain("layer.setMasksToBounds(true);");
+    expect(css).toContain(
+      'html[data-platform="macos"] .quick-access-compact,\nhtml[data-platform="macos"] .quick-access-panel',
+    );
+    expect(css).toMatch(
+      /\.quick-access-compact \{[\s\S]*?background: var\(--surface-panel-opaque\);/,
+    );
+    expect(css).toMatch(
+      /\.quick-access-panel \{[\s\S]*?background: var\(--surface-panel-opaque\);/,
+    );
+    expect(css).toContain(
+      'html[data-platform="macos"][data-window="quick-access"]',
+    );
+    expect(css).toMatch(
+      /\.quick-access-compact-run \{[\s\S]*?color: var\(--accent-ink\);/,
+    );
+
+    const reducedTransparency = css.lastIndexOf(
+      "@media (prefers-reduced-transparency: reduce)",
+    );
+    const fallback = css.slice(reducedTransparency);
+    expect(fallback).toContain(".quick-access-compact");
+    expect(fallback).toContain(".quick-access-panel");
+  });
+
+  test("reveals the main window only after the first React commit", () => {
+    expect(tauriConfig.app.windows[0]?.visible).toBe(false);
+    expect(tauriLib).toContain("StateFlags::SIZE");
+    expect(tauriLib).not.toContain("StateFlags::VISIBLE");
+    expect(mainEntry).toContain("revealMainWindow");
+    expect(mainEntry).toContain("getCurrentWindow().show()");
+  });
+
+  test("lets reduced transparency override native and CSS blur", () => {
+    const reducedTransparency = css.lastIndexOf(
+      "@media (prefers-reduced-transparency: reduce)",
+    );
+    expect(reducedTransparency).toBeGreaterThan(css.indexOf(".modal-backdrop,"));
+    expect(reducedTransparency).toBeGreaterThan(
+      css.indexOf('html[data-platform="macos"] .sidebar'),
+    );
+    const fallback = css.slice(reducedTransparency);
+    expect(fallback).toContain('html[data-platform="macos"] .sidebar');
+    expect(fallback).toContain(".memories-inspector-backdrop");
+    expect(fallback).toContain("backdrop-filter: none;");
+  });
+
+  test("keeps the macOS-only reopen event out of other desktop builds", () => {
+    expect(tauriLib).toMatch(
+      /#\[cfg\(target_os = "macos"\)\][\s\S]*?RunEvent::Reopen/,
+    );
   });
 });

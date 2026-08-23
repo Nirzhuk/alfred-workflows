@@ -153,11 +153,19 @@ export function OutputModal() {
       size={htmlPreview ? "xl" : "lg"}
       className={htmlPreview ? "output-modal--html" : undefined}
       onClose={closeOutput}
-      label={selectedOutput.title}
+      labelledBy="output-modal-title"
+      describedBy="output-modal-description"
     >
       <ModalHeader
-        eyebrow={htmlPreview ? "HTML report" : "Agent output"}
+        leading={
+          <span className="modal-identity-icon">
+            <Icon name={htmlPreview ? "monitor" : "terminal-window"} size={20} />
+          </span>
+        }
         title={selectedOutput.title}
+        titleId="output-modal-title"
+        description={htmlPreview ? "HTML report" : "Agent output"}
+        descriptionId="output-modal-description"
         actions={
           <>
             {htmlPreview ? (

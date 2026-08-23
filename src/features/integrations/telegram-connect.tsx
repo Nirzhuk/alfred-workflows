@@ -2,6 +2,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "../../components/icon";
 import { Modal, ModalHeader } from "../../components/modal";
+import { AppLogo } from "./app-logo";
 import { ConnectedAppTutorialLayout } from "./components/connected-app-tutorial-layout";
 import { ExternalLinkIcon } from "./components/external-link-icon";
 import { TelegramSetupProgress } from "./components/telegram-setup-progress";
@@ -121,11 +122,16 @@ export function TelegramConnect({ onClose }: ConnectDialogProps) {
         className="connection-tutorial-modal"
         onClose={() => void close()}
         labelledBy="telegram-title"
+        describedBy="telegram-description"
       >
         <ModalHeader
-          eyebrow="Personal notifications"
+          leading={
+            <AppLogo providerId="telegram" providerName="Telegram" size={40} />
+          }
           title="Connect Telegram"
           titleId="telegram-title"
+          description="Finish linking your dedicated bot to your private chat."
+          descriptionId="telegram-description"
           actions={
             <button
               type="button"

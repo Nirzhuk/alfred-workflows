@@ -1,4 +1,5 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { isTauri } from "@tauri-apps/api/core";
 import { create } from "zustand";
 
 export type ThemePreference = "system" | "light" | "dark";
@@ -103,19 +104,21 @@ export function installThemeListeners() {
   }
 
   let unlistenNative: (() => void) | undefined;
-  void getCurrentWindow()
-    .onThemeChanged(({ payload }) => {
-      const { preference } = useThemeStore.getState();
-      if (preference !== "system") return;
-      applyResolvedTheme(payload);
-      useThemeStore.setState({ resolved: payload });
-    })
-    .then((unlisten) => {
-      unlistenNative = unlisten;
-    })
-    .catch(() => {
-      /* ignore */
-    });
+  if (isTauri()) {
+    void getCurrentWindow()
+      .onThemeChanged(({ payload }) => {
+        const { preference } = useThemeStore.getState();
+        if (preference !== "system") return;
+        applyResolvedTheme(payload);
+        useThemeStore.setState({ resolved: payload });
+      })
+      .then((unlisten) => {
+        unlistenNative = unlisten;
+      })
+      .catch(() => {
+        /* ignore */
+      });
+  }
 
   return () => {
     if (typeof media.removeEventListener === "function") {

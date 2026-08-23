@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Icon } from "../../../components/icon";
-import { Modal } from "../../../components/modal";
+import { Modal, ModalHeader } from "../../../components/modal";
 import { AppLogo } from "../app-logo";
 import {
   TutorialWizard,
@@ -40,29 +40,32 @@ export function ConnectedAppTutorialLayout({
       className="connection-tutorial-modal connection-tutorial-split-modal"
       onClose={onClose}
       labelledBy={titleId}
+      describedBy={titleId + "-description"}
     >
-      <header className="connection-tutorial-header">
-        <div className="connection-tutorial-header-copy">
+      <ModalHeader
+        className="connection-tutorial-header"
+        leading={
           <AppLogo providerId={providerId} providerName={providerName} size={40} />
-          <div>
-            <h2 id={titleId}>{title}</h2>
-            <div className="connection-tutorial-header-description">
-              {description}
-            </div>
-          </div>
-        </div>
-        <div className="connection-tutorial-header-actions">
-          <span className="connection-tutorial-badge">{badge}</span>
-          <button
-            type="button"
-            className="connection-tutorial-close"
-            aria-label="Close"
-            onClick={onClose}
-          >
-            <Icon name="x" size={16} />
-          </button>
-        </div>
-      </header>
+        }
+        title={title}
+        titleId={titleId}
+        titleAs="h2"
+        description={description}
+        descriptionId={titleId + "-description"}
+        actions={
+          <>
+            <span className="connection-tutorial-badge">{badge}</span>
+            <button
+              type="button"
+              className="connection-tutorial-close"
+              aria-label="Close"
+              onClick={onClose}
+            >
+              <Icon name="x" size={16} />
+            </button>
+          </>
+        }
+      />
 
       <div className="connection-tutorial-split-body">
         <section
