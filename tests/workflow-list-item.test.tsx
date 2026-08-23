@@ -34,6 +34,16 @@ describe("WorkflowListItem unsaved state", () => {
     expect(markup).not.toContain("Unsaved changes");
   });
 
+  test("uses one normal border for the active saved card", async () => {
+    const css = await Bun.file(new URL("../src/App.css", import.meta.url)).text();
+    const selector = ".workflow-card.is-active .workflow-card-button {";
+    const start = css.indexOf(selector);
+    const block = css.slice(start, css.indexOf("}", start));
+    expect(start).toBeGreaterThan(-1);
+    expect(block).toContain("border-color: var(--accent-border-loud)");
+    expect(block).not.toContain("box-shadow");
+  });
+
   test("marks the active card with an accessible dashed unsaved frame", () => {
     const markup = renderCard(true);
     expect(markup).toContain("workflow-card is-active is-dirty");

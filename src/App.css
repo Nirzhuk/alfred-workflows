@@ -3789,7 +3789,6 @@ body.is-workflow-reordering {
 .workflow-card.is-active .workflow-card-button {
   border-color: var(--accent-border-loud);
   background: var(--surface-raised);
-  box-shadow: inset 2px 0 0 var(--accent);
 }
 
 .workflow-card.is-dirty .workflow-card-button,
