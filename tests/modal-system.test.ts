@@ -8,6 +8,18 @@ const modal = await Bun.file(
 const confirmDialog = await Bun.file(
   new URL("src/components/confirm-dialog/confirm-dialog.tsx", root),
 ).text();
+const renameWorkflowModal = await Bun.file(
+  new URL(
+    "src/features/workflow/components/rename-workflow-modal/rename-workflow-modal.tsx",
+    root,
+  ),
+).text();
+const workflowFolderModal = await Bun.file(
+  new URL(
+    "src/features/workflow/components/workflow-folder-modal/workflow-folder-modal.tsx",
+    root,
+  ),
+).text();
 const memoriesInspector = await Bun.file(
   new URL(
     "src/features/workflow/components/memories-inspector/memories-inspector.tsx",
@@ -78,6 +90,19 @@ describe("shared modal system", () => {
     expect(css).toContain(".confirm-modal-icon.is-danger");
     expect(css).toContain(".confirm-modal .modal-header");
     expect(css).not.toContain(".confirm-modal.is-danger .modal-header h3");
+  });
+
+  test("uses the shared compact form composition for workflow naming", () => {
+    for (const source of [renameWorkflowModal, workflowFolderModal]) {
+      expect(source).toContain('className="compact-form-modal"');
+      expect(source).toContain('className="ghost modal-close-button"');
+      expect(source).toContain('name="x"');
+      expect(source).toContain('className="compact-form-modal-body"');
+      expect(source).toContain('className="compact-form-modal-footer"');
+      expect(source).not.toMatch(/<ModalHeader[\s\S]*?>[\s\S]*?Cancel/);
+    }
+    expect(css).toContain(".modal.compact-form-modal");
+    expect(css).toContain(".compact-form-modal-footer");
   });
 
   test("uses the release modal composition in every theme", () => {

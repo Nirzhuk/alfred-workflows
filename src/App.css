@@ -4147,12 +4147,34 @@ button.danger:hover:not(:disabled) {
   padding: var(--space-0-5) var(--space-2);
 }
 
-.rename-modal-body {
+.modal.compact-form-modal {
+  width: min(460px, 100%);
+}
+
+.compact-form-modal-form {
   display: flex;
   flex-direction: column;
-  gap: var(--space-5);
-  padding: var(--space-6);
+  min-height: 0;
   background: var(--surface-card);
+}
+
+.compact-form-modal-body {
+  padding: var(--space-5);
+}
+
+.compact-form-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--line);
+  background: var(--surface-card);
+}
+
+.compact-form-modal-footer button {
+  min-width: 0;
+  min-height: var(--control-height-comfortable);
+  padding-inline: var(--space-4);
+  white-space: nowrap;
 }
 
 .modal.confirm-modal {

@@ -42,6 +42,7 @@ export function RenameWorkflowModal({
   return (
     <Modal
       size="md"
+      className="compact-form-modal"
       onClose={onClose}
       labelledBy="rename-modal-title"
       describedBy="rename-modal-description"
@@ -57,36 +58,43 @@ export function RenameWorkflowModal({
         description="Update the name shown in your workflow library."
         descriptionId="rename-modal-description"
         actions={
-          <button type="button" className="ghost" onClick={onClose}>
-            Cancel
+          <button
+            type="button"
+            className="ghost modal-close-button"
+            aria-label="Close"
+            onClick={onClose}
+          >
+            <Icon name="x" size={16} />
           </button>
         }
       />
 
       <form
-        className="rename-modal-body"
+        className="compact-form-modal-form"
         onSubmit={(e) => {
           e.preventDefault();
           submit();
         }}
       >
-        <label className="field">
-          <span>Name</span>
-          <input
-            ref={inputRef}
-            type="text"
-            value={name}
-            maxLength={120}
-            placeholder="Workflow name"
-            onChange={(e) => setName(e.target.value)}
-          />
-        </label>
+        <div className="compact-form-modal-body">
+          <label className="field">
+            <span>Name</span>
+            <input
+              ref={inputRef}
+              type="text"
+              value={name}
+              maxLength={120}
+              placeholder="Workflow name"
+              onChange={(e) => setName(e.target.value)}
+            />
+          </label>
+        </div>
 
-        <div className="schedule-actions">
+        <footer className="compact-form-modal-footer">
           <button type="submit" className="primary" disabled={!canSave}>
             Save name
           </button>
-        </div>
+        </footer>
       </form>
     </Modal>
   );
