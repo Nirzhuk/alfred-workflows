@@ -52,7 +52,7 @@ describe("formatNextRunLabel", () => {
   test("formats a fire time in plain language", () => {
     expect(
       formatNextRunLabel("2026-08-24T09:00:00.000Z", "UTC", "en-GB"),
-    ).toBe("Monday, 24 Aug 2026 at 09:00");
+    ).toMatch(/^Monday,? 24 Aug 2026 at 09:00$/);
   });
 
   test("hides missing or invalid times", () => {

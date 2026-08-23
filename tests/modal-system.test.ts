@@ -67,9 +67,13 @@ describe("shared modal system", () => {
   });
 
   test("uses the release modal composition in every theme", () => {
-    expect(css).toContain("align-items: flex-start;");
+    expect(css).toContain("align-items: center;");
     expect(css).toContain("backdrop-filter: blur(14px) saturate(0.72);");
-    expect(css).toContain("grid-template-columns: minmax(7rem, 0.26fr)");
+    expect(css).toContain("grid-template-columns: minmax(0, 1fr) auto;");
+    expect(css).toContain(".modal-kicker::before");
+    expect(modal).toMatch(
+      /modal-header-copy[\s\S]*modal-kicker[\s\S]*<TitleTag/,
+    );
     expect(css).toContain("font-family: var(--font-mono);");
     expect(css).toContain("background: var(--surface-card);");
     expect(css).toContain("@media (prefers-reduced-transparency: reduce)");

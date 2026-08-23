@@ -23,8 +23,10 @@ in the semantic custom properties at the top of `src/App.css`.
 Alfred uses a precise monochrome interface with one controlled emerald signal.
 The dark canvas is `#101010`, ordinary controls are `#202020`, raised cards are
 `#262626`, primary text is `#fcfcfc`, supporting text is `#aaaaaa`, and disabled
-icons are `#8e8f8d`. Emerald is reserved for primary actions, focus, current
-location, running state, and success. It is not a general surface tint.
+icons are `#8e8f8d`. The dark theme's signal emerald is `#38c99b`; accessible
+primary buttons use its deeper `#137a5f` action tone. Emerald is reserved for
+primary actions, focus, current location, running state, and success. It is not
+a general surface tint.
 
 Red and amber remain available for destructive, failed, and warning states.
 Third-party marks may retain their identity colors. Everything else uses the
@@ -184,6 +186,12 @@ at least 28px in dense chrome and 32px for ordinary controls.
 - The sidebar, title bar, canvas toolbar, and Quick Access panel use translucent
   material with backdrop blur. Under `prefers-reduced-transparency: reduce`,
   each resolves to the opaque panel surface.
+- On macOS, the transparent window uses the native Sidebar visual-effect
+  material. The HTML roots remain transparent so that material can reach app
+  chrome; canvas and page surfaces mask it wherever content needs an opaque
+  reading plane. CSS backdrop blur remains the browser and non-native fallback,
+  and reduced-transparency mode uses the fully opaque panel token to mask the
+  native effect as well.
 
 ### Surface fills
 
@@ -346,9 +354,10 @@ the rails are tuned to avoid.
   They open near the top of the workspace instead of floating at dead center.
 - Modal backdrops blur and mute the workspace. Reduced-transparency mode keeps
   the scrim but removes the filter.
-- When a dialog has context such as "Schedule" or "Workflow", place it in the
-  narrow Geist Mono context rail. The Infer title sits in the main header column.
-- Dialog titles use 24px/600. Compact helper text stays at 12px/400.
+- When a dialog has context such as "Schedule" or "Workflow", place it as a
+  compact Geist Mono eyebrow directly above the Infer title. A short emerald
+  rule anchors the eyebrow without splitting the header into competing columns.
+- Dialog titles use 20px/600. Compact helper text stays at 12px/400.
 - Dialog bodies use the card surface. Inputs and nested controls step up to the
   raised surface. Emerald is reserved for the context rail, focus, and the
   primary decision.
@@ -358,6 +367,13 @@ the rails are tuned to avoid.
 - A workflow card with unsaved edits replaces its solid border with a marching
   dashed accent stroke. The dashes themselves are the status cue, so they stay
   visible when reduced motion turns the march off.
+
+### Workflow canvas
+
+- The canvas uses a 22px dot field for local placement and a faint 110px line
+  grid for larger spatial rhythm. Both layers move and zoom with React Flow.
+- Pattern contrast stays subordinate to nodes and connections. It organizes
+  the editing surface; it is never used as decoration on cards or pages.
 
 ## Motion
 

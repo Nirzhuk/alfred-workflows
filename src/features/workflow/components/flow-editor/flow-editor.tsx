@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Background,
+  BackgroundVariant,
   ConnectionLineType,
   ConnectionMode,
   Controls,
@@ -297,7 +298,20 @@ export function FlowEditor({ displayNodes }: Props) {
         elevateNodesOnSelect={false}
         proOptions={{ hideAttribution: true }}
       >
-        <Background gap={22} size={1} color="var(--canvas-dot)" />
+        <Background
+          id="canvas-guides"
+          variant={BackgroundVariant.Lines}
+          gap={110}
+          size={1}
+          color="var(--canvas-guide)"
+        />
+        <Background
+          id="canvas-dots"
+          variant={BackgroundVariant.Dots}
+          gap={22}
+          size={1}
+          color="var(--canvas-dot)"
+        />
         <Controls position="top-left" />
         <AddStepPanel
           onAddPrompt={onAddPrompt}

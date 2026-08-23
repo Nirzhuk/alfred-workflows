@@ -208,8 +208,8 @@ export function ModalHeader({
 
   return (
     <header className={headerClass}>
-      {eyebrow ? <p className="modal-kicker">{eyebrow}</p> : null}
       <div className="modal-header-copy">
+        {eyebrow ? <p className="modal-kicker">{eyebrow}</p> : null}
         <TitleTag id={titleId}>{title}</TitleTag>
         {description ? <p className="muted">{description}</p> : null}
         {children}

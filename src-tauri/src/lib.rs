@@ -135,7 +135,7 @@ pub fn run() {
                     use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial};
                     let _ = apply_vibrancy(
                         &window,
-                        NSVisualEffectMaterial::UnderWindowBackground,
+                        NSVisualEffectMaterial::Sidebar,
                         None,
                         None,
                     );

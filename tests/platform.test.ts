@@ -9,6 +9,9 @@ const css = await Bun.file(new URL("src/App.css", root)).text();
 const tauriConfig = await Bun.file(
   new URL("src-tauri/tauri.conf.json", root),
 ).json();
+const tauriLib = await Bun.file(
+  new URL("src-tauri/src/lib.rs", root),
+).text();
 
 describe("desktop platform contract", () => {
   test("detects each supported desktop family from stable navigator signals", () => {
@@ -62,5 +65,16 @@ describe("desktop platform contract", () => {
     expect(csp).not.toContain("fonts.googleapis.com");
     expect(csp).not.toContain("fonts.gstatic.com");
     expect(csp).toContain("font-src 'self' data:");
+  });
+
+  test("lets macOS native sidebar material reach translucent app chrome", () => {
+    expect(tauriConfig.app.windows[0]?.transparent).toBe(true);
+    expect(tauriLib).toContain("NSVisualEffectMaterial::Sidebar");
+    expect(css).toContain('html[data-platform="macos"] #root');
+    expect(css).toContain("background-color: transparent;");
+    expect(css).toContain(
+      "background: color-mix(in srgb, var(--surface-panel) 68%, transparent);",
+    );
+    expect(css).toContain("background: var(--surface-panel-opaque);");
   });
 });

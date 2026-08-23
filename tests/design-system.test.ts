@@ -22,6 +22,12 @@ const settingsPage = await Bun.file(
     root,
   ),
 ).text();
+const flowEditor = await Bun.file(
+  new URL(
+    "src/features/workflow/components/flow-editor/flow-editor.tsx",
+    root,
+  ),
+).text();
 
 function cssBlock(selector: string): string {
   const marker = `${selector} {`;
@@ -88,7 +94,9 @@ describe("design-system foundations", () => {
       "--muted: #aaaaaa;",
       "--icon: #fcfcfc;",
       "--icon-disabled: #8e8f8d;",
-      "--accent: #25836e;",
+      "--accent: #38c99b;",
+      "--btn-primary: #137a5f;",
+      "--btn-primary-hover: #168266;",
     ]) {
       expect(dark).toContain(declaration);
     }
@@ -110,6 +118,16 @@ describe("design-system foundations", () => {
     ]) {
       expect(dark).toMatch(new RegExp(`${role}: #[0-9a-f]{6};`));
     }
+  });
+
+  test("uses a two-scale workflow canvas pattern", () => {
+    expect(flowEditor).toContain('id="canvas-guides"');
+    expect(flowEditor).toContain("variant={BackgroundVariant.Lines}");
+    expect(flowEditor).toContain("gap={110}");
+    expect(flowEditor).toContain('id="canvas-dots"');
+    expect(flowEditor).toContain("variant={BackgroundVariant.Dots}");
+    expect(flowEditor).toContain("gap={22}");
+    expect(css).toContain("--canvas-guide:");
   });
 
   test("does not allow fractional font-weight drift", () => {
@@ -315,7 +333,7 @@ describe("shared component contracts", () => {
     expect(css).toContain("box-shadow: var(--elevation-modal);");
     expect(css).toContain('@media (prefers-reduced-motion: reduce)');
     expect(css).toContain('@media (prefers-reduced-transparency: reduce)');
-    expect(css).toContain("backdrop-filter: blur(28px)");
+    expect(css).toContain("backdrop-filter: blur(32px)");
   });
 
   test("routes styled select fields through the shared native control", () => {
