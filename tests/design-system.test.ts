@@ -298,6 +298,12 @@ describe("shared component contracts", () => {
       // Hover is never an accent tint; accent marks a real selection.
       expect(block).not.toContain("background: var(--accent");
     }
+
+    // Settings selection is communicated by its neutral fill, without a
+    // decorative leading rule competing with the content hierarchy.
+    expect(cssBlock(".settings-sidebar-item.is-active")).not.toContain(
+      "box-shadow",
+    );
   });
 
   test("menus, controls, forms, and modal shells consume semantic tokens", () => {
