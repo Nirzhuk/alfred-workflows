@@ -3428,7 +3428,7 @@ html[data-platform="macos"] .app-titlebar {
   min-height: var(--sidebar-item-min-height);
   margin: 0;
   padding: var(--space-1) var(--sidebar-item-inline-padding);
-  border: 0;
+  border: 1px solid transparent;
   border-radius: var(--radius-md);
   background: transparent;
   color: var(--sidebar-item-color);
@@ -3449,8 +3449,8 @@ html[data-platform="macos"] .app-titlebar {
 
 .sidebar-nav-item.is-active {
   color: var(--ink);
+  border-color: var(--line);
   background: var(--surface-selected);
-  box-shadow: inset 2px 0 0 var(--accent);
 }
 
 .sidebar-nav-icon {

@@ -264,6 +264,12 @@ describe("shared component contracts", () => {
     expect(cssBlock(".sidebar-nav")).toContain(
       "gap: var(--sidebar-item-stack-gap)",
     );
+    expect(cssBlock(".sidebar-nav-item")).toContain(
+      "border: 1px solid transparent",
+    );
+    const activeNav = cssBlock(".sidebar-nav-item.is-active");
+    expect(activeNav).toContain("border-color: var(--line)");
+    expect(activeNav).not.toContain("box-shadow");
     expect(css).toContain(
       ".settings-sidebar-group-items {\n  gap: var(--sidebar-item-stack-gap);\n}",
     );
