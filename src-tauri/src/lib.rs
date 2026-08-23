@@ -4,8 +4,11 @@ mod db;
 // Provider-neutral seams are intentionally consumed by follow-on connector plans.
 #[allow(dead_code)]
 mod integrations;
+mod licensing;
 #[cfg(target_os = "macos")]
 mod native_window_material;
+#[cfg(target_os = "macos")]
+mod macos_titlebar;
 mod notifications;
 mod quick_access;
 mod runner;
@@ -16,6 +19,7 @@ mod triggers;
 
 use db::Db;
 use integrations::IntegrationsState;
+use licensing::LicensingState;
 use std::sync::Mutex;
 use std::time::Duration;
 use tauri::{Emitter, Manager, State, WindowEvent};
@@ -84,6 +88,14 @@ fn set_global_shortcut(
     }
 }
 
+#[tauri::command]
+fn sync_macos_traffic_lights(window: tauri::Window) {
+    #[cfg(target_os = "macos")]
+    macos_titlebar::sync_event_window(&window);
+    #[cfg(not(target_os = "macos"))]
+    let _ = window;
+}
+
 pub fn run() {
     let database = Db::open().expect("failed to open sqlite database");
 
@@ -93,6 +105,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(database)
         .manage(IntegrationsState::default())
+        .manage(LicensingState::default())
         .manage(notifications::NotificationPreferences::default())
         .manage(GlobalShortcutPreference::default())
         .manage(TriggerRuntime::default())
@@ -144,6 +157,7 @@ pub fn run() {
                     if let Err(error) = native_window_material::install(&window) {
                         eprintln!("native sidebar material could not be applied: {error}");
                     }
+                    macos_titlebar::sync_main_window_after_layout(&window);
                 }
             }
 
@@ -187,6 +201,22 @@ pub fn run() {
             if let Err(e) = quick_access::install(app.handle()) {
                 eprintln!("quick access not started: {e}");
             }
+
+            // Return the cached snapshot through `get_license_status` without
+            // a startup network dependency, then refresh stale grants in the
+            // background under the licensing single-flight lock.
+            let license_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let Some(db) = license_handle.try_state::<Db>() else {
+                    return;
+                };
+                let Some(licensing) = license_handle.try_state::<LicensingState>() else {
+                    return;
+                };
+                if licensing.should_refresh(db.inner()) {
+                    let _ = licensing.refresh(db.inner()).await;
+                }
+            });
 
             #[cfg(desktop)]
             {
@@ -253,8 +283,22 @@ pub fn run() {
                 api.prevent_close();
                 let _ = window.hide();
             }
+            #[cfg(target_os = "macos")]
+            match event {
+                WindowEvent::Resized(_)
+                | WindowEvent::ScaleFactorChanged { .. }
+                | WindowEvent::Focused(_)
+                | WindowEvent::ThemeChanged(_) => {
+                    macos_titlebar::sync_event_window(window);
+                }
+                _ => {}
+            }
         })
         .invoke_handler(tauri::generate_handler![
+            commands::activate_license,
+            commands::refresh_license,
+            commands::deactivate_license,
+            commands::get_license_status,
             commands::integrations::list_app_providers,
             commands::integrations::list_app_action_descriptors,
             commands::integrations::list_app_action_resources,
@@ -336,6 +380,7 @@ pub fn run() {
             notifications::notify_message_cmd,
             notifications::notify_run_finished_cmd,
             set_global_shortcut,
+            sync_macos_traffic_lights,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

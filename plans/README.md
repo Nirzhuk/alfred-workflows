@@ -101,7 +101,7 @@ improvement drafts were merged into these canonical files and the duplicate
 
 | Plan | Title | Priority | Effort | Depends on | Status |
 |------|-------|----------|--------|------------|--------|
-| 008 | Build the secure Connected Apps foundation | P0 | L | — | IN PROGRESS (OS smoke pending) |
+| 008 | Build the secure Connected Apps foundation | P0 | L | — | CODE COMPLETE (gates + security invariants verified at `5e62adf` 2026-08-20; only the **packaged Linux** Secret Service credential-store smoke remains here — the signed-macOS and packaged-Windows smokes moved to [release-money 005](release-money/005-run-polar-paid-release-acceptance.md) matrix E rows E10/E11 on 2026-08-20) |
 | 009 | Add a descriptor-driven app action framework | P0 | L | 008 | DONE |
 | 010 | Add app events, polling, and subscription lifecycle | P0 | XL | 008 (009 recommended) | DONE (archived) |
 | 011 | Specify and build the optional cloud relay | P1 / Copilot P0 | XL | 008; 010 for events | BLOCKED (ADR approvals pending) |
@@ -119,7 +119,9 @@ improvement drafts were merged into these canonical files and the duplicate
 1. **Foundation**: 008 → 009 → 010. App actions (009) and local events (010)
    are done
    ([archive/010-app-events-sync-framework.md](archive/010-app-events-sync-framework.md)).
-   008 still has signed OS credential-store smoke.
+   008's only remaining gate is the packaged **Linux** Secret Service
+   credential-store smoke; the signed-macOS and packaged-Windows equivalents
+   are now run by release-money 005 matrix E.
 2. **Local useful beta**: Slack private/BYO mode from 012, Microsoft native PKCE
    actions from 013, and Gmail send-only from 014. Do not wait for the relay.
 3. **Personal notifications**: Telegram (021) and experimental WhatsApp

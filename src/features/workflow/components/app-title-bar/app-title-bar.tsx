@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { isTauri } from "@tauri-apps/api/core";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { LicenseBadge } from "../../../licensing";
 
 type Tab = {
   id: string;
@@ -95,6 +96,7 @@ export function AppTitlebar({
         .isFullscreen()
         .then(setFullscreen)
         .catch(() => setFullscreen(false));
+      void invoke("sync_macos_traffic_lights").catch(() => {});
     };
 
     sync();
@@ -241,6 +243,7 @@ export function AppTitlebar({
             <span className="titlebar-count">{activityEventCount}</span>
           ) : null}
         </button>
+        <LicenseBadge />
       </div>
     </header>
   );
