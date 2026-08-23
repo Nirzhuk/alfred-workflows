@@ -18,6 +18,8 @@ const COMPACT_WIDTH: f64 = 324.0;
 const COMPACT_HEIGHT: f64 = 66.0;
 const EXPANDED_WIDTH: f64 = 380.0;
 const EXPANDED_HEIGHT: f64 = 540.0;
+#[cfg(target_os = "macos")]
+const QUICK_ACCESS_CORNER_RADIUS: f64 = 16.0;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum QuickAccessLayout {
@@ -171,7 +173,7 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
     .maximizable(false)
     .closable(false)
     .decorations(false)
-    .transparent(true)
+    .transparent(cfg!(target_os = "macos"))
     .shadow(false)
     .always_on_top(true)
     .visible_on_all_workspaces(true)
@@ -180,6 +182,13 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
     .focusable(true)
     .accept_first_mouse(true)
     .build()?;
+
+    #[cfg(target_os = "macos")]
+    if let Err(error) =
+        crate::native_window_material::install_rounded(&window, QUICK_ACCESS_CORNER_RADIUS)
+    {
+        eprintln!("native Quick Access material could not be applied: {error}");
+    }
 
     place_window(&window, QuickAccessLayout::Hover, None)?;
     configure_fullscreen_companion(&window, true)?;

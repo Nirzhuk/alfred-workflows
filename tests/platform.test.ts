@@ -16,6 +16,9 @@ const mainEntry = await Bun.file(new URL("src/main.tsx", root)).text();
 const nativeMaterial = await Bun.file(
   new URL("src-tauri/src/native_window_material.rs", root),
 ).text();
+const quickAccessNative = await Bun.file(
+  new URL("src-tauri/src/quick_access.rs", root),
+).text();
 
 describe("desktop platform contract", () => {
   test("detects each supported desktop family from stable navigator signals", () => {
@@ -94,6 +97,41 @@ describe("desktop platform contract", () => {
     expect(css).toMatch(
       /\.canvas-toolbar \{[\s\S]*?background: var\(--surface-panel-opaque\);/,
     );
+  });
+
+  test("gives Quick Access the same rounded macOS material with opaque fallbacks", () => {
+    expect(quickAccessNative).toContain(
+      "crate::native_window_material::install_rounded(",
+    );
+    expect(quickAccessNative).toContain("QUICK_ACCESS_CORNER_RADIUS");
+    expect(quickAccessNative).toContain(
+      '.transparent(cfg!(target_os = "macos"))',
+    );
+    expect(nativeMaterial).toContain("material.setWantsLayer(true);");
+    expect(nativeMaterial).toContain("layer.setCornerRadius(corner_radius);");
+    expect(nativeMaterial).toContain("layer.setMasksToBounds(true);");
+    expect(css).toContain(
+      'html[data-platform="macos"] .quick-access-compact,\nhtml[data-platform="macos"] .quick-access-panel',
+    );
+    expect(css).toMatch(
+      /\.quick-access-compact \{[\s\S]*?background: var\(--surface-panel-opaque\);/,
+    );
+    expect(css).toMatch(
+      /\.quick-access-panel \{[\s\S]*?background: var\(--surface-panel-opaque\);/,
+    );
+    expect(css).toContain(
+      'html[data-platform="macos"][data-window="quick-access"]',
+    );
+    expect(css).toMatch(
+      /\.quick-access-compact-run \{[\s\S]*?color: var\(--accent-ink\);/,
+    );
+
+    const reducedTransparency = css.lastIndexOf(
+      "@media (prefers-reduced-transparency: reduce)",
+    );
+    const fallback = css.slice(reducedTransparency);
+    expect(fallback).toContain(".quick-access-compact");
+    expect(fallback).toContain(".quick-access-panel");
   });
 
   test("reveals the main window only after the first React commit", () => {

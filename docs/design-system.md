@@ -190,6 +190,10 @@ at least 28px in dense chrome and 32px for ordinary controls.
   canvas and page surfaces mask it wherever content needs an opaque reading
   plane. The view uses public AppKit material and does not require a Liquid
   Glass or Electron plugin.
+- Quick Access uses the same AppKit Sidebar material, 90% native opacity, and
+  30% theme panel tint inside a rounded 16px borderless window. Its light and
+  dark appearances follow the shared semantic tokens. Windows, Linux, and the
+  reduced-transparency fallback use the opaque panel surface.
 - The main window stays hidden until the lazy React application has committed
   and its fonts are ready. Window-state restoration deliberately excludes
   visibility so native material and web content appear in the same frame.

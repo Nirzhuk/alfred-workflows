@@ -72,6 +72,7 @@ dependencies = [
  "notify-rust",
  "objc2-app-kit",
  "objc2-foundation",
+ "objc2-quartz-core",
  "qrcode",
  "rand 0.8.7",
  "reqwest",
@@ -3107,6 +3108,7 @@ dependencies = [
  "objc2",
  "objc2-core-foundation",
  "objc2-foundation",
+ "objc2-quartz-core",
 ]
 
 [[package]]
