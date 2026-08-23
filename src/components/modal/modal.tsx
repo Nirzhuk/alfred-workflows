@@ -173,11 +173,12 @@ export function Modal({
 }
 
 type ModalHeaderProps = {
-  eyebrow?: ReactNode;
+  leading?: ReactNode;
   title: ReactNode;
   titleId?: string;
   titleAs?: "h2" | "h3";
   description?: ReactNode;
+  descriptionId?: string;
   /** Extra content under the title block (e.g. stats line). */
   children?: ReactNode;
   actions?: ReactNode;
@@ -187,11 +188,12 @@ type ModalHeaderProps = {
 };
 
 export function ModalHeader({
-  eyebrow,
+  leading,
   title,
   titleId,
   titleAs = "h3",
   description,
+  descriptionId,
   children,
   actions,
   strong = false,
@@ -200,6 +202,7 @@ export function ModalHeader({
   const TitleTag = titleAs;
   const headerClass = [
     "modal-header",
+    leading ? "modal-header--with-leading" : null,
     strong ? "modal-header--strong" : null,
     className,
   ]
@@ -208,10 +211,14 @@ export function ModalHeader({
 
   return (
     <header className={headerClass}>
+      {leading ? <div className="modal-header-leading">{leading}</div> : null}
       <div className="modal-header-copy">
-        {eyebrow ? <p className="modal-kicker">{eyebrow}</p> : null}
         <TitleTag id={titleId}>{title}</TitleTag>
-        {description ? <p className="muted">{description}</p> : null}
+        {description ? (
+          <div id={descriptionId} className="modal-header-description muted">
+            {description}
+          </div>
+        ) : null}
         {children}
       </div>
       {actions ? <div className="modal-actions">{actions}</div> : null}

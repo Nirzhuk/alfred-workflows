@@ -4,6 +4,8 @@ mod db;
 // Provider-neutral seams are intentionally consumed by follow-on connector plans.
 #[allow(dead_code)]
 mod integrations;
+#[cfg(target_os = "macos")]
+mod native_window_material;
 mod notifications;
 mod quick_access;
 mod runner;
@@ -132,13 +134,9 @@ pub fn run() {
             {
                 notifications::prepare_notification_identity(app.handle());
                 if let Some(window) = app.get_webview_window("main") {
-                    use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial};
-                    let _ = apply_vibrancy(
-                        &window,
-                        NSVisualEffectMaterial::Sidebar,
-                        None,
-                        None,
-                    );
+                    if let Err(error) = native_window_material::install(&window) {
+                        eprintln!("native sidebar material could not be applied: {error}");
+                    }
                 }
             }
 

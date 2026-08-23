@@ -393,13 +393,15 @@ export function MemoriesInspector({ open, initialMemoryId, onClose }: Props) {
         htmlExpanded ? " is-html-expanded" : ""
       }`}
       onClose={() => void requestClose()}
-      label="Memories inspector"
+      labelledBy="memories-inspector-title"
+      describedBy="memories-inspector-description"
       closeOnEscape={!showLinker}
     >
       <ModalHeader
         strong
         titleAs="h2"
         title="Memories"
+        titleId="memories-inspector-title"
         description={
           memories.length === 0 ? (
             "No memories yet for this workflow."
@@ -411,6 +413,7 @@ export function MemoriesInspector({ open, initialMemoryId, onClose }: Props) {
             </span>
           )
         }
+        descriptionId="memories-inspector-description"
         actions={
           <>
             <button type="button" className="ghost" onClick={openLinker}>
@@ -812,12 +815,18 @@ export function MemoriesInspector({ open, initialMemoryId, onClose }: Props) {
           className="memories-link-picker-modal"
           onClose={() => setShowLinker(false)}
           labelledBy="link-memory-title"
+          describedBy="link-memory-description"
         >
           <ModalHeader
-            eyebrow="Memory library"
+            leading={
+              <span className="modal-identity-icon">
+                <Icon name="database" size={20} />
+              </span>
+            }
             title="Link a memory"
             titleId="link-memory-title"
             description="Reuse context from another workflow without copying it."
+            descriptionId="link-memory-description"
             actions={
               <button
                 type="button"

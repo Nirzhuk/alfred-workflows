@@ -52,6 +52,15 @@ describe("shared modal system", () => {
     }
   });
 
+  test("connects visible header descriptions to the dialog accessibility tree", async () => {
+    expect(modal).toContain("descriptionId?: string");
+    expect(modal).toContain("id={descriptionId}");
+    for (const path of namedModalCallers) {
+      const source = await Bun.file(new URL(path, root)).text();
+      expect([path, source.includes("describedBy=")]).toEqual([path, true]);
+    }
+  });
+
   test("uses one shell for nested memory dialogs", () => {
     expect(memoriesInspector).toContain('className="memories-link-picker-modal"');
     expect(memoriesInspector).not.toContain('className="memories-link-picker-backdrop"');
@@ -63,19 +72,20 @@ describe("shared modal system", () => {
   test("keeps destructive confirmation visually and semantically distinct", () => {
     expect(confirmDialog).toContain('role="alertdialog"');
     expect(confirmDialog).toContain('confirm-modal is-danger');
-    expect(css).toContain(".confirm-modal.is-danger .modal-kicker");
+    expect(css).toContain(".confirm-modal.is-danger .modal-header h3");
   });
 
   test("uses the release modal composition in every theme", () => {
     expect(css).toContain("align-items: center;");
     expect(css).toContain("backdrop-filter: blur(14px) saturate(0.72);");
-    expect(css).toContain("grid-template-columns: minmax(0, 1fr) auto;");
-    expect(css).toContain(".modal-kicker::before");
+    expect(css).toContain("grid-template-columns: auto minmax(0, 1fr) auto;");
+    expect(css).toContain(".modal-header-leading");
     expect(modal).toMatch(
-      /modal-header-copy[\s\S]*modal-kicker[\s\S]*<TitleTag/,
+      /modal-header-leading[\s\S]*modal-header-copy[\s\S]*<TitleTag/,
     );
-    expect(css).toContain("font-family: var(--font-mono);");
-    expect(css).toContain("background: var(--surface-card);");
+    expect(modal).toContain("modal-header-description muted");
+    expect(css).toContain("font-size: var(--text-2xl);");
+    expect(css).toContain("background: var(--surface-raised);");
     expect(css).toContain("@media (prefers-reduced-transparency: reduce)");
     expect(css).toContain("@media (prefers-reduced-motion: no-preference)");
   });

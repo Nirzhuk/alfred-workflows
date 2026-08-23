@@ -73,7 +73,7 @@ font request.
 | Role | Family | Size | Weight | Line height |
 | --- | --- | --- | --- | --- |
 | Page title | `--font-display` | `--text-2xl` / 24px | 600 | 1.2 |
-| Dialog title | `--font-display` | `--text-xl` / 20px | 600 | 1.2 |
+| Dialog title | `--font-display` | `--text-2xl` / 24px | 600 | 1.2 |
 | Section title | `--font-sans` | `--text-lg` / 16px | 600 | 1.2 |
 | Navigation section label | `--font-sans` | `--text-lg` / 16px | 400 | 1.2 |
 | Body, item, control | `--font-sans` | `--text-md` / 14px | 400 | 1.4 |
@@ -183,15 +183,15 @@ at least 28px in dense chrome and 32px for ordinary controls.
 - Use `--control-*` tokens for shared control states.
 - Use emerald only when the interface is communicating action, location,
   focus, progress, or success. Hover is neutral.
-- The sidebar, title bar, canvas toolbar, and Quick Access panel use translucent
-  material with backdrop blur. Under `prefers-reduced-transparency: reduce`,
-  each resolves to the opaque panel surface.
-- On macOS, the transparent window uses the native Sidebar visual-effect
-  material. The HTML roots remain transparent so that material can reach app
-  chrome; canvas and page surfaces mask it wherever content needs an opaque
-  reading plane. CSS backdrop blur remains the browser and non-native fallback,
-  and reduced-transparency mode uses the fully opaque panel token to mask the
-  native effect as well.
+- On macOS, the transparent window installs separate native
+  `NSVisualEffectView` regions for Sidebar and Titlebar materials. The HTML
+  roots remain transparent so those materials can reach app chrome, while
+  canvas and page surfaces mask them wherever content needs an opaque reading
+  plane. The views use public AppKit materials and do not require a Liquid
+  Glass or Electron plugin.
+- Windows and Linux use the fully opaque panel surface. They do not imitate
+  native glass with a translucent window. Reduced-transparency mode on macOS
+  also uses the opaque panel token to respect the system accessibility setting.
 
 ### Surface fills
 
@@ -354,13 +354,15 @@ the rails are tuned to avoid.
   They open near the top of the workspace instead of floating at dead center.
 - Modal backdrops blur and mute the workspace. Reduced-transparency mode keeps
   the scrim but removes the filter.
-- When a dialog has context such as "Schedule" or "Workflow", place it as a
-  compact Geist Mono eyebrow directly above the Infer title. A short emerald
-  rule anchors the eyebrow without splitting the header into competing columns.
-- Dialog titles use 20px/600. Compact helper text stays at 12px/400.
-- Dialog bodies use the card surface. Inputs and nested controls step up to the
-  raised surface. Emerald is reserved for the context rail, focus, and the
-  primary decision.
+- Dialog headers use one horizontal composition: an optional 40px identity
+  tile, an Infer title with one concise explanatory line, and compact actions
+  aligned at the trailing edge. Provider setup dialogs use the provider mark;
+  workflow tools use a shared Phosphor icon tile.
+- Dialog titles use 24px/600. Header descriptions use 14px/400 and should
+  explain the decision or task instead of repeating a category label.
+- Dialog headers use the raised surface and bodies use the card surface. Inputs
+  and nested controls step up to the raised surface. Emerald is reserved for
+  focus and the primary decision.
 - Shared modals trap Tab, close with Escape when allowed, lock background
   scrolling, and return focus to the opener. Feature dialogs must not rebuild
   this behavior.

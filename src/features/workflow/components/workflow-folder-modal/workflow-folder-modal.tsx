@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Icon } from "../../../../components/icon";
 import { Modal, ModalHeader } from "../../../../components/modal";
 import { useWorkflowStore } from "../../store";
 
@@ -35,11 +36,26 @@ export function WorkflowFolderModal({ folder, onClose }: Props) {
   const title = folder ? "Rename folder" : "New folder";
 
   return (
-    <Modal size="md" onClose={onClose} labelledBy="workflow-folder-modal-title">
+    <Modal
+      size="md"
+      onClose={onClose}
+      labelledBy="workflow-folder-modal-title"
+      describedBy="workflow-folder-modal-description"
+    >
       <ModalHeader
-        eyebrow="Workflows"
+        leading={
+          <span className="modal-identity-icon">
+            <Icon name={folder ? "folder" : "folder-plus"} size={20} />
+          </span>
+        }
         title={title}
         titleId="workflow-folder-modal-title"
+        description={
+          folder
+            ? "Update this folder name across the workflow library."
+            : "Create a folder to keep related workflows together."
+        }
+        descriptionId="workflow-folder-modal-description"
         actions={
           <button type="button" className="ghost" onClick={onClose}>
             Cancel

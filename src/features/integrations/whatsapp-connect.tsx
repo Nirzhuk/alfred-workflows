@@ -2,6 +2,7 @@ import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon } from "../../components/icon";
 import { Modal, ModalHeader } from "../../components/modal";
+import { AppLogo } from "./app-logo";
 import { integrationsApi } from "./api";
 import type { ConnectDialogProps } from "./connect-dialog";
 import { useIntegrationsStore } from "./store";
@@ -139,11 +140,19 @@ export function WhatsAppConnect({ onClose }: ConnectDialogProps) {
   const terminal = failure !== null && TERMINAL_FAILURES.has(failure);
 
   return (
-    <Modal onClose={onClose} labelledBy="whatsapp-title">
+    <Modal
+      onClose={onClose}
+      labelledBy="whatsapp-title"
+      describedBy="whatsapp-description"
+    >
       <ModalHeader
-        eyebrow="Personal notifications"
+        leading={
+          <AppLogo providerId="whatsapp" providerName="WhatsApp" size={40} />
+        }
         title="Connect WhatsApp"
         titleId="whatsapp-title"
+        description="Scan the QR code to link one private chat for workflow notifications."
+        descriptionId="whatsapp-description"
         actions={
           <button
             type="button"

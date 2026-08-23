@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Icon } from "../../../../components/icon";
 import { Modal, ModalHeader } from "../../../../components/modal";
 import { useWorkflowStore } from "../../store";
 
@@ -43,11 +44,18 @@ export function RenameWorkflowModal({
       size="md"
       onClose={onClose}
       labelledBy="rename-modal-title"
+      describedBy="rename-modal-description"
     >
       <ModalHeader
-        eyebrow="Workflow"
-        title="Rename"
+        leading={
+          <span className="modal-identity-icon">
+            <Icon name="pencil-simple" size={20} />
+          </span>
+        }
+        title="Rename workflow"
         titleId="rename-modal-title"
+        description="Update the name shown in your workflow library."
+        descriptionId="rename-modal-description"
         actions={
           <button type="button" className="ghost" onClick={onClose}>
             Cancel

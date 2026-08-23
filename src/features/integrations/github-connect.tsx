@@ -2,6 +2,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "../../components/icon";
 import { Modal, ModalHeader } from "../../components/modal";
+import { AppLogo } from "./app-logo";
 import { ConnectedAppTutorialLayout } from "./components/connected-app-tutorial-layout";
 import { ExternalLinkIcon } from "./components/external-link-icon";
 import type { ConnectDialogProps } from "./connect-dialog";
@@ -89,11 +90,14 @@ export function GitHubConnect({ onClose }: ConnectDialogProps) {
       className="connection-tutorial-modal"
       onClose={() => void close()}
       labelledBy="github-title"
+      describedBy="github-description"
     >
       <ModalHeader
-        eyebrow="Developer workflows"
+        leading={<AppLogo providerId="github" providerName="GitHub" size={40} />}
         title="Connect GitHub"
         titleId="github-title"
+        description="Authorize Alfred and choose the repositories available to workflows."
+        descriptionId="github-description"
         actions={
           <button
             type="button"

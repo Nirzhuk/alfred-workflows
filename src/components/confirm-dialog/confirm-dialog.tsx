@@ -29,14 +29,12 @@ export function ConfirmDialog({
       describedBy="confirm-dialog-message"
     >
       <ModalHeader
-        eyebrow="Confirm"
         title={title}
         titleId="confirm-dialog-title"
+        description={message}
+        descriptionId="confirm-dialog-message"
       />
       <div className="confirm-modal-body">
-        <p id="confirm-dialog-message" className="muted">
-          {message}
-        </p>
         <div className="schedule-actions">
           <button type="button" className="ghost" onClick={onCancel}>
             {cancelLabel}

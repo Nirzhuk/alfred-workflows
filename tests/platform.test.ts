@@ -12,6 +12,9 @@ const tauriConfig = await Bun.file(
 const tauriLib = await Bun.file(
   new URL("src-tauri/src/lib.rs", root),
 ).text();
+const nativeMaterial = await Bun.file(
+  new URL("src-tauri/src/native_window_material.rs", root),
+).text();
 
 describe("desktop platform contract", () => {
   test("detects each supported desktop family from stable navigator signals", () => {
@@ -69,13 +72,36 @@ describe("desktop platform contract", () => {
 
   test("lets macOS native sidebar material reach translucent app chrome", () => {
     expect(tauriConfig.app.windows[0]?.transparent).toBe(true);
-    expect(tauriLib).toContain("NSVisualEffectMaterial::Sidebar");
+    expect(tauriLib).toContain("native_window_material::install(&window)");
+    expect(nativeMaterial).toContain("NSVisualEffectMaterial::Sidebar");
+    expect(nativeMaterial).toContain("NSVisualEffectMaterial::Titlebar");
+    expect(nativeMaterial).toContain("NSVisualEffectState::Active");
     expect(css).toContain('html[data-platform="macos"] #root');
     expect(css).toContain("background-color: transparent;");
     expect(css).toContain(
-      "background: color-mix(in srgb, var(--surface-panel) 68%, transparent);",
+      "background: color-mix(in srgb, var(--surface-panel) 38%, transparent);",
     );
     expect(css).toContain("background: var(--surface-panel-opaque);");
+    expect(css).toMatch(
+      /\.run-panel \{[\s\S]*?background: var\(--surface-panel-opaque\);/,
+    );
+    expect(css).toMatch(
+      /\.canvas-toolbar \{[\s\S]*?background: var\(--surface-panel-opaque\);/,
+    );
+  });
+
+  test("lets reduced transparency override native and CSS blur", () => {
+    const reducedTransparency = css.lastIndexOf(
+      "@media (prefers-reduced-transparency: reduce)",
+    );
+    expect(reducedTransparency).toBeGreaterThan(css.indexOf(".modal-backdrop,"));
+    expect(reducedTransparency).toBeGreaterThan(
+      css.indexOf('html[data-platform="macos"] .sidebar'),
+    );
+    const fallback = css.slice(reducedTransparency);
+    expect(fallback).toContain('html[data-platform="macos"] .sidebar');
+    expect(fallback).toContain(".memories-inspector-backdrop");
+    expect(fallback).toContain("backdrop-filter: none;");
   });
 
   test("keeps the macOS-only reopen event out of other desktop builds", () => {

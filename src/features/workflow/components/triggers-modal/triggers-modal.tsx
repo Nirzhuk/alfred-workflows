@@ -168,11 +168,22 @@ export function TriggersModal({ workflowId, workflowName, onClose }: Props) {
   }
 
   return (
-    <Modal size="md" onClose={onClose} labelledBy="triggers-modal-title">
+    <Modal
+      size="md"
+      onClose={onClose}
+      labelledBy="triggers-modal-title"
+      describedBy="triggers-modal-description"
+    >
       <ModalHeader
-        eyebrow="Triggers"
-        title={workflowName}
+        leading={
+          <span className="modal-identity-icon">
+            <Icon name="arrow-clockwise" size={20} />
+          </span>
+        }
+        title={`Triggers for ${workflowName}`}
         titleId="triggers-modal-title"
+        description="Choose which events can start this workflow automatically."
+        descriptionId="triggers-modal-description"
         actions={
           <button
             type="button"

@@ -370,23 +370,6 @@ html[data-platform="macos"] body {
   }
 }
 
-@media (prefers-reduced-transparency: reduce) {
-  .app-titlebar,
-  .canvas-toolbar,
-  .quick-access-panel,
-  .sidebar {
-    background: var(--surface-panel-opaque);
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
-
-  .modal-backdrop {
-    background: var(--backdrop);
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
-}
-
 * {
   box-sizing: border-box;
   scrollbar-width: none;
@@ -1139,9 +1122,7 @@ button:disabled svg {
   gap: var(--space-2);
   padding: 0 var(--titlebar-safe-end) 0 var(--titlebar-safe-start);
   border-bottom: 1px solid var(--line);
-  background: color-mix(in srgb, var(--surface-panel) 78%, transparent);
-  -webkit-backdrop-filter: blur(18px) saturate(1.1);
-  backdrop-filter: blur(18px) saturate(1.1);
+  background: var(--surface-panel-opaque);
   user-select: none;
   app-region: drag;
   -webkit-app-region: drag;
@@ -2040,14 +2021,24 @@ button:disabled svg {
 .sidebar {
   width: var(--sidebar-w);
   border-right: 1px solid color-mix(in srgb, var(--ink) 10%, transparent);
-  background: color-mix(in srgb, var(--surface-panel) 68%, transparent);
+  background: var(--surface-panel-opaque);
   box-shadow: inset -1px 0 0 color-mix(in srgb, var(--ink) 3%, transparent);
-  -webkit-backdrop-filter: blur(32px) saturate(1.16);
-  backdrop-filter: blur(32px) saturate(1.16);
   padding: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+html[data-platform="macos"] .sidebar {
+  background: color-mix(in srgb, var(--surface-panel) 38%, transparent);
+  -webkit-backdrop-filter: blur(32px) saturate(1.16);
+  backdrop-filter: blur(32px) saturate(1.16);
+}
+
+html[data-platform="macos"] .app-titlebar {
+  background: color-mix(in srgb, var(--surface-panel) 42%, transparent);
+  -webkit-backdrop-filter: blur(18px) saturate(1.1);
+  backdrop-filter: blur(18px) saturate(1.1);
 }
 
 .sidebar-scroll {
@@ -3396,7 +3387,7 @@ button:disabled svg {
   min-width: 0;
   width: var(--run-w);
   border-left: 1px solid var(--line);
-  background: var(--surface-panel);
+  background: var(--surface-panel-opaque);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -4177,8 +4168,8 @@ button.danger:hover:not(:disabled) {
   line-height: var(--leading-relaxed);
 }
 
-.confirm-modal.is-danger .modal-kicker {
-  border-left-color: var(--danger);
+.confirm-modal.is-danger .modal-header h2,
+.confirm-modal.is-danger .modal-header h3 {
   color: var(--danger);
 }
 
@@ -4539,56 +4530,16 @@ button.primary.danger-solid:hover:not(:disabled) {
 }
 
 .connection-tutorial-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
-  min-height: 6rem;
-  padding: var(--space-5) var(--space-6);
-  border-bottom: 1px solid var(--line);
   background: var(--surface-raised);
 }
 
-.connection-tutorial-header-copy,
-.connection-tutorial-header-actions {
-  display: flex;
-  align-items: center;
-}
-
-.connection-tutorial-header-copy {
-  min-width: 0;
-  gap: var(--space-4);
-}
-
-.connection-tutorial-header-copy .app-logo {
+.connection-tutorial-header .modal-header-leading .app-logo {
   flex: 0 0 auto;
   box-shadow: 0 0 0 1px var(--line);
 }
 
-.connection-tutorial-header-copy > div {
-  min-width: 0;
-}
-
-.connection-tutorial-header h2 {
+.connection-tutorial-header .modal-header-description p {
   margin: 0;
-  color: var(--ink);
-  font-family: var(--font-display);
-  font-size: var(--text-2xl);
-  font-weight: var(--font-weight-semibold);
-  line-height: var(--leading-compact);
-  letter-spacing: -0.025em;
-}
-
-.connection-tutorial-header p {
-  margin: var(--space-2) 0 0;
-  color: var(--muted);
-  font-size: var(--text-md);
-  line-height: var(--leading-default);
-}
-
-.connection-tutorial-header-actions {
-  flex: 0 0 auto;
-  gap: var(--space-3);
 }
 
 .connection-tutorial-header .connection-tutorial-badge {
@@ -5699,9 +5650,7 @@ button.primary.danger-solid:hover:not(:disabled) {
   gap: var(--space-3);
   padding: var(--space-1-5) var(--space-3);
   border-bottom: 1px solid var(--line);
-  background: color-mix(in srgb, var(--surface-panel) 88%, transparent);
-  -webkit-backdrop-filter: blur(12px);
-  backdrop-filter: blur(12px);
+  background: var(--surface-panel-opaque);
   min-height: 0;
 }
 
@@ -7357,30 +7306,20 @@ button.primary.danger-solid:hover:not(:disabled) {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--space-6);
+  min-height: 6rem;
   padding: var(--space-5) var(--space-6);
   border-bottom: 1px solid var(--line);
-  background: var(--surface-card);
+  background: var(--surface-raised);
 }
 
-.modal-kicker {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin: 0 0 var(--space-1-5);
-  color: var(--accent);
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  font-weight: var(--font-weight-medium);
-  letter-spacing: 0.01em;
-  line-height: var(--leading-compact);
+.modal-header--with-leading {
+  grid-template-columns: auto minmax(0, 1fr) auto;
 }
 
-.modal-kicker::before {
-  width: var(--space-3);
-  height: 1px;
+.modal-header-leading {
+  display: grid;
   flex: 0 0 auto;
-  background: var(--accent);
-  content: "";
+  place-items: center;
 }
 
 .modal-header-copy {
@@ -7389,7 +7328,7 @@ button.primary.danger-solid:hover:not(:disabled) {
 
 .modal-header--strong,
 .memories-inspector-header {
-  background: var(--surface-card);
+  background: var(--surface-raised);
 }
 
 .modal-header h2,
@@ -7398,7 +7337,7 @@ button.primary.danger-solid:hover:not(:disabled) {
 .memories-inspector-header h2 {
   margin: 0;
   font-family: var(--font-display);
-  font-size: var(--text-xl);
+  font-size: var(--text-2xl);
   font-weight: var(--font-weight-semibold);
   line-height: var(--leading-compact);
   letter-spacing: -0.025em;
@@ -7407,15 +7346,35 @@ button.primary.danger-solid:hover:not(:disabled) {
 .modal-header h2,
 .memories-inspector-header h2 {
   margin: 0;
-  font-size: var(--text-xl);
+  font-size: var(--text-2xl);
 }
 
-.modal-header .muted,
+.modal-header-description,
 .memories-inspector-header .muted {
   max-width: 60ch;
   margin: var(--space-2) 0 0;
-  font-size: var(--text-sm);
+  font-size: var(--text-md);
   line-height: var(--leading-default);
+}
+
+.modal-header-description > :first-child {
+  margin-top: 0;
+}
+
+.modal-header-description > :last-child {
+  margin-bottom: 0;
+}
+
+.modal-identity-icon {
+  display: grid;
+  place-items: center;
+  width: var(--control-height-large);
+  height: var(--control-height-large);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface-card);
+  color: var(--icon);
+  box-shadow: var(--elevation-raised);
 }
 
 .output-modal-stats {
@@ -7561,6 +7520,16 @@ button.primary.danger-solid:hover:not(:disabled) {
   .modal-header {
     grid-template-columns: minmax(0, 1fr) auto;
     padding: var(--space-5);
+  }
+
+  .modal-header--with-leading {
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: var(--space-4);
+  }
+
+  .modal-header--with-leading .modal-actions {
+    grid-column: 2;
+    justify-content: flex-start;
   }
 
 }
@@ -8311,7 +8280,6 @@ button.primary.danger-solid:hover:not(:disabled) {
 
 @media (max-width: 1100px) {
   .app-shell {
-    --sidebar-w: 250px;
     --run-w: 300px;
   }
 
@@ -8493,5 +8461,28 @@ textarea::placeholder {
 
   .react-flow__node.rf-node-running .wf-node::before {
     opacity: 0.62;
+  }
+}
+
+/* This must remain after the component rules above so accessibility settings
+   win the cascade, including the more specific macOS material overrides. */
+@media (prefers-reduced-transparency: reduce) {
+  .app-titlebar,
+  .canvas-toolbar,
+  .quick-access-panel,
+  .sidebar,
+  html[data-platform="macos"] .app-titlebar,
+  html[data-platform="macos"] .sidebar {
+    background: var(--surface-panel-opaque);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  .modal-backdrop,
+  .output-modal-backdrop,
+  .memories-inspector-backdrop {
+    background: var(--backdrop);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
   }
 }
