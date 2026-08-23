@@ -283,7 +283,7 @@
   --canvas-guide: rgba(255, 255, 255, 0.055);
   --menu: rgba(28, 28, 28, 0.96);
   --danger: #e55e5f;
-  --danger-strong: #d84b4c;
+  --danger-strong: #c74449;
   --danger-ink: #ffffff;
   --danger-soft: color-mix(in srgb, var(--danger) 12%, transparent);
   --danger-border: color-mix(in srgb, var(--danger) 32%, transparent);
@@ -4147,8 +4147,7 @@ button.danger:hover:not(:disabled) {
   padding: var(--space-0-5) var(--space-2);
 }
 
-.rename-modal-body,
-.confirm-modal-body {
+.rename-modal-body {
   display: flex;
   flex-direction: column;
   gap: var(--space-5);
@@ -4156,27 +4155,70 @@ button.danger:hover:not(:disabled) {
   background: var(--surface-card);
 }
 
-.confirm-modal-body .muted {
-  margin: 0;
-  color: color-mix(in srgb, var(--ink) 72%, var(--muted));
+.modal.confirm-modal {
+  width: min(420px, 100%);
+}
+
+.confirm-modal .modal-header {
+  min-height: 0;
+  align-items: start;
+  gap: var(--space-3);
+  padding: var(--space-5);
+}
+
+.confirm-modal .modal-header h3 {
+  color: var(--ink);
+  font-size: var(--text-xl);
+  letter-spacing: -0.015em;
+}
+
+.confirm-modal .modal-header-description {
+  margin-top: var(--space-1-5);
+  color: var(--muted);
   font-size: var(--text-md);
   line-height: var(--leading-relaxed);
 }
 
-.confirm-modal.is-danger .modal-header h2,
-.confirm-modal.is-danger .modal-header h3 {
+.confirm-modal-icon {
+  display: grid;
+  place-items: center;
+  width: var(--control-height-comfortable);
+  height: var(--control-height-comfortable);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
+  color: var(--icon);
+}
+
+.confirm-modal-icon.is-danger {
   color: var(--danger);
+  border-color: var(--danger-border);
+  background: var(--danger-soft);
+}
+
+.confirm-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface-card);
+}
+
+.confirm-modal-footer button {
+  min-width: 0;
+  min-height: var(--control-height-comfortable);
+  padding-inline: var(--space-4);
 }
 
 button.primary.danger-solid {
-  background: var(--danger);
-  border-color: var(--danger);
+  background: var(--danger-strong);
+  border-color: var(--danger-strong);
   color: var(--danger-ink);
 }
 
 button.primary.danger-solid:hover:not(:disabled) {
-  background: var(--danger-strong);
-  border-color: var(--danger-strong);
+  background: color-mix(in srgb, var(--danger-strong) 88%, var(--bg));
+  border-color: color-mix(in srgb, var(--danger-strong) 88%, var(--bg));
 }
 
 .schedule-modal-body {

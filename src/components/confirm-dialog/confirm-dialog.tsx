@@ -1,3 +1,4 @@
+import { Icon } from "../icon";
 import { Modal, ModalHeader } from "../modal";
 
 type Props = {
@@ -29,26 +30,40 @@ export function ConfirmDialog({
       describedBy="confirm-dialog-message"
     >
       <ModalHeader
+        className="confirm-modal-header"
+        leading={
+          <span
+            className={
+              danger
+                ? "confirm-modal-icon is-danger"
+                : "confirm-modal-icon"
+            }
+          >
+            <Icon name={danger ? "trash" : "question"} size={18} />
+          </span>
+        }
         title={title}
         titleId="confirm-dialog-title"
         description={message}
         descriptionId="confirm-dialog-message"
       />
-      <div className="confirm-modal-body">
-        <div className="schedule-actions">
-          <button type="button" className="ghost" onClick={onCancel}>
-            {cancelLabel}
-          </button>
-          <button
-            type="button"
-            className={danger ? "primary danger-solid" : "primary"}
-            onClick={onConfirm}
-            autoFocus
-          >
-            {confirmLabel}
-          </button>
-        </div>
-      </div>
+      <footer className="confirm-modal-footer">
+        <button
+          type="button"
+          className="ghost"
+          onClick={onCancel}
+          autoFocus
+        >
+          {cancelLabel}
+        </button>
+        <button
+          type="button"
+          className={danger ? "primary danger-solid" : "primary"}
+          onClick={onConfirm}
+        >
+          {confirmLabel}
+        </button>
+      </footer>
     </Modal>
   );
 }
