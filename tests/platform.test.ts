@@ -12,6 +12,7 @@ const tauriConfig = await Bun.file(
 const tauriLib = await Bun.file(
   new URL("src-tauri/src/lib.rs", root),
 ).text();
+const mainEntry = await Bun.file(new URL("src/main.tsx", root)).text();
 const nativeMaterial = await Bun.file(
   new URL("src-tauri/src/native_window_material.rs", root),
 ).text();
@@ -70,12 +71,15 @@ describe("desktop platform contract", () => {
     expect(csp).toContain("font-src 'self' data:");
   });
 
-  test("lets macOS native sidebar material reach translucent app chrome", () => {
+  test("uses one macOS wallpaper-tint layer beneath the sidebar and titlebar", () => {
     expect(tauriConfig.app.windows[0]?.transparent).toBe(true);
     expect(tauriLib).toContain("native_window_material::install(&window)");
     expect(nativeMaterial).toContain("NSVisualEffectMaterial::Sidebar");
-    expect(nativeMaterial).toContain("NSVisualEffectMaterial::Titlebar");
     expect(nativeMaterial).toContain("NSVisualEffectState::Active");
+    expect(nativeMaterial).toContain("let material_frame = bounds;");
+    expect(nativeMaterial).toContain("NSAutoresizingMaskOptions::ViewWidthSizable");
+    expect(nativeMaterial).toContain("NSAutoresizingMaskOptions::ViewHeightSizable");
+    expect(nativeMaterial).not.toContain("NSVisualEffectMaterial::Titlebar");
     expect(css).toContain('html[data-platform="macos"] #root');
     expect(css).toContain("background-color: transparent;");
     expect(css).toContain(
@@ -88,6 +92,14 @@ describe("desktop platform contract", () => {
     expect(css).toMatch(
       /\.canvas-toolbar \{[\s\S]*?background: var\(--surface-panel-opaque\);/,
     );
+  });
+
+  test("reveals the main window only after the first React commit", () => {
+    expect(tauriConfig.app.windows[0]?.visible).toBe(false);
+    expect(tauriLib).toContain("StateFlags::SIZE");
+    expect(tauriLib).not.toContain("StateFlags::VISIBLE");
+    expect(mainEntry).toContain("revealMainWindow");
+    expect(mainEntry).toContain("getCurrentWindow().show()");
   });
 
   test("lets reduced transparency override native and CSS blur", () => {

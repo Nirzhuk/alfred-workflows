@@ -101,6 +101,7 @@ pub fn run() {
     #[cfg(desktop)]
     {
         use tauri_plugin_global_shortcut::ShortcutState;
+        use tauri_plugin_window_state::StateFlags;
 
         builder = builder
             .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
@@ -123,6 +124,12 @@ pub fn run() {
             )
             .plugin(
                 tauri_plugin_window_state::Builder::default()
+                    .with_state_flags(
+                        StateFlags::SIZE
+                            | StateFlags::POSITION
+                            | StateFlags::MAXIMIZED
+                            | StateFlags::FULLSCREEN,
+                    )
                     .with_denylist(&[quick_access::WINDOW_LABEL])
                     .build(),
             );

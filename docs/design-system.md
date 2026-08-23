@@ -183,12 +183,15 @@ at least 28px in dense chrome and 32px for ordinary controls.
 - Use `--control-*` tokens for shared control states.
 - Use emerald only when the interface is communicating action, location,
   focus, progress, or success. Hover is neutral.
-- On macOS, the transparent window installs separate native
-  `NSVisualEffectView` regions for Sidebar and Titlebar materials. The HTML
-  roots remain transparent so those materials can reach app chrome, while
-  canvas and page surfaces mask them wherever content needs an opaque reading
-  plane. The views use public AppKit materials and do not require a Liquid
+- On macOS, the transparent window installs one full-window native
+  `NSVisualEffectView` with Sidebar material. The HTML roots remain transparent
+  so the same wallpaper tint reaches the sidebar and titlebar, while
+  canvas and page surfaces mask it wherever content needs an opaque reading
+  plane. The view uses public AppKit material and does not require a Liquid
   Glass or Electron plugin.
+- The main window stays hidden until the lazy React application has committed
+  and its fonts are ready. Window-state restoration deliberately excludes
+  visibility so native material and web content appear in the same frame.
 - Windows and Linux use the fully opaque panel surface. They do not imitate
   native glass with a translucent window. Reduced-transparency mode on macOS
   also uses the opaque panel token to respect the system accessibility setting.

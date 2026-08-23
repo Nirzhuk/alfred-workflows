@@ -2036,7 +2036,7 @@ html[data-platform="macos"] .sidebar {
 }
 
 html[data-platform="macos"] .app-titlebar {
-  background: color-mix(in srgb, var(--surface-panel) 42%, transparent);
+  background: color-mix(in srgb, var(--surface-panel) 38%, transparent);
   -webkit-backdrop-filter: blur(18px) saturate(1.1);
   backdrop-filter: blur(18px) saturate(1.1);
 }
