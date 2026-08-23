@@ -4,7 +4,7 @@ use chrono::Utc;
 use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
 /// Spill large bodies to disk so SQLite stays lean.
@@ -99,20 +99,48 @@ fn normalize_source(source: Option<&str>) -> String {
     }
 }
 
+fn artifacts_root() -> Result<PathBuf, DbError> {
+    Ok(app_data_dir()?.join("artifacts"))
+}
+
+/// Ids arrive straight from the webview and are used as path segments.
+/// `Path::join` neither normalizes `..` nor refuses an absolute argument, so
+/// anything that is not a plain segment could escape the artifacts directory.
+fn safe_segment(value: &str) -> Result<&str, DbError> {
+    let plain = !value.is_empty()
+        && value.len() <= 128
+        && value
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+    if plain {
+        Ok(value)
+    } else {
+        Err(DbError::Other("invalid id".into()))
+    }
+}
+
+/// A stored `artifact_path` is data, not authority: a row written before this
+/// check existed (or forged around it) must never be read back or deleted.
+fn inside_artifacts_root(path: &str) -> bool {
+    artifacts_root()
+        .map(|root| Path::new(path).starts_with(root))
+        .unwrap_or(false)
+}
+
 fn artifacts_dir(workflow_id: &str) -> Result<PathBuf, DbError> {
-    let dir = app_data_dir()?.join("artifacts").join(workflow_id);
+    let dir = artifacts_root()?.join(safe_segment(workflow_id)?);
     fs::create_dir_all(&dir)?;
     Ok(dir)
 }
 
 fn write_artifact(workflow_id: &str, memory_id: &str, body: &str) -> Result<String, DbError> {
-    let path = artifacts_dir(workflow_id)?.join(format!("{memory_id}.txt"));
+    let path = artifacts_dir(workflow_id)?.join(format!("{}.txt", safe_segment(memory_id)?));
     fs::write(&path, body)?;
     Ok(path.to_string_lossy().into_owned())
 }
 
 fn remove_artifact(path: Option<&str>) {
-    if let Some(p) = path {
+    if let Some(p) = path.filter(|p| inside_artifacts_root(p)) {
         let _ = fs::remove_file(p);
     }
 }
@@ -194,6 +222,8 @@ impl Db {
 
     pub fn create_memory(&self, input: CreateMemoryInput) -> Result<Memory, DbError> {
         let id = input.id.unwrap_or_else(|| Uuid::new_v4().to_string());
+        safe_segment(&id)?;
+        safe_segment(&input.workflow_id)?;
         let title = input.title.trim().to_string();
         if title.is_empty() {
             return Err(DbError::Other("memory title cannot be empty".into()));
@@ -342,6 +372,7 @@ impl Db {
     }
 
     pub fn clear_memories(&self, workflow_id: &str) -> Result<usize, DbError> {
+        safe_segment(workflow_id)?;
         let paths: Vec<Option<String>> = self.with_conn(|conn| {
             let mut stmt =
                 conn.prepare("SELECT artifact_path FROM memories WHERE workflow_id = ?1")?;
@@ -368,8 +399,9 @@ impl Db {
         for path in paths {
             remove_artifact(path.as_deref());
         }
-        let dir = app_data_dir()?.join("artifacts").join(workflow_id);
-        let _ = fs::remove_dir_all(dir);
+        if changed > 0 {
+            let _ = fs::remove_dir_all(artifacts_root()?.join(workflow_id));
+        }
 
         Ok(changed)
     }
@@ -377,8 +409,10 @@ impl Db {
     /// Full text for prompt injection — prefers artifact file when present.
     pub fn memory_full_body(&self, memory: &Memory) -> String {
         if let Some(path) = &memory.artifact_path {
-            if let Ok(contents) = fs::read_to_string(path) {
-                return contents;
+            if inside_artifacts_root(path) {
+                if let Ok(contents) = fs::read_to_string(path) {
+                    return contents;
+                }
             }
         }
         memory.body.clone()
@@ -575,5 +609,108 @@ impl Db {
             return Ok(String::new());
         }
         Ok(parts.join("\n"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::CreateWorkflowInput;
+    use serde_json::json;
+
+    fn workflow(db: &Db) -> String {
+        db.create_workflow(CreateWorkflowInput {
+            name: "Traversal fixture".into(),
+            description: String::new(),
+            working_directory: String::new(),
+            folder_id: None,
+            graph: json!({ "nodes": [], "edges": [] }),
+        })
+        .expect("create workflow")
+        .id
+    }
+
+    fn memory(workflow_id: &str, id: Option<&str>) -> CreateMemoryInput {
+        CreateMemoryInput {
+            workflow_id: workflow_id.to_owned(),
+            title: "Title".into(),
+            body: "x".repeat(ARTIFACT_BODY_THRESHOLD),
+            run_id: None,
+            node_id: None,
+            kind: None,
+            source: Some("manual".into()),
+            pinned: None,
+            id: id.map(str::to_owned),
+        }
+    }
+
+    #[test]
+    fn ids_that_could_escape_the_artifacts_directory_are_refused() {
+        for value in [
+            "..",
+            "../../etc/passwd",
+            "/etc/passwd",
+            r"..\windows",
+            "a/b",
+            "",
+        ] {
+            assert!(
+                safe_segment(value).is_err(),
+                "{value:?} must not be usable as a path segment"
+            );
+        }
+        assert!(safe_segment("memory-sync").is_ok());
+        assert!(safe_segment(&Uuid::new_v4().to_string()).is_ok());
+    }
+
+    #[test]
+    fn create_memory_rejects_a_traversing_id() {
+        let db = Db::open_in_memory().expect("open database");
+        let workflow_id = workflow(&db);
+
+        db.create_memory(memory(&workflow_id, Some("../../escape")))
+            .expect_err("a traversing memory id must not reach the filesystem");
+        db.create_memory(memory("..", Some("escape")))
+            .expect_err("a traversing workflow id must not reach the filesystem");
+    }
+
+    #[test]
+    fn clear_memories_refuses_a_traversing_workflow_id() {
+        let db = Db::open_in_memory().expect("open database");
+        for value in ["..", "../..", "/"] {
+            db.clear_memories(value)
+                .expect_err("clear_memories must not recurse outside the artifacts directory");
+        }
+    }
+
+    #[test]
+    fn a_stored_path_outside_the_artifacts_root_is_never_read_or_deleted() {
+        let outside = std::env::temp_dir().join(format!("alfred-outside-{}", Uuid::new_v4()));
+        fs::write(&outside, "must survive").expect("write fixture");
+        let path = outside.to_string_lossy().into_owned();
+
+        assert!(!inside_artifacts_root(&path));
+        remove_artifact(Some(&path));
+        assert!(outside.is_file(), "remove_artifact escaped the artifacts root");
+
+        let db = Db::open_in_memory().expect("open database");
+        let workflow_id = workflow(&db);
+        let mut poisoned = db
+            .create_memory(CreateMemoryInput {
+                workflow_id,
+                title: "Poisoned".into(),
+                body: "stored preview".into(),
+                run_id: None,
+                node_id: None,
+                kind: None,
+                source: None,
+                pinned: None,
+                id: None,
+            })
+            .expect("create memory");
+        poisoned.artifact_path = Some(path);
+        assert_eq!(db.memory_full_body(&poisoned), "stored preview");
+
+        let _ = fs::remove_file(&outside);
     }
 }
