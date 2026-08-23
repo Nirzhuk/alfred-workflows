@@ -27,6 +27,12 @@ const memoriesInspector = await Bun.file(
   ),
 ).text();
 
+function cssBlock(selector: string): string {
+  const start = css.indexOf(`${selector} {`);
+  expect(start).toBeGreaterThan(-1);
+  return css.slice(start, css.indexOf("}", start));
+}
+
 const namedModalCallers = [
   "src/components/confirm-dialog/confirm-dialog.tsx",
   "src/features/integrations/components/connected-app-tutorial-layout.tsx",
@@ -118,5 +124,9 @@ describe("shared modal system", () => {
     expect(css).toContain("background: var(--surface-raised);");
     expect(css).toContain("@media (prefers-reduced-transparency: reduce)");
     expect(css).toContain("@media (prefers-reduced-motion: no-preference)");
+  });
+
+  test("keeps close icons centered when a modal action overrides display", () => {
+    expect(cssBlock(".modal-close-button")).toContain("justify-content: center;");
   });
 });

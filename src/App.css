@@ -7469,6 +7469,7 @@ button.primary.danger-solid:hover:not(:disabled) {
 .modal-close-button {
   display: inline-grid;
   place-items: center;
+  justify-content: center;
   width: var(--control-height-default);
   height: var(--control-height-default);
   padding: 0;
