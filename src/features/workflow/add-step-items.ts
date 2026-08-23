@@ -70,6 +70,13 @@ export const ADD_STEP_GROUPS: AddStepGroup[] = [
       { kind: "agent", label: "Codex", provider: "codex" },
       { kind: "agent", label: "OpenCode", provider: "opencode" },
       {
+        kind: "agent",
+        label: "GitHub Copilot",
+        provider: "github_copilot",
+      },
+      { kind: "agent", label: "Gemini", provider: "gemini" },
+      { kind: "agent", label: "Grok", provider: "grok" },
+      {
         kind: "step",
         label: "Custom",
         type: "customAgent",

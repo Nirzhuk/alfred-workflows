@@ -1,6 +1,7 @@
 mod app_connections;
 mod app_events;
 mod history;
+mod license;
 mod memories;
 mod migrate;
 mod schedules;
@@ -10,6 +11,7 @@ mod workflows;
 
 pub use app_events::*;
 pub use history::*;
+pub use license::*;
 pub use memories::*;
 pub use schedules::*;
 pub use triggers::*;

@@ -113,6 +113,28 @@ function NotificationIcon() {
   );
 }
 
+function LicenseIcon() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden>
+      <rect
+        x="1.75"
+        y="3"
+        width="12.5"
+        height="10"
+        rx="2"
+        stroke="currentColor"
+        strokeWidth="1.3"
+      />
+      <path
+        d="M1.75 6.25h12.5M4.25 10h3"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
 function ConnectedAppsIcon() {
   return (
     <svg viewBox="0 0 16 16" fill="none" aria-hidden>
@@ -187,6 +209,17 @@ const NAV_GROUPS: SettingsNavGroup[] = [
         label: SETTINGS_SECTION_LABELS.notifications,
         description: "Run alerts and sounds",
         icon: <NotificationIcon />,
+      },
+    ],
+  },
+  {
+    label: "Account",
+    items: [
+      {
+        id: "license-billing",
+        label: SETTINGS_SECTION_LABELS["license-billing"],
+        description: "License, devices, and Polar billing",
+        icon: <LicenseIcon />,
       },
     ],
   },

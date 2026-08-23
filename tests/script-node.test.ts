@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { ADD_STEP_ITEMS } from "../src/features/workflow/add-step-items";
+import { FALLBACK_PROVIDER_MODELS } from "../src/features/workflow/models";
 import {
   DEFAULT_SCRIPT_MESSAGE,
   defaultInputScript,
@@ -68,6 +69,28 @@ describe("add step palette", () => {
     );
     expect(types).toContain("script");
     expect(types).not.toContain("shell");
+  });
+
+  test("offers the supported external coding agents", () => {
+    const providers = ADD_STEP_ITEMS.filter((item) => item.kind === "agent")
+      .map((item) => (item.kind === "agent" ? item.provider : null))
+      .filter((provider): provider is string => provider !== null);
+
+    expect(providers).toEqual([
+      "claude_code",
+      "cursor",
+      "codex",
+      "opencode",
+      "github_copilot",
+      "gemini",
+      "grok",
+    ]);
+    for (const provider of ["github_copilot", "gemini", "grok"]) {
+      expect(
+        FALLBACK_PROVIDER_MODELS.find((catalog) => catalog.provider === provider)
+          ?.models.length,
+      ).toBeGreaterThan(0);
+    }
   });
 });
 

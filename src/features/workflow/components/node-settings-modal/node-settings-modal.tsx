@@ -50,6 +50,7 @@ import {
   type Skill,
 } from "../../types";
 import { InputAttachmentList } from "../input-attachment-list";
+import { agentLabel } from "../agent-mark";
 import { SkillPicker } from "../skill-picker";
 import {
   CustomAgentSettings,
@@ -695,7 +696,7 @@ function AgentSettings({
       <div className="agent-model-controls">
         <div className="field agent-provider-field">
           <span>Provider</span>
-          <strong className="agent-provider-value">{provider}</strong>
+          <strong className="agent-provider-value">{agentLabel(provider)}</strong>
         </div>
 
         <div className="field model-select-field">
@@ -793,10 +794,12 @@ function AgentSettings({
         {catalog.source === "discovered"
           ? `Loaded ${catalog.models.length} models${
               provider === "cursor" ? " from Cursor" : " from agent"
-            }`
-          : catalog.error
-            ? `Using fallback — ${catalog.error}`
-            : "Using fallback model list"}
+          }`
+          : catalog.available
+            ? "Using model aliases supported by this CLI"
+            : catalog.error
+              ? `Using fallback — ${catalog.error}`
+              : "Using fallback model list"}
       </p>
 
       {catalog.allowCustom && showCustomModel ? (

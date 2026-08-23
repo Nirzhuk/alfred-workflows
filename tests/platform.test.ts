@@ -56,11 +56,20 @@ describe("desktop platform contract", () => {
   test("reserves only the OS-owned title-bar safe area", () => {
     expect(css).toContain("--titlebar-safe-start: var(--space-3);");
     expect(css).toContain("--titlebar-macos-safe-start: 78px;");
+    expect(css).toContain("--titlebar-height: 44px;");
     expect(css).toContain('html[data-platform="macos"]');
     expect(css).toContain(
       "padding: 0 var(--titlebar-safe-end) 0 var(--titlebar-safe-start);",
     );
     expect(css).not.toContain("--titlebar-pad-left");
+
+    // Wry sizes the native title bar to buttonHeight + y and does not set the
+    // buttons' vertical origin. y: 28 keeps that container at the 44px overlay
+    // bar (16px controls); Rust then centers the cluster on the title-bar text.
+    expect(tauriConfig.app.windows[0].trafficLightPosition).toEqual({
+      x: 16,
+      y: 28,
+    });
   });
 
   test("normalizes application-owned controls and keeps fonts offline", () => {

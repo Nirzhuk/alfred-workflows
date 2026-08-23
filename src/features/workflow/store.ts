@@ -242,6 +242,8 @@ type WorkflowStore = {
   selectedNodeId: string | null;
   dirty: boolean;
   loading: boolean;
+  /** Loading state owned by the visible workflow handoff. */
+  workflowLoading: boolean;
   error: string | null;
   runPanelOpen: boolean;
   /** Run activity is isolated per workflow so several workflows can run together. */
@@ -361,6 +363,7 @@ async function migrateLegacyMemories(workflowId: string): Promise<boolean> {
 
 let runUnlisten: UnlistenFn | null = null;
 let usageRequestSequence = 0;
+let workflowSelectionSequence = 0;
 
 async function ensureRunListener(handle: (event: RunEvent) => void) {
   if (runUnlisten) return;
@@ -393,6 +396,7 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
   selectedNodeId: null,
   dirty: false,
   loading: false,
+  workflowLoading: false,
   error: null,
   runPanelOpen: false,
   workflowRunStates: {},
@@ -653,8 +657,10 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
   },
 
   selectWorkflow: async (id) => {
+    const request = ++workflowSelectionSequence;
     set({
       loading: true,
+      workflowLoading: true,
       error: null,
       selectedNodeId: null,
       schedule: null,
@@ -663,8 +669,13 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
     });
     try {
       const workflow = await api.getWorkflow(id);
+      if (request !== workflowSelectionSequence) return;
       if (!workflow) {
-        set({ loading: false, error: `Workflow not found: ${id}` });
+        set({
+          loading: false,
+          workflowLoading: false,
+          error: `Workflow not found: ${id}`,
+        });
         return;
       }
       const graph = workflow.graph ?? emptyGraph();
@@ -681,6 +692,7 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
         memories: [],
         dirty: false,
         loading: false,
+        workflowLoading: true,
         selectedOutput: null,
         ...visibleRunFields(runState),
       });
@@ -689,8 +701,12 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
         get().loadTriggers(workflow.id),
         get().loadMemories(workflow.id),
       ]);
+      if (request === workflowSelectionSequence) {
+        set({ workflowLoading: false });
+      }
     } catch (e) {
-      set({ loading: false, error: String(e) });
+      if (request !== workflowSelectionSequence) return;
+      set({ loading: false, workflowLoading: false, error: String(e) });
     }
   },
 
@@ -729,6 +745,7 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
         schedule: null,
         selectedNodeId: null,
         dirty: false,
+        workflowLoading: false,
         selectedOutput: null,
         ...visibleRunFields(emptyWorkflowRunState()),
       });
@@ -736,7 +753,13 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
   },
 
   createWorkflow: async (name = "Untitled workflow", folderId = null) => {
-    set({ loading: true, error: null, selectedNodeId: null, schedule: null });
+    set({
+      loading: true,
+      workflowLoading: true,
+      error: null,
+      selectedNodeId: null,
+      schedule: null,
+    });
     try {
       const workflow = await api.createWorkflow({
         name,
@@ -754,12 +777,13 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
         memories: [],
         dirty: false,
         loading: false,
+        workflowLoading: false,
         schedule: null,
         selectedOutput: null,
         ...visibleRunFields(emptyWorkflowRunState()),
       }));
     } catch (e) {
-      set({ loading: false, error: String(e) });
+      set({ loading: false, workflowLoading: false, error: String(e) });
     }
   },
 
@@ -962,6 +986,7 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
             schedule: null,
             selectedNodeId: null,
             dirty: false,
+            workflowLoading: false,
             selectedOutput: null,
             ...visibleRunFields(emptyWorkflowRunState()),
           });

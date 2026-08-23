@@ -63,6 +63,11 @@ fn provider_usage(provider: AgentProvider) -> AgentUsageSnapshot {
         AgentProvider::Cursor => cursor_usage(),
         AgentProvider::Codex => codex_usage(),
         AgentProvider::Opencode => opencode_usage(),
+        AgentProvider::GithubCopilot => {
+            cli_usage(AgentProvider::GithubCopilot, "copilot", "GitHub Copilot")
+        }
+        AgentProvider::Gemini => cli_usage(AgentProvider::Gemini, "gemini", "Gemini"),
+        AgentProvider::Grok => cli_usage(AgentProvider::Grok, "grok", "Grok"),
     }
 }
 
@@ -90,6 +95,23 @@ fn not_installed(provider: AgentProvider, command: &str) -> AgentUsageSnapshot {
         vec![],
         "native_cli",
         Some(format!("{command} is not installed")),
+    )
+}
+
+/// Copilot, Gemini, and Grok do not expose a stable local quota API through
+/// their CLIs. Still report binary availability so the usage rail can explain
+/// why no subscription windows are shown instead of treating them as unknown
+/// providers.
+fn cli_usage(provider: AgentProvider, command: &str, label: &str) -> AgentUsageSnapshot {
+    if find_bin(command).is_none() {
+        return not_installed(provider, label);
+    }
+    snapshot(
+        provider,
+        true,
+        vec![],
+        &format!("{label} CLI"),
+        Some("Subscription usage is unavailable from this CLI".into()),
     )
 }
 

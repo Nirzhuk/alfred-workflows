@@ -10,11 +10,49 @@ use crate::integrations::events::{
     AppTriggerConfig, NormalizedAppEvent, NORMALIZED_APP_EVENT_SCHEMA_VERSION,
 };
 use crate::integrations::IntegrationsState;
+use crate::licensing::{LicenseCommandError, LicenseStatusDto, LicensingState};
 use crate::runner::{self, RunSummary, RunTrigger};
 use crate::scheduler;
 use crate::skills::{self, SkillRef};
 use crate::triggers::{self, TriggerRuntime};
 use tauri::{AppHandle, Emitter, State};
+
+#[tauri::command]
+pub async fn activate_license(
+    db: State<'_, Db>,
+    licensing: State<'_, LicensingState>,
+    license_key: String,
+    device_label: String,
+) -> Result<LicenseStatusDto, LicenseCommandError> {
+    licensing
+        .activate(db.inner(), license_key, device_label)
+        .await
+}
+
+#[tauri::command]
+pub async fn refresh_license(
+    db: State<'_, Db>,
+    licensing: State<'_, LicensingState>,
+) -> Result<LicenseStatusDto, LicenseCommandError> {
+    licensing.refresh(db.inner()).await
+}
+
+#[tauri::command]
+pub async fn deactivate_license(
+    db: State<'_, Db>,
+    licensing: State<'_, LicensingState>,
+) -> Result<LicenseStatusDto, LicenseCommandError> {
+    licensing.deactivate(db.inner()).await
+}
+
+#[tauri::command]
+pub fn get_license_status(
+    db: State<'_, Db>,
+    licensing: State<'_, LicensingState>,
+) -> Result<LicenseStatusDto, LicenseCommandError> {
+    // This command is intentionally local-only; it never waits for Polar.
+    licensing.get_status(db.inner())
+}
 
 #[tauri::command]
 pub fn list_workflows(db: State<'_, Db>) -> Result<Vec<Workflow>, String> {

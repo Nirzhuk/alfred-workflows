@@ -5,7 +5,10 @@ export type AgentProviderId =
   | "claude_code"
   | "cursor"
   | "codex"
-  | "opencode";
+  | "opencode"
+  | "github_copilot"
+  | "gemini"
+  | "grok";
 
 export type SkillSource = "project" | "user";
 

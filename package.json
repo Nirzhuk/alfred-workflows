@@ -16,6 +16,8 @@
     "test:frontend": "bun test",
     "test:rust": "cargo test --locked --manifest-path src-tauri/Cargo.toml",
     "check": "bun run test:frontend && bun run build:frontend && bun run test:rust",
+    "verify:polar-sandbox": "bun run ./scripts/polar/verify-sandbox.ts",
+    "verify:release-hygiene": "bun run ./scripts/release/verify-release-hygiene.ts",
     "tauri": "node ./scripts/guard-desktop-tauri.mjs"
   },
   "dependencies": {

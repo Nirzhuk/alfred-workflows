@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS workflows (
 
 CREATE TABLE IF NOT EXISTS agents (
   id TEXT PRIMARY KEY NOT NULL,
-  provider TEXT NOT NULL CHECK (provider IN ('claude_code', 'cursor', 'codex', 'opencode')),
+  provider TEXT NOT NULL CHECK (provider IN ('claude_code', 'cursor', 'codex', 'opencode', 'github_copilot', 'gemini', 'grok')),
   name TEXT NOT NULL,
   config_json TEXT NOT NULL DEFAULT '{}',
   created_at TEXT NOT NULL,
@@ -189,6 +189,25 @@ CREATE TABLE IF NOT EXISTS app_event_queue (
   enqueued_at TEXT NOT NULL,
   started_at TEXT,
   UNIQUE (trigger_id, external_event_id)
+);
+
+-- Safe licensing snapshot only. The full key and Polar activation ID live
+-- together in the OS credential store under `credential_ref`.
+CREATE TABLE IF NOT EXISTS license_snapshot (
+  id INTEGER PRIMARY KEY NOT NULL CHECK (id = 1),
+  product TEXT NOT NULL,
+  status TEXT NOT NULL,
+  masked_key TEXT,
+  benefit_id TEXT,
+  activation_label TEXT,
+  current_device INTEGER NOT NULL DEFAULT 0,
+  expires_at TEXT,
+  last_success_at TEXT,
+  refresh_due_at TEXT,
+  offline_deadline TEXT,
+  error_code TEXT,
+  credential_ref TEXT UNIQUE,
+  updated_at TEXT NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_runs_workflow_id ON runs(workflow_id);

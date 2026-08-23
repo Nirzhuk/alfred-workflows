@@ -114,9 +114,10 @@ impl AgentAdapter for ClaudeCodeAdapter {
         }
 
         if !output.success {
-            return Err(AgentError::Message(format!(
-                "claude exited with an error:\n{raw}"
-            )));
+            return Err(AgentError::Message(
+                failure_summary(&raw)
+                    .unwrap_or_else(|| format!("claude exited with an error:\n{raw}")),
+            ));
         }
 
         let (text, parsed) = if streamed {
@@ -147,6 +148,40 @@ fn stream_json_is_unsupported(raw: &str) -> bool {
         && (message.contains("unknown")
             || message.contains("unrecognized")
             || message.contains("invalid"))
+}
+
+/// Extract a short, human-readable message from a failed stream-json run so
+/// users see "You've hit your session limit · resets 10:30am" instead of the
+/// whole raw event dump. Returns None when nothing recognizable is present.
+fn failure_summary(raw: &str) -> Option<String> {
+    let mut result_text = None;
+    let mut rate_limit_type = None;
+    for line in raw.lines() {
+        let Ok(event) = serde_json::from_str::<Value>(line) else {
+            continue;
+        };
+        match event.get("type").and_then(Value::as_str) {
+            Some("result") => {
+                if let Some(text) = event.get("result").and_then(Value::as_str) {
+                    if !text.trim().is_empty() {
+                        result_text = Some(text.to_string());
+                    }
+                }
+            }
+            Some("rate_limit_event") => {
+                rate_limit_type = event
+                    .get("rate_limit_info")
+                    .and_then(|info| info.get("rateLimitType"))
+                    .and_then(Value::as_str)
+                    .map(str::to_string);
+            }
+            _ => {}
+        }
+    }
+    result_text.or_else(|| {
+        rate_limit_type
+            .map(|kind| format!("Claude hit its {kind} usage limit. Try again after it resets."))
+    })
 }
 
 fn activities_from_event(line: &str) -> Vec<AgentActivity> {
@@ -395,5 +430,34 @@ mod tests {
             "unknown value stream-json for --output-format"
         ));
         assert!(!stream_json_is_unsupported("authentication failed"));
+    }
+
+    #[test]
+    fn summarizes_rate_limit_failure_instead_of_dumping_raw_stream() {
+        let raw = [
+            r#"{"type":"system","subtype":"hook_started","hook_name":"SessionStart:startup"}"#,
+            r#"{"type":"assistant","message":{"model":"<synthetic>","content":[{"type":"text","text":"You've hit your session limit · resets 10:30am (Europe/Madrid)"}]}}"#,
+            r#"{"type":"rate_limit_event","rate_limit_info":{"status":"rejected","rateLimitType":"five_hour","overageStatus":"rejected"}}"#,
+            r#"{"is_error":true,"terminal_reason":"api_error","api_error_status":429,"result":"You've hit your session limit · resets 10:30am (Europe/Madrid)","type":"result"}"#,
+        ]
+        .join("\n");
+        assert_eq!(
+            failure_summary(&raw).as_deref(),
+            Some("You've hit your session limit · resets 10:30am (Europe/Madrid)")
+        );
+    }
+
+    #[test]
+    fn describes_rate_limit_when_no_result_line_is_present() {
+        let raw = r#"{"type":"rate_limit_event","rate_limit_info":{"status":"rejected","rateLimitType":"five_hour"}}"#;
+        assert_eq!(
+            failure_summary(raw).as_deref(),
+            Some("Claude hit its five_hour usage limit. Try again after it resets.")
+        );
+    }
+
+    #[test]
+    fn returns_none_for_unparseable_failure_output() {
+        assert_eq!(failure_summary("panic: something blew up"), None);
     }
 }

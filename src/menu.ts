@@ -13,7 +13,7 @@ export type MenuActions = {
   onToggleSidebar: () => void;
   onToggleActivity: () => void;
   onFitCanvas: () => void;
-  onCheckUpdates: () => void;
+  onDownloadLatest: () => void;
   onShowShortcuts: () => void;
 };
 
@@ -33,7 +33,7 @@ export async function installAppMenu(
             version: "0.5.0",
             copyright: "Local multi-agent workflow automations",
             comments:
-              "Build automations across Claude Code, Cursor, Codex, and OpenCode.",
+              "Build automations across Claude Code, Cursor, Codex, OpenCode, GitHub Copilot, Gemini, and Grok.",
           },
         },
       }),
@@ -155,7 +155,7 @@ export async function installAppMenu(
         text: "What is Alfred?",
         action: () => {
           window.alert(
-            "Alfred builds local automations across Claude Code, Cursor, Codex, and OpenCode — prompts, skills, models, and runnable workflows on your machine.",
+            "Alfred builds local automations across Claude Code, Cursor, Codex, OpenCode, GitHub Copilot, Gemini, and Grok — prompts, skills, models, and runnable workflows on your machine.",
           );
         },
       }),
@@ -166,9 +166,9 @@ export async function installAppMenu(
       }),
       await PredefinedMenuItem.new({ item: "Separator" }),
       await MenuItem.new({
-        id: "help-check-updates",
-        text: "Check for Updates…",
-        action: () => actions.onCheckUpdates(),
+        id: "help-download-latest",
+        text: "Download Latest Version…",
+        action: () => actions.onDownloadLatest(),
       }),
     ],
   });

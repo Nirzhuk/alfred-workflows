@@ -32,7 +32,11 @@ pub fn auth_required(provider: AgentProvider, message: &str) -> Option<AgentAuth
                 || normalized.contains("not logged in")
                 || normalized.contains("authentication required")
         }
-        AgentProvider::Codex | AgentProvider::Opencode => {
+        AgentProvider::Codex
+        | AgentProvider::Opencode
+        | AgentProvider::GithubCopilot
+        | AgentProvider::Gemini
+        | AgentProvider::Grok => {
             normalized.contains("not logged in")
                 || normalized.contains("login required")
                 || normalized.contains("authentication required")
@@ -56,6 +60,12 @@ fn hint_for_provider(provider: AgentProvider) -> AgentAuthRequired {
         ),
         AgentProvider::Codex => ("Codex", "codex login"),
         AgentProvider::Opencode => ("OpenCode", "opencode auth login"),
+        // Copilot and Gemini start their browser/auth flow from the main CLI;
+        // Copilot's interactive `/login` and Gemini's `/auth` are not shell
+        // subcommands, so the toast copies the launcher command.
+        AgentProvider::GithubCopilot => ("GitHub Copilot", "copilot"),
+        AgentProvider::Gemini => ("Gemini", "gemini"),
+        AgentProvider::Grok => ("Grok", "grok login"),
     };
 
     AgentAuthRequired {
@@ -113,7 +123,13 @@ mod tests {
 
     #[test]
     fn recognizes_codex_and_opencode_auth_signatures() {
-        for provider in [AgentProvider::Codex, AgentProvider::Opencode] {
+        for provider in [
+            AgentProvider::Codex,
+            AgentProvider::Opencode,
+            AgentProvider::GithubCopilot,
+            AgentProvider::Gemini,
+            AgentProvider::Grok,
+        ] {
             for message in [
                 "Not logged in",
                 "Login required",
@@ -126,10 +142,13 @@ mod tests {
                 assert_auth(
                     provider,
                     message,
-                    if provider == AgentProvider::Codex {
-                        "codex login"
-                    } else {
-                        "opencode auth login"
+                    match provider {
+                        AgentProvider::Codex => "codex login",
+                        AgentProvider::Opencode => "opencode auth login",
+                        AgentProvider::GithubCopilot => "copilot",
+                        AgentProvider::Gemini => "gemini",
+                        AgentProvider::Grok => "grok login",
+                        _ => unreachable!(),
                     },
                 );
             }
@@ -163,6 +182,9 @@ mod tests {
             AgentProvider::Cursor,
             AgentProvider::Codex,
             AgentProvider::Opencode,
+            AgentProvider::GithubCopilot,
+            AgentProvider::Gemini,
+            AgentProvider::Grok,
         ] {
             for message in [
                 "Agent execution failed",

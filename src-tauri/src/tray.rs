@@ -147,10 +147,10 @@ fn build_menu(app: &AppHandle, snap: &TraySnapshot) -> tauri::Result<Menu<Wry>> 
         None::<&str>,
     )?;
     let settings = MenuItem::with_id(app, "tray-settings", "Settings", true, None::<&str>)?;
-    let updates = MenuItem::with_id(
+    let download_latest = MenuItem::with_id(
         app,
-        "tray-updates",
-        "Check for Updates…",
+        "tray-download-latest",
+        "Download Latest Version…",
         true,
         None::<&str>,
     )?;
@@ -254,7 +254,7 @@ fn build_menu(app: &AppHandle, snap: &TraySnapshot) -> tauri::Result<Menu<Wry>> 
     }
     items.push(&sep2);
     items.push(&settings);
-    items.push(&updates);
+    items.push(&download_latest);
     items.push(&sep3);
     items.push(&quit);
 
@@ -299,9 +299,9 @@ fn handle_menu_event(app: &AppHandle, id: &str) {
             show_main_window(app);
             let _ = app.emit("app://open-settings", ());
         }
-        "tray-updates" => {
+        "tray-download-latest" => {
             show_main_window(app);
-            let _ = app.emit("app://check-updates", ());
+            let _ = app.emit("app://download-latest", ());
         }
         "tray-quit" => app.exit(0),
         other if other.starts_with("tray-stop:") => {

@@ -6,6 +6,9 @@
 //! - Codex: `~/.codex/models_cache.json` (+ default from `config.toml`)
 //! - Cursor: `cursor-agent models` / `--list-models`, else Cursor IDE
 //!   `availableDefaultModels2` from `state.vscdb`
+//! - GitHub Copilot, Gemini, and Grok: stable CLI model aliases after binary
+//!   detection; each CLI keeps its own model picker and does not expose a
+//!   reliable non-interactive catalog.
 
 use super::AgentProvider;
 use directories::BaseDirs;
@@ -58,6 +61,9 @@ pub fn default_model(provider: AgentProvider) -> &'static str {
         AgentProvider::Cursor => "grok-4.5",
         AgentProvider::Codex => "gpt-5.6-luna",
         AgentProvider::Opencode => "opencode/big-pickle",
+        AgentProvider::GithubCopilot => "claude-sonnet-4.5",
+        AgentProvider::Gemini => "auto",
+        AgentProvider::Grok => "grok-build",
     }
 }
 
@@ -81,6 +87,38 @@ pub fn fallback_models(provider: AgentProvider) -> ProviderModels {
             "opencode/big-pickle",
             "OpenCode fallback",
         )],
+        AgentProvider::GithubCopilot => vec![
+            opt(
+                "claude-sonnet-4.5",
+                "Claude Sonnet 4.5",
+                "GitHub Copilot default",
+            ),
+            opt("claude-opus-4.5", "Claude Opus 4.5", "GitHub Copilot"),
+            opt("claude-haiku-4.5", "Claude Haiku 4.5", "GitHub Copilot"),
+            opt("gpt-5.3-codex", "GPT-5.3 Codex", "GitHub Copilot"),
+            opt("gpt-5.2", "GPT-5.2", "GitHub Copilot"),
+        ],
+        AgentProvider::Gemini => vec![
+            opt("auto", "Auto", "Gemini CLI model routing"),
+            opt(
+                "gemini-3.1-pro-preview",
+                "Gemini 3.1 Pro Preview",
+                "Gemini CLI",
+            ),
+            opt("gemini-3-pro-preview", "Gemini 3 Pro Preview", "Gemini CLI"),
+            opt(
+                "gemini-3-flash-preview",
+                "Gemini 3 Flash Preview",
+                "Gemini CLI",
+            ),
+            opt("gemini-2.5-pro", "Gemini 2.5 Pro", "Gemini CLI"),
+            opt("gemini-2.5-flash", "Gemini 2.5 Flash", "Gemini CLI"),
+        ],
+        AgentProvider::Grok => vec![
+            opt("grok-build", "Grok Build", "Grok CLI coding model"),
+            opt("grok-4.5", "Grok 4.5", "Grok CLI"),
+            opt("grok-code-fast-1", "Grok Code Fast 1", "Grok CLI"),
+        ],
     };
 
     ProviderModels {
@@ -101,6 +139,9 @@ pub fn discover_all() -> Vec<ProviderModels> {
         AgentProvider::Cursor,
         AgentProvider::Codex,
         AgentProvider::Opencode,
+        AgentProvider::GithubCopilot,
+        AgentProvider::Gemini,
+        AgentProvider::Grok,
     ]
     .into_iter()
     .map(discover_for)
@@ -117,6 +158,11 @@ fn discover_for(provider: AgentProvider) -> ProviderModels {
         AgentProvider::Cursor => discover_cursor(),
         AgentProvider::Codex => discover_codex(),
         AgentProvider::Opencode => discover_opencode(),
+        AgentProvider::GithubCopilot => {
+            discover_static_cli(AgentProvider::GithubCopilot, "copilot")
+        }
+        AgentProvider::Gemini => discover_static_cli(AgentProvider::Gemini, "gemini"),
+        AgentProvider::Grok => discover_static_cli(AgentProvider::Grok, "grok"),
     };
 
     match result {
@@ -144,6 +190,20 @@ fn discover_for(provider: AgentProvider) -> ProviderModels {
             fb
         }
     }
+}
+
+fn discover_static_cli(provider: AgentProvider, command: &str) -> Result<ProviderModels, String> {
+    find_bin(command).ok_or_else(|| format!("{command} CLI not found on PATH"))?;
+    let fallback = fallback_models(provider);
+    Ok(ProviderModels {
+        provider: String::new(),
+        default_model: fallback.default_model,
+        models: fallback.models,
+        allow_custom: true,
+        source: "fallback".into(),
+        available: true,
+        error: None,
+    })
 }
 
 fn discover_claude() -> Result<ProviderModels, String> {

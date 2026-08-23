@@ -123,6 +123,12 @@ fn project_skill_dirs(root: &Path) -> Vec<SkillDirectory> {
     vec![
         skill_dir(root.join(".claude/skills"), Some(AgentProvider::ClaudeCode)),
         skill_dir(root.join(".cursor/skills"), Some(AgentProvider::Cursor)),
+        skill_dir(
+            root.join(".github/skills"),
+            Some(AgentProvider::GithubCopilot),
+        ),
+        skill_dir(root.join(".gemini/skills"), Some(AgentProvider::Gemini)),
+        skill_dir(root.join(".grok/skills"), Some(AgentProvider::Grok)),
         skill_dir(root.join(".agents/skills"), None),
         skill_dir(root.join(".opencode/skills"), Some(AgentProvider::Opencode)),
     ]
@@ -132,6 +138,12 @@ fn user_skill_dirs(home: &Path) -> Vec<SkillDirectory> {
     vec![
         skill_dir(home.join(".claude/skills"), Some(AgentProvider::ClaudeCode)),
         skill_dir(home.join(".cursor/skills"), Some(AgentProvider::Cursor)),
+        skill_dir(
+            home.join(".copilot/skills"),
+            Some(AgentProvider::GithubCopilot),
+        ),
+        skill_dir(home.join(".gemini/skills"), Some(AgentProvider::Gemini)),
+        skill_dir(home.join(".grok/skills"), Some(AgentProvider::Grok)),
         skill_dir(
             home.join(".cursor/skills-cursor"),
             Some(AgentProvider::Cursor),
@@ -192,6 +204,9 @@ fn collect_skills_from_dir(
                 AgentProvider::Cursor.as_str().to_string(),
                 AgentProvider::Codex.as_str().to_string(),
                 AgentProvider::Opencode.as_str().to_string(),
+                AgentProvider::GithubCopilot.as_str().to_string(),
+                AgentProvider::Gemini.as_str().to_string(),
+                AgentProvider::Grok.as_str().to_string(),
             ],
         });
     }
@@ -317,7 +332,15 @@ mod tests {
         assert_eq!(skills[0].source, SkillSource::Project);
         assert_eq!(
             skills[0].providers,
-            vec!["claude_code", "cursor", "codex", "opencode"]
+            vec![
+                "claude_code",
+                "cursor",
+                "codex",
+                "opencode",
+                "github_copilot",
+                "gemini",
+                "grok"
+            ]
         );
     }
 
@@ -340,6 +363,9 @@ mod tests {
             vec![
                 (Path::new("/project/.claude/skills"), Some("claude_code")),
                 (Path::new("/project/.cursor/skills"), Some("cursor")),
+                (Path::new("/project/.github/skills"), Some("github_copilot")),
+                (Path::new("/project/.gemini/skills"), Some("gemini")),
+                (Path::new("/project/.grok/skills"), Some("grok")),
                 (Path::new("/project/.agents/skills"), None),
                 (Path::new("/project/.opencode/skills"), Some("opencode")),
             ]

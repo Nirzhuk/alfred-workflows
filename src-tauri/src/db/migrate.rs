@@ -16,6 +16,7 @@ pub fn apply_migrations(conn: &Connection) -> Result<(), DbError> {
          );",
     )?;
     drop_trigger_kind_check(conn)?;
+    expand_agent_provider_check(conn)?;
     ensure_column(
         conn,
         "runs",
@@ -140,6 +141,24 @@ pub fn apply_migrations(conn: &Connection) -> Result<(), DbError> {
            ON app_event_queue(trigger_id, enqueued_at);
          CREATE INDEX IF NOT EXISTS idx_app_event_receipts_received
            ON app_event_receipts(received_at);",
+    )?;
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS license_snapshot (
+           id INTEGER PRIMARY KEY NOT NULL CHECK (id = 1),
+           product TEXT NOT NULL,
+           status TEXT NOT NULL,
+           masked_key TEXT,
+           benefit_id TEXT,
+           activation_label TEXT,
+           current_device INTEGER NOT NULL DEFAULT 0,
+           expires_at TEXT,
+           last_success_at TEXT,
+           refresh_due_at TEXT,
+           offline_deadline TEXT,
+           error_code TEXT,
+           credential_ref TEXT UNIQUE,
+           updated_at TEXT NOT NULL
+         );",
     )?;
 
     Ok(())
@@ -287,6 +306,46 @@ fn drop_trigger_kind_check(conn: &Connection) -> Result<(), DbError> {
     Ok(())
 }
 
+/// Add newly supported local agent CLIs to the legacy `agents` table check.
+/// SQLite cannot ALTER a CHECK constraint, so rebuild the small table once.
+fn expand_agent_provider_check(conn: &Connection) -> Result<(), DbError> {
+    let sql: Option<String> = conn
+        .query_row(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'agents'",
+            [],
+            |row| row.get(0),
+        )
+        .ok();
+
+    let Some(sql) = sql else { return Ok(()) };
+    if !sql.contains("CHECK (provider")
+        || (sql.contains("github_copilot") && sql.contains("gemini") && sql.contains("grok"))
+    {
+        return Ok(());
+    }
+
+    conn.execute_batch(
+        "PRAGMA foreign_keys = OFF;
+         BEGIN;
+         CREATE TABLE agents_migrated (
+           id TEXT PRIMARY KEY NOT NULL,
+           provider TEXT NOT NULL CHECK (provider IN ('claude_code', 'cursor', 'codex', 'opencode', 'github_copilot', 'gemini', 'grok')),
+           name TEXT NOT NULL,
+           config_json TEXT NOT NULL DEFAULT '{}',
+           created_at TEXT NOT NULL,
+           updated_at TEXT NOT NULL
+         );
+         INSERT INTO agents_migrated (id, provider, name, config_json, created_at, updated_at)
+           SELECT id, provider, name, config_json, created_at, updated_at FROM agents;
+         DROP TABLE agents;
+         ALTER TABLE agents_migrated RENAME TO agents;
+         COMMIT;
+         PRAGMA foreign_keys = ON;",
+    )?;
+
+    Ok(())
+}
+
 /// One-time: give existing rows a stable order from newest → oldest.
 fn backfill_workflow_sort_order(conn: &Connection) -> Result<(), DbError> {
     let needs: i64 = conn.query_row(
@@ -388,6 +447,40 @@ mod tests {
     }
 
     #[test]
+    fn expands_legacy_agent_provider_check() {
+        let conn = Connection::open_in_memory().expect("open database");
+        conn.execute_batch(include_str!("schema.sql"))
+            .expect("initialize legacy fixture");
+        conn.execute_batch(
+            "DROP TABLE agents;
+             CREATE TABLE agents (
+               id TEXT PRIMARY KEY NOT NULL,
+               provider TEXT NOT NULL CHECK (provider IN ('claude_code', 'cursor', 'codex', 'opencode')),
+               name TEXT NOT NULL,
+               config_json TEXT NOT NULL DEFAULT '{}',
+               created_at TEXT NOT NULL,
+               updated_at TEXT NOT NULL
+             );
+             INSERT INTO agents (id, provider, name, created_at, updated_at)
+             VALUES ('legacy', 'opencode', 'Legacy agent', 'now', 'now');",
+        )
+        .expect("create legacy agents table");
+
+        apply_migrations(&conn).expect("upgrade agents table");
+
+        conn.execute(
+            "INSERT INTO agents (id, provider, name, created_at, updated_at)
+             VALUES ('gemini', 'gemini', 'Gemini', 'now', 'now')",
+            [],
+        )
+        .expect("accept new provider");
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM agents", [], |row| row.get(0))
+            .expect("count agents");
+        assert_eq!(count, 2);
+    }
+
+    #[test]
     fn initializes_app_event_delivery_tables() {
         let conn = Connection::open_in_memory().expect("open database");
         conn.execute_batch(include_str!("schema.sql"))
@@ -429,5 +522,36 @@ mod tests {
             )
             .expect("query FTS5 fixture");
         assert_eq!(hit, "memory-1");
+    }
+
+    #[test]
+    fn additive_license_migration_preserves_existing_data() {
+        let conn = Connection::open_in_memory().expect("open database");
+        conn.execute_batch(include_str!("schema.sql"))
+            .expect("initialize schema");
+        conn.execute(
+            "INSERT INTO workflows (id, name, description, graph_json, created_at, updated_at)
+             VALUES ('existing', 'Existing workflow', '', '{}', 'now', 'now')",
+            [],
+        )
+        .expect("insert existing row");
+        conn.execute_batch("DROP TABLE license_snapshot;")
+            .expect("remove new table from legacy fixture");
+
+        apply_migrations(&conn).expect("upgrade fixture");
+
+        let name: String = conn
+            .query_row(
+                "SELECT name FROM workflows WHERE id = 'existing'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("existing row");
+        assert_eq!(name, "Existing workflow");
+        let names = columns(&conn, "license_snapshot");
+        assert!(names.contains(&"masked_key".to_owned()));
+        assert!(names.contains(&"credential_ref".to_owned()));
+        assert!(!names.contains(&"license_key".to_owned()));
+        assert!(!names.contains(&"activation_id".to_owned()));
     }
 }

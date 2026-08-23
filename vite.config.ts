@@ -1,12 +1,23 @@
-import { defineConfig } from "vite";
+import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 
 // @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
-export default defineConfig(async () => ({
+// `build.rs` bakes ALFRED_POLAR_ENVIRONMENT into the Rust binary; the frontend
+// needs the same value to pick the matching Polar public-link allow-list (see
+// src/features/licensing/public-link-rules.ts). Only this one key is loaded and
+// defined — no other ALFRED_* publisher value reaches the bundle.
+export default defineConfig(async ({ mode }) => ({
   plugins: [react()],
+
+  define: {
+    "import.meta.env.ALFRED_POLAR_ENVIRONMENT": JSON.stringify(
+      loadEnv(mode, process.cwd(), "ALFRED_POLAR_ENVIRONMENT")
+        .ALFRED_POLAR_ENVIRONMENT ?? "",
+    ),
+  },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //

@@ -46,8 +46,8 @@ function App() {
     void listen("app://open-schedules", () => {
       window.dispatchEvent(new Event("alfred:open-schedules"));
     }).then((u) => unsubs.push(u));
-    void listen("app://check-updates", () => {
-      window.dispatchEvent(new Event("alfred:check-updates"));
+    void listen("app://download-latest", () => {
+      window.dispatchEvent(new Event("alfred:download-latest"));
     }).then((u) => unsubs.push(u));
     void listen<string>("app://open-workflow", (event) => {
       window.dispatchEvent(
@@ -102,8 +102,8 @@ function App() {
         onFitCanvas: () => {
           window.dispatchEvent(new Event("alfred:fit-canvas"));
         },
-        onCheckUpdates: () => {
-          window.dispatchEvent(new Event("alfred:check-updates"));
+        onDownloadLatest: () => {
+          window.dispatchEvent(new Event("alfred:download-latest"));
         },
         onShowShortcuts: () => {
           window.alert(

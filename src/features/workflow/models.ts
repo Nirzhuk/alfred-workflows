@@ -76,6 +76,71 @@ export const FALLBACK_PROVIDER_MODELS: ProviderModels[] = [
       },
     ],
   },
+  {
+    provider: "github_copilot",
+    defaultModel: "claude-sonnet-4.5",
+    allowCustom: true,
+    source: "fallback",
+    available: false,
+    models: [
+      {
+        id: "claude-sonnet-4.5",
+        label: "Claude Sonnet 4.5",
+        description: "GitHub Copilot default",
+      },
+      { id: "claude-opus-4.5", label: "Claude Opus 4.5", description: "" },
+      {
+        id: "claude-haiku-4.5",
+        label: "Claude Haiku 4.5",
+        description: "",
+      },
+      { id: "gpt-5.3-codex", label: "GPT-5.3 Codex", description: "" },
+      { id: "gpt-5.2", label: "GPT-5.2", description: "" },
+    ],
+  },
+  {
+    provider: "gemini",
+    defaultModel: "auto",
+    allowCustom: true,
+    source: "fallback",
+    available: false,
+    models: [
+      { id: "auto", label: "Auto", description: "Gemini CLI model routing" },
+      {
+        id: "gemini-3.1-pro-preview",
+        label: "Gemini 3.1 Pro Preview",
+        description: "",
+      },
+      {
+        id: "gemini-3-pro-preview",
+        label: "Gemini 3 Pro Preview",
+        description: "",
+      },
+      {
+        id: "gemini-3-flash-preview",
+        label: "Gemini 3 Flash Preview",
+        description: "",
+      },
+      { id: "gemini-2.5-pro", label: "Gemini 2.5 Pro", description: "" },
+      {
+        id: "gemini-2.5-flash",
+        label: "Gemini 2.5 Flash",
+        description: "",
+      },
+    ],
+  },
+  {
+    provider: "grok",
+    defaultModel: "grok-build",
+    allowCustom: true,
+    source: "fallback",
+    available: false,
+    models: [
+      { id: "grok-build", label: "Grok Build", description: "" },
+      { id: "grok-4.5", label: "Grok 4.5", description: "" },
+      { id: "grok-code-fast-1", label: "Grok Code Fast 1", description: "" },
+    ],
+  },
 ];
 
 export function modelsForProvider(

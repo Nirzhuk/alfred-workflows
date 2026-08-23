@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { SelectControl } from "../../../../components/select-control";
 import { ConnectedAppsSettings } from "../../../integrations/connected-apps-settings";
 import { useIntegrationsStore } from "../../../integrations/store";
+import { LicenseSettings } from "../../../licensing";
 import {
   showQuickAccess,
   useQuickAccessPreferences,
@@ -157,6 +158,8 @@ export function SettingsPage({ activeSection }: Props) {
         ) : null}
 
         {activeSection === "connected-apps" ? <ConnectedAppsSettings /> : null}
+
+        {activeSection === "license-billing" ? <LicenseSettings /> : null}
 
         {activeSection === "shortcuts" ? (
           <ShortcutSettings headerActionsContainer={shortcutHeaderActions} />

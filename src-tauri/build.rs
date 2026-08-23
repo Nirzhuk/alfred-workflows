@@ -10,6 +10,11 @@ fn main() {
     println!("cargo:rerun-if-env-changed=ALFRED_MICROSOFT_CLIENT_ID");
     println!("cargo:rerun-if-env-changed=ALFRED_MICROSOFT_TENANT");
     println!("cargo:rerun-if-env-changed=ALFRED_MICROSOFT_OAUTH_PORT");
+    println!("cargo:rerun-if-env-changed=ALFRED_POLAR_ENVIRONMENT");
+    println!("cargo:rerun-if-env-changed=ALFRED_POLAR_ORGANIZATION_ID");
+    println!("cargo:rerun-if-env-changed=ALFRED_POLAR_INDIVIDUAL_BENEFIT_ID");
+    println!("cargo:rerun-if-env-changed=ALFRED_POLAR_TEAMS_BENEFIT_ID");
+    println!("cargo:rerun-if-env-changed=ALFRED_RELEASE_DATE");
     tauri_build::build()
 }
 
@@ -25,6 +30,13 @@ fn load_dotenv() {
         "ALFRED_MICROSOFT_CLIENT_ID",
         "ALFRED_MICROSOFT_TENANT",
         "ALFRED_MICROSOFT_OAUTH_PORT",
+        "ALFRED_POLAR_ENVIRONMENT",
+        "ALFRED_POLAR_ORGANIZATION_ID",
+        "ALFRED_POLAR_INDIVIDUAL_BENEFIT_ID",
+        "ALFRED_POLAR_TEAMS_BENEFIT_ID",
+        // The release workflow supplies this as an ISO 8601 `YYYY-MM-DD` date.
+        // Unset means a source build, which never closes an update window.
+        "ALFRED_RELEASE_DATE",
     ];
     let Some(workspace_root) = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent() else {
         return;

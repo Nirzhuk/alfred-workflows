@@ -27,7 +27,7 @@
         "hiddenTitle": true,
         "trafficLightPosition": {
           "x": 16,
-          "y": 16
+          "y": 28
         }
       }
     ],
@@ -53,7 +53,7 @@
     "targets": ["app", "dmg", "deb", "rpm", "appimage", "nsis", "msi"],
     "category": "Productivity",
     "shortDescription": "Local multi-agent workflow automations",
-    "longDescription": "Alfred lets you compose local automations across Claude Code, Cursor, Codex, and OpenCode.",
+    "longDescription": "Alfred lets you compose local automations across Claude Code, Cursor, Codex, OpenCode, GitHub Copilot, Gemini, and Grok.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

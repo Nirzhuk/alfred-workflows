@@ -1,16 +1,26 @@
 # Alfred v0.5.0 release TODO
 
 **Status:** Not ready to publish  
-**Primary deliverables:** signed and notarized macOS `.dmg` installers and an
-explicitly unsigned-beta Windows NSIS `.exe` installer delivered through the
-paid official download channel. The public GitHub repository distributes
+**Primary deliverables:** signed, notarized, and stapled macOS `.dmg`
+installers for Apple Silicon and Intel, plus an explicitly unsigned-beta
+Windows x64 NSIS `.exe` installer, delivered through Polar's File Downloads
+benefit. Linux stays best-effort. The public GitHub repository distributes
 source code only.
 
-This is the launch gate. The detailed implementation notes remain in
-[plan 004](../plans/004-release-signing-secrets.md),
-[plan 005](../plans/005-homebrew-cask.md), and
-[plan 006](../plans/006-in-app-updater-dmg-exe.md), and the commercial
-[entitlement/update gateway plan](../plans/022-commercial-entitlement-update-gateway.md).
+[Polar](https://polar.sh) is the merchant of record: it hosts checkout, the
+customer portal, license keys, seats, and downloads. Alfred ships no payment
+gateway, account service, license server, webhook receiver, email service,
+server database, or server backup, and no Polar access token or webhook secret
+ships in the app. v0.5.0 updates **manually** through Polar; there is no
+automatic updater.
+
+This is the launch gate. The detailed implementation notes live in
+[`plans/release-money/`](../plans/release-money/README.md) — in particular
+[plan 004: publish signed Polar downloads](../plans/release-money/004-publish-signed-polar-downloads.md)
+and the
+[verified installer-signing reference](../plans/release-money/reference-verified-installer-signing.md).
+The earlier commercial entitlement/update gateway design is **rejected** and is
+not part of this release path.
 
 ## What already works
 
@@ -57,19 +67,29 @@ GitHub Actions enabled, and default workflow permissions set to read/write.
 
 - [x] Distribution decision: official maintainer-built binaries are paid;
   source is GPL-3.0-or-later and may be compiled without an Alfred purchase.
-- [x] Replace the old Free/Pro usage-limit plans with the Cap-style product
-  shape: one Desktop License per named user and Company billing per active
-  member seat, with every Company seat including Desktop.
-- [ ] Create Stripe catalog entries for Desktop annual/lifetime and Company
-  monthly/annual, plus server-side stable product-key mappings. Do not hard-code
-  Stripe Price IDs in Alfred.
+- [x] Replace the old Free/Pro usage-limit plans with **two one-time products**:
+  **Alfred License** (one named user, not seat-based) and **Alfred Teams**
+  (one-time per claimed seat), where every claimed seat gets its own license key
+  and downloads. Both grant paid features permanently plus **one year of
+  updates**. Superseded the four-product annual/lifetime/seat model on
+  2026-08-20; see `plans/release-money/007-two-product-perpetual-model.md`.
+- [ ] Create the Polar products: **Alfred License** (standard one-time) and
+  **Alfred Teams** (seat-based, one-time per seat). Create **two** license-key
+  benefits (`individual`, `teams`), each with a three-activation limit and a
+  **one-year key expiry**, and attach one shared File Downloads benefit to both
+  products so every claimed Teams seat receives its own key and downloads.
+  Prices live in Polar's dashboard only — do not restate them in this
+  repository or compile them into Alfred.
+- [ ] Bake `ALFRED_RELEASE_DATE` (ISO `YYYY-MM-DD`, supplied by the release
+  workflow) into distribution builds and assert it in the acceptance manifest.
+  Unset means a source build and must never lock anything.
 - [ ] Complete legal review before claiming paid permission is required for
   commercial use. GPL licensing itself permits commercial source use; the
-  current paid boundary is official builds, updates, hosted features, and
-  support.
-- [ ] Freeze the features included in v0.5.0; connected apps (`008`–`017`),
-  authenticated updates, and other planned work should not silently expand the
-  first release.
+  current paid boundary is official builds, Polar-hosted downloads, hosted
+  features, and support.
+- [ ] Freeze the features included in v0.5.0; connected apps (`008`–`017`), an
+  automatic updater, and other planned work must not silently expand the first
+  release.
 - [ ] Confirm the final app name `Alfred`, bundle ID
   `com.nirzhuk.alfred`, minimum macOS version, and Windows 10/11 support.
 
@@ -77,16 +97,23 @@ GitHub Actions enabled, and default workflow permissions set to read/write.
 
 - [x] Replace the unsupported `includeUpdaterJson` action input. The current
   `tauri-apps/tauri-action@v1` input is `uploadUpdaterJson`.
-- [ ] Decide the update policy for v0.5.0:
-  - If automatic updates ship, complete plans 022 and 006, configure the
-    authenticated Alfred gateway backed by CrabNebula, configure the updater
-    public key, and publish signed updater artifacts to a release channel.
-  - If updates are deferred, keep `uploadUpdaterJson: false` and remove or
-    replace the current **Check for Updates** stub so the shipped UI does not
-    promise a feature that is unavailable.
-- [x] The staging workflow currently uses `uploadUpdaterJson: false`; the
-  authenticated paid update service is specified in Plan 022 and remains
-  disabled until Plans 022 and 006 pass their gates.
+- [x] Update policy for v0.5.0 is **manual downloads through Polar**. Automatic
+  updates are deferred because they would require either public signed updater
+  assets or an authenticated manifest/asset service.
+- [x] The staging workflow uses `uploadUpdaterJson: false`, and no Tauri updater
+  dependency, plugin configuration, or signing key is present.
+- [x] The **Check for Updates** stub is replaced by **Download Latest Version…**
+  in the app menu and the tray menu. It opens Polar's customer portal through
+  the allow-listed `src/features/licensing/public-links.ts` seam and explains
+  that customers sign in by email to reach their personal downloads. Alfred
+  never fetches an installer URL itself. An unconfigured or source build shows
+  build-from-source instructions instead of a broken link.
+- [x] The release workflow fails the run when `package.json`,
+  `src-tauri/Cargo.toml`, and `src-tauri/tauri.conf.json` disagree on the
+  version, and when a required draft artifact is missing or duplicated.
+- [x] The release workflow emits a text + JSON acceptance manifest with the
+  version, source commit, filenames, sizes, architectures, signing status, and
+  SHA-256 checksums, and no signing secret.
 - [ ] Run the workflow once as an unsigned draft to prove all matrix jobs and
   artifact uploads work before adding signing complexity.
 - [x] Pin/freeze the release ref and rerun the workflow from that exact commit.
@@ -102,13 +129,14 @@ Application identity and all six required secret names exist in GitHub.
 - [x] Create a **Developer ID Application** certificate and export its `.p12`.
 - [x] Add `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`,
   `KEYCHAIN_PASSWORD`, `APPLE_ID`, `APPLE_PASSWORD`, and `APPLE_TEAM_ID` as
-  GitHub Actions secrets (plan 004).
+  GitHub Actions secrets (see the
+  [signing reference](../plans/release-money/reference-verified-installer-signing.md)).
 - [x] Confirm both ARM64 and Intel `.app` bundles are signed.
 - [x] Confirm both DMGs are notarized and stapled.
 - [x] Verify a downloaded DMG on a clean Mac with `codesign`, `spctl`, and
   `xcrun stapler validate`.
 
-#### Windows EXE — required for a warning-free public release
+#### Windows EXE — signing waived, ships as unsigned beta
 
 **Decision (2026-08-13):** Windows Authenticode signing is waived because there
 is no signing budget. Any Windows installer is an explicitly unsigned beta and
@@ -139,7 +167,9 @@ an explicit beta decision because SmartScreen will warn users.
   - [x] Windows NSIS `-setup.exe`
 - [x] Inspect the optional `.msi`, `.AppImage`, `.deb`, and `.rpm` assets; do
   not let failures in advertised platforms pass unnoticed.
-- [ ] Generate and publish SHA-256 checksums for the downloadable installers.
+- [x] Generate SHA-256 checksums for the required installers — the workflow's
+  `acceptance-manifest` job produces them from the downloaded draft bytes.
+- [ ] Publish that checksum manifest beside the Polar downloads.
 - [x] Check that filenames include the product, version, architecture where
   relevant, and an unambiguous installer extension.
 
@@ -167,23 +197,38 @@ below remains open until the shortcut itself is exercised manually.
 - [ ] Confirm user data survives an upgrade install and uninstall behavior is
   understood/documented.
 
-### 7. Deliver through the paid channel
+### 7. Deliver through Polar
 
 - [ ] Write release notes with supported OS versions, supported agent CLIs,
-  known limitations, and the fact that automations run only while Alfred is
+  known limitations, the unsigned-beta Windows warning, the manual-update
+  policy, and the fact that automations run only while Alfred is
   open/tray-running.
-- [ ] Configure the official storefront/download service and add its purchase
-  link to the README/install guide.
-- [ ] Complete one standalone Desktop License checkout/activation and one
-  Company checkout with at least two assigned member seats.
-- [ ] Verify Company purchased/assigned/available seat counts, invitation
-  acceptance, seat removal, and Stripe quantity reconciliation.
-- [ ] Upload accepted draft artifacts and SHA-256 checksums to that service;
-  never publish the staging GitHub Release.
+- [ ] Set the three public Polar URLs for the build and replace every
+  `TODO(polar-url)` marker in `README.md`, `docs/install.md`, and this file:
+  - `VITE_POLAR_DESKTOP_CHECKOUT_URL` — the single in-app checkout link
+    (Alfred License). Alfred Teams is sold on the marketing website and has no
+    in-app checkout entry point.
+  - `VITE_POLAR_CUSTOMER_PORTAL_URL` — customer portal
+- [ ] Complete one Alfred License checkout/activation and one Alfred Teams
+  checkout with at least two claimed seats.
+- [ ] Verify Teams purchased/claimed/available seat counts, invitation
+  acceptance, and seat removal in Polar. Record what Polar actually does when
+  seats are added: under the current model that is a second one-time purchase,
+  not a proration.
+- [ ] Verify the three-device activation limit, the 7-day refresh, the 30-day
+  offline tolerance, and immediate effect of a confirmed revocation.
+- [ ] Upload the accepted draft artifacts, the SHA-256 checksum manifest, the
+  GPL notices, and the corresponding-source link to Polar's File Downloads
+  benefit. Add new files before disabling old ones; never publish the staging
+  GitHub Release.
 - [ ] Tag the exact release commit and provide its Corresponding Source beside
   the binary download at no additional charge.
-- [ ] Complete a real purchase/download and verify entitlement, every customer
-  asset, and the checksum instructions.
+- [ ] Verify an Alfred License purchase and a claimed Alfred Teams seat each
+  download the exact accepted files, and that an unrelated or unclaimed customer
+  cannot. A customer whose update year has lapsed **can** still download — that
+  is expected behavior, not a defect.
+- [ ] Verify an expired license key keeps entitlement (update window closed,
+  purchase intact) while `revoked` and `disabled` end it immediately.
 - [ ] Verify the public repository exposes source and documentation but no
   maintainer-signed paid installer.
 - [ ] Define a support/bug-report URL and identify who will triage release
@@ -191,20 +236,28 @@ below remains open until the shortcut itself is exercised manually.
 
 ## P1 — may follow the first paid release
 
-- [ ] Keep the public Homebrew cask plan blocked unless an authenticated/private
-  tap is approved; a public cask would bypass the paid binary boundary.
-- [ ] Deploy the authenticated signed-update path (Plans 022 + 006) if it was
-  not included in the first paid release. The gateway must preserve paid
-  download access while keeping source builds independently usable.
+- [ ] Keep the public Homebrew cask blocked unless an authenticated/private tap
+  is approved; a public cask would bypass the Polar download boundary. See
+  [deferred Homebrew distribution](../plans/release-money/deferred-homebrew-distribution.md).
+- [ ] Decide whether an automatic updater is worth a separate product decision.
+  It requires either public signed updater assets or a small authenticated
+  update service. Do not reintroduce a general commerce backend for it.
 - [ ] Improve authentication-error feedback (plan 007) if not pulled into P0.
 - [x] Add automated clean-install/smoke coverage for release artifacts.
-- [ ] Decide whether Linux packages are fully supported or best-effort, and
-  align README/release wording with that decision.
+- [x] Linux packages are **best effort**, not a supported paid download. README,
+  install guide, and release runbook say so. Promoting Linux to a supported paid
+  download needs a separate operator decision and a matching update to the
+  release workflow's required-artifact list.
 
 ## Release is done when
 
-The release is complete only when the paid channel contains a tested,
-signed/notarized ARM64 DMG, a tested, signed/notarized Intel DMG, and a tested,
-explicitly unsigned-beta Windows NSIS EXE; purchase and download links work;
-checksums are published; the GitHub staging draft remains private; and
-customer-facing notes describe prerequisites and known limitations accurately.
+The release is complete only when Polar's File Downloads benefit contains a
+tested, signed/notarized/stapled Apple Silicon DMG, a tested,
+signed/notarized/stapled Intel DMG, and a tested, explicitly unsigned-beta
+Windows x64 NSIS EXE; an Alfred License purchase and a claimed Alfred Teams
+seat each reach those exact files while unauthorized customers cannot; checkout
+and portal links work; the SHA-256 checksum manifest and the corresponding-source
+link are published beside the binaries; the GitHub staging draft remains
+private; and customer-facing notes describe the manual-update policy, the
+unsigned-beta Windows warning, best-effort Linux, prerequisites, and known
+limitations accurately.

@@ -86,6 +86,9 @@ workflow graph and can be reversed from the node, its context menu, or settings.
 | `cursor` | `cursor-agent` / `agent` |
 | `codex` | `codex` |
 | `opencode` | `opencode` |
+| `github_copilot` | `copilot` |
+| `gemini` | `gemini` |
+| `grok` | `grok` |
 
 ---
 

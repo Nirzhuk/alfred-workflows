@@ -5,6 +5,7 @@ import { ReactFlowProvider } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { AppTitlebar } from "../app-title-bar";
 import { ConfirmDialog } from "../../../../components/confirm-dialog";
+import { openLatestDownload } from "../../../licensing/download-latest";
 import { SettingsPage } from "../../../settings/components/settings-page";
 import {
   SettingsSidebar,
@@ -26,6 +27,7 @@ import { RenameWorkflowModal } from "../rename-workflow-modal";
 import { ScheduleModal } from "../schedule-modal";
 import { TriggersModal } from "../triggers-modal";
 import { useWorkflowStore } from "../../store";
+import { getWorkflowStatusLabel } from "../../status-label";
 import {
   isAgentNodeData,
   isPromptNodeData,
@@ -71,6 +73,7 @@ export function WorkflowCanvas() {
     nodes,
     dirty,
     loading,
+    workflowLoading,
     error,
     activeWorkflowId,
     workflows,
@@ -110,6 +113,15 @@ export function WorkflowCanvas() {
   );
   const activeWorkingDirectory =
     activeWorkflow?.workingDirectory?.trim() ?? "";
+  const [showWorkflowLoading, setShowWorkflowLoading] = useState(false);
+  const workflowStatusLabel = getWorkflowStatusLabel({
+    activeWorkflowId,
+    activeRunStatus: activeRun?.status,
+    dirty,
+    loading,
+    workflowLoading,
+    showWorkflowLoading,
+  });
 
   const canOpenActivity =
     Boolean(activeRun) || memories.length > 0 || runLogs.length > 0;
@@ -241,6 +253,15 @@ export function WorkflowCanvas() {
     return () => window.clearTimeout(timeout);
   }, [runPanelOpen]);
 
+  useEffect(() => {
+    if (!workflowLoading) {
+      setShowWorkflowLoading(false);
+      return;
+    }
+    const timeout = window.setTimeout(() => setShowWorkflowLoading(true), 180);
+    return () => window.clearTimeout(timeout);
+  }, [workflowLoading]);
+
   const chooseWorkingDirectory = async (workflowId: string) => {
     const picked = await open({
       directory: true,
@@ -366,10 +387,8 @@ export function WorkflowCanvas() {
         window.alert("Run a workflow first to open the activity panel.");
       }
     };
-    const checkUpdates = () => {
-      window.alert(
-        "Alfred 0.5.0\n\nAutomatic updates aren’t set up yet. You’ll get a notice here once they are.",
-      );
+    const downloadLatest = () => {
+      void openLatestDownload();
     };
     const openWorkflow = (event: Event) => {
       const workflowId = (event as CustomEvent<{ workflowId?: string }>).detail
@@ -410,7 +429,7 @@ export function WorkflowCanvas() {
     window.addEventListener("alfred:rename-workflow", renameWorkflow);
     window.addEventListener("alfred:toggle-sidebar", toggleSidebar);
     window.addEventListener("alfred:toggle-activity", toggleActivity);
-    window.addEventListener("alfred:check-updates", checkUpdates);
+    window.addEventListener("alfred:download-latest", downloadLatest);
     window.addEventListener("alfred:open-workflow", openWorkflow);
     window.addEventListener("alfred:open-activity", openActivity);
     window.addEventListener("alfred:open-run-output", openRunOutput);
@@ -423,7 +442,7 @@ export function WorkflowCanvas() {
       window.removeEventListener("alfred:rename-workflow", renameWorkflow);
       window.removeEventListener("alfred:toggle-sidebar", toggleSidebar);
       window.removeEventListener("alfred:toggle-activity", toggleActivity);
-      window.removeEventListener("alfred:check-updates", checkUpdates);
+      window.removeEventListener("alfred:download-latest", downloadLatest);
       window.removeEventListener("alfred:open-workflow", openWorkflow);
       window.removeEventListener("alfred:open-activity", openActivity);
       window.removeEventListener("alfred:open-run-output", openRunOutput);
@@ -614,15 +633,7 @@ export function WorkflowCanvas() {
                 <div className="toolbar-left">
                   <div>
                     <p className="status">
-                      {activeRun?.status === "running"
-                        ? "Automation running…"
-                        : loading
-                          ? "Working…"
-                          : dirty
-                            ? "Unsaved changes"
-                            : activeWorkflowId
-                              ? "All changes saved"
-                              : "No workflow open"}
+                      {workflowStatusLabel}
                     </p>
                   </div>
                   {error ? <span className="error">{error}</span> : null}
@@ -696,7 +707,7 @@ export function WorkflowCanvas() {
                   <button
                     type="button"
                     className="ghost danger"
-                    disabled={!activeWorkflowId || loading}
+                    disabled={!activeWorkflowId || loading || workflowLoading}
                     onClick={() => {
                       if (activeWorkflowId) requestDelete(activeWorkflowId);
                     }}
@@ -706,7 +717,7 @@ export function WorkflowCanvas() {
                   <button
                     type="button"
                     className="ghost"
-                    disabled={!activeWorkflowId || loading}
+                    disabled={!activeWorkflowId || loading || workflowLoading}
                     onClick={() => void saveActiveWorkflow()}
                   >
                     Save
@@ -723,7 +734,7 @@ export function WorkflowCanvas() {
                     <button
                       type="button"
                       className="primary"
-                      disabled={!activeWorkflowId || loading}
+                      disabled={!activeWorkflowId || loading || workflowLoading}
                       onClick={() => void runActiveWorkflow()}
                     >
                       Run

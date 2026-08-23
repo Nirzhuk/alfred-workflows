@@ -103,6 +103,9 @@
   --agent-cursor-color: #5b8def;
   --agent-codex-color: #36a477;
   --agent-opencode-color: #a678d4;
+  --agent-github-copilot-color: #8256d0;
+  --agent-gemini-color: #4f7cff;
+  --agent-grok-color: #111111;
   --bottom-dock-height: 2.7rem;
   /* Typography: Infer is preferred; bundled Geist keeps releases offline-safe. */
   --font-sans: "Infer", "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -295,6 +298,9 @@
   --log-rule: color-mix(in srgb, var(--ink) 10%, transparent);
   --agent-mark-color: #aaaaaa;
   --agent-claude-color: #ef8a6c;
+  --agent-github-copilot-color: #b89aff;
+  --agent-gemini-color: #8ca8ff;
+  --agent-grok-color: #f2f5f3;
 }
 
 html[data-platform="macos"] {
@@ -943,6 +949,62 @@ button,
   cursor: pointer;
   user-select: none;
   -webkit-user-select: none;
+}
+
+.titlebar-license {
+  --license-tag-edge: var(--line);
+  --license-tag-ink: var(--muted);
+  --license-tag-fill: color-mix(in srgb, var(--surface-card) 68%, transparent);
+  flex-shrink: 0;
+  height: var(--control-height-compact);
+  /* geometry: caps the tag so the longest product label can never push the
+     workflow tabs out of a narrow titlebar. */
+  max-width: 11rem;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--license-tag-edge);
+  border-radius: var(--radius-pill);
+  background: var(--license-tag-fill);
+  color: var(--license-tag-ink);
+  font-size: var(--text-xs);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--control-height-compact);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Tone reuses the licensing vocabulary the settings badge already speaks. The
+   wording carries the meaning on its own, so color is never the only signal. */
+.titlebar-license.is-success {
+  --license-tag-edge: color-mix(in srgb, var(--success) 20%, var(--line));
+  --license-tag-ink: color-mix(in srgb, var(--success) 72%, var(--muted));
+  --license-tag-fill: color-mix(in srgb, var(--success) 7%, transparent);
+}
+
+.titlebar-license.is-warning {
+  --license-tag-edge: color-mix(in srgb, var(--accent) 20%, var(--line));
+  --license-tag-ink: color-mix(in srgb, var(--accent-strong) 78%, var(--muted));
+  --license-tag-fill: color-mix(in srgb, var(--accent) 7%, transparent);
+}
+
+.titlebar-license.is-danger {
+  --license-tag-edge: color-mix(in srgb, var(--danger) 20%, var(--line));
+  --license-tag-ink: color-mix(in srgb, var(--danger) 78%, var(--muted));
+  --license-tag-fill: color-mix(in srgb, var(--danger) 7%, transparent);
+}
+
+.titlebar-license:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--license-tag-edge) 80%, var(--ink));
+  background: color-mix(
+    in srgb,
+    var(--license-tag-fill) 62%,
+    var(--control-background-hover)
+  );
+}
+
+.titlebar-license:active:not(:disabled) {
+  background: var(--control-background-pressed);
+  transform: none;
 }
 
 button:focus:not(:focus-visible),
@@ -1643,6 +1705,18 @@ button:disabled svg {
 
 .agent-usage-item-opencode .agent-usage-fill {
   background: var(--agent-opencode-color);
+}
+
+.agent-usage-item-github_copilot .agent-usage-fill {
+  background: var(--agent-github-copilot-color);
+}
+
+.agent-usage-item-gemini .agent-usage-fill {
+  background: var(--agent-gemini-color);
+}
+
+.agent-usage-item-grok .agent-usage-fill {
+  background: var(--agent-grok-color);
 }
 
 .agent-usage-percent {
@@ -3205,6 +3279,339 @@ html[data-platform="macos"] .app-titlebar {
   width: 10.5rem;
 }
 
+.license-settings {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.license-overview-card {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface-card);
+}
+
+.license-overview-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-5);
+}
+
+.license-overview-top > div {
+  min-width: 0;
+}
+
+.license-overview-label {
+  margin: 0 0 var(--space-1);
+  color: var(--muted);
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+.license-overview-top h2 {
+  margin: 0 0 var(--space-1-5);
+  color: var(--ink);
+  font-size: var(--text-xl);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--leading-compact);
+}
+
+.license-overview-copy {
+  max-width: 38rem;
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-md);
+  line-height: var(--leading-default);
+}
+
+.license-status-badge {
+  flex-shrink: 0;
+  max-width: 13rem;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: var(--text-xs);
+  font-weight: var(--font-weight-bold);
+  line-height: var(--leading-compact);
+  text-align: center;
+}
+
+.license-status-badge.is-success {
+  border-color: color-mix(in srgb, var(--success) 35%, var(--line));
+  color: var(--success);
+}
+
+.license-status-badge.is-warning {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.license-status-badge.is-danger {
+  border-color: var(--danger-border);
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.license-overview-details {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+  margin: 0;
+  padding: var(--space-3) var(--space-5);
+  border-top: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface) 24%, transparent);
+}
+
+.license-overview-details div {
+  display: grid;
+  gap: var(--space-0-5);
+  min-width: 0;
+}
+
+.license-overview-details dt {
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.license-overview-details dd {
+  margin: 0;
+  color: var(--ink);
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+/* Continues the details band rather than starting a new one: same horizontal
+   inset and same tint, so the note lines up with the label it explains. */
+.license-overview-details-note {
+  margin: 0;
+  padding: 0 var(--space-5) var(--space-3);
+  background: color-mix(in srgb, var(--surface) 24%, transparent);
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.license-overview-details:has(+ .license-overview-details-note) {
+  padding-bottom: var(--space-2);
+}
+
+.license-overview-details time {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.license-overview-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-5);
+  border-top: 1px solid var(--line);
+}
+
+.license-message {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface-card);
+  color: var(--ink);
+  font-size: var(--text-sm);
+  line-height: var(--leading-default);
+}
+
+.license-message.is-error {
+  border-color: var(--danger-border);
+  background: var(--danger-soft);
+}
+
+.license-message.is-warning,
+.license-status-notice {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+}
+
+.license-status-notice {
+  margin-top: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius-lg);
+  color: var(--ink);
+  font-size: var(--text-sm);
+  line-height: var(--leading-default);
+}
+
+.license-loading-card {
+  padding: var(--space-4);
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.license-section-heading {
+  align-items: flex-start;
+  margin-bottom: var(--space-2);
+}
+
+.license-section-heading h2 {
+  color: var(--muted);
+}
+
+.license-section-heading .settings-section-copy {
+  margin-bottom: 0;
+}
+
+.license-activation-form,
+.license-purchase-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  overflow: visible;
+}
+
+.license-field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.license-field .settings-label {
+  margin: 0;
+}
+
+.license-field input {
+  width: 100%;
+  min-width: 0;
+  height: var(--control-height-comfortable);
+  padding: 0 var(--space-2-5);
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-md);
+  background: var(--control-background);
+  color: var(--ink);
+}
+
+.license-field input:hover:not(:disabled) {
+  border-color: var(--accent-border);
+  background: var(--control-background-hover);
+}
+
+.license-field input:focus-visible {
+  border-color: var(--accent-border-loud);
+  box-shadow: var(--focus-ring);
+}
+
+.license-key-feedback {
+  margin-top: var(--space-1-5);
+  color: var(--muted);
+  font-size: var(--text-sm);
+  line-height: var(--leading-default);
+}
+
+.license-key-feedback.is-ready {
+  color: var(--success);
+}
+
+.license-advanced-details {
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--line);
+}
+
+.license-advanced-details summary {
+  color: var(--ink);
+  font-size: var(--text-md);
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+}
+
+.license-advanced-details summary:focus-visible {
+  outline: 0;
+  border-radius: var(--radius-sm);
+  box-shadow: var(--focus-ring);
+}
+
+.license-advanced-details[open] .license-field {
+  margin-top: var(--space-3);
+}
+
+.license-form-actions,
+.license-purchase-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.license-form-actions {
+  justify-content: flex-start;
+}
+
+.license-purchase-actions button {
+  white-space: nowrap;
+}
+
+.license-manage-button {
+  margin-left: 0;
+}
+
+.license-link-error {
+  margin: 0;
+  color: var(--danger);
+  font-size: var(--text-sm);
+  line-height: var(--leading-default);
+}
+
+@media (max-width: 720px) {
+  .license-overview-top,
+  .license-message {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .license-status-badge {
+    align-self: flex-start;
+  }
+
+  .license-overview-details {
+    grid-template-columns: 1fr;
+  }
+
+  .license-overview-actions,
+  .license-overview-actions button,
+  .license-form-actions button,
+  .license-purchase-actions button {
+    width: 100%;
+  }
+
+  .license-overview-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .license-manage-button {
+    margin-left: 0;
+  }
+}
+
+@media (forced-colors: active) {
+  .license-overview-card,
+  .license-status-badge,
+  .license-message,
+  .license-status-notice,
+  .license-field input {
+    border-color: CanvasText;
+    background: Canvas;
+    color: CanvasText;
+  }
+}
 
 .settings-row-theme {
   align-items: center;
@@ -4122,6 +4529,10 @@ body.is-workflow-reordering {
 
 .agent-mark-claude_code {
   color: var(--agent-claude-color);
+}
+
+.agent-mark-gemini {
+  color: var(--agent-gemini-color);
 }
 
 .agent-mark-glyph {

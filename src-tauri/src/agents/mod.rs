@@ -4,6 +4,9 @@ pub mod auth;
 pub mod claude_code;
 pub mod codex;
 pub mod cursor;
+pub mod gemini;
+pub mod github_copilot;
+pub mod grok;
 pub mod models;
 pub mod opencode;
 pub(crate) mod process;
@@ -26,6 +29,9 @@ pub enum AgentProvider {
     Cursor,
     Codex,
     Opencode,
+    GithubCopilot,
+    Gemini,
+    Grok,
 }
 
 impl AgentProvider {
@@ -35,6 +41,9 @@ impl AgentProvider {
             Self::Cursor => "cursor",
             Self::Codex => "codex",
             Self::Opencode => "opencode",
+            Self::GithubCopilot => "github_copilot",
+            Self::Gemini => "gemini",
+            Self::Grok => "grok",
         }
     }
 
@@ -44,6 +53,9 @@ impl AgentProvider {
             Self::Cursor => "Cursor",
             Self::Codex => "Codex",
             Self::Opencode => "OpenCode",
+            Self::GithubCopilot => "GitHub Copilot",
+            Self::Gemini => "Gemini",
+            Self::Grok => "Grok",
         }
     }
 
@@ -53,6 +65,9 @@ impl AgentProvider {
             "cursor" => Some(Self::Cursor),
             "codex" => Some(Self::Codex),
             "opencode" => Some(Self::Opencode),
+            "github_copilot" => Some(Self::GithubCopilot),
+            "gemini" => Some(Self::Gemini),
+            "grok" => Some(Self::Grok),
             _ => None,
         }
     }
@@ -162,6 +177,9 @@ pub fn adapter_for(provider: AgentProvider) -> Box<dyn AgentAdapter> {
         AgentProvider::Cursor => Box::new(cursor::CursorAdapter),
         AgentProvider::Codex => Box::new(codex::CodexAdapter),
         AgentProvider::Opencode => Box::new(opencode::OpencodeAdapter),
+        AgentProvider::GithubCopilot => Box::new(github_copilot::GithubCopilotAdapter),
+        AgentProvider::Gemini => Box::new(gemini::GeminiAdapter),
+        AgentProvider::Grok => Box::new(grok::GrokAdapter),
     }
 }
 
@@ -171,6 +189,9 @@ pub fn list_providers() -> Vec<serde_json::Value> {
         AgentProvider::Cursor,
         AgentProvider::Codex,
         AgentProvider::Opencode,
+        AgentProvider::GithubCopilot,
+        AgentProvider::Gemini,
+        AgentProvider::Grok,
     ]
     .into_iter()
     .map(|p| {

@@ -4,12 +4,18 @@ import claudeLogo from "../../../../assets/agents/claude.svg";
 import cursorLogo from "../../../../assets/agents/cursor.svg";
 import codexLogo from "../../../../assets/agents/codex.svg";
 import opencodeLogo from "../../../../assets/agents/opencode.svg";
+import githubCopilotLogo from "../../../../assets/agents/github-copilot.svg";
+import geminiLogo from "../../../../assets/agents/gemini.svg";
+import grokLogo from "../../../../assets/agents/grok.svg";
 
 const LABELS: Record<AgentProviderId, string> = {
   claude_code: "Claude Code",
   cursor: "Cursor",
   codex: "Codex",
   opencode: "OpenCode",
+  github_copilot: "GitHub Copilot",
+  gemini: "Gemini",
+  grok: "Grok",
 };
 
 const LOGOS: Record<AgentProviderId, string> = {
@@ -17,6 +23,9 @@ const LOGOS: Record<AgentProviderId, string> = {
   cursor: cursorLogo,
   codex: codexLogo,
   opencode: opencodeLogo,
+  github_copilot: githubCopilotLogo,
+  gemini: geminiLogo,
+  grok: grokLogo,
 };
 
 type Props = {

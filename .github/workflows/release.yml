@@ -17,7 +17,18 @@
 #
 # Signing: macOS Developer ID signing and notarization are required. Windows
 # Authenticode signing is explicitly waived for this release, so every Windows
-# artifact is an unsigned beta. Updater signatures remain deferred to plan 006.
+# artifact is an unsigned beta.
+#
+# There is no automatic updater. v0.5.0 customers download manually from Polar's
+# File Downloads benefit, so `uploadUpdaterJson` stays false and no updater
+# plugin, key, or manifest exists.
+#
+# Gates:
+#   - verify-version rejects a version mismatch across package.json,
+#     src-tauri/Cargo.toml, and src-tauri/tauri.conf.json.
+#   - acceptance-manifest rejects a missing or duplicated required artifact and
+#     emits a text + JSON acceptance manifest (version, source commit,
+#     filenames, sizes, architectures, SHA-256). It never records a secret.
 #
 # Repo settings required: Settings → Actions → General → Workflow permissions
 # → Read and write permissions (so the job can create/update the GitHub Release).
@@ -32,7 +43,47 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  verify-version:
+    name: Verify version alignment
+    runs-on: ubuntu-22.04
+    outputs:
+      version: ${{ steps.versions.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Require one version across all three release files
+        id: versions
+        run: |
+          set -euo pipefail
+          package_version=$(jq -er '.version' package.json)
+          tauri_version=$(jq -er '.version' src-tauri/tauri.conf.json)
+          cargo_version=$(awk '
+            /^\[/ { in_package = ($0 == "[package]") }
+            in_package && /^version[[:space:]]*=/ {
+              gsub(/.*=[[:space:]]*"|".*/, "")
+              print
+              exit
+            }
+          ' src-tauri/Cargo.toml)
+
+          echo "package.json          $package_version"
+          echo "src-tauri/Cargo.toml  $cargo_version"
+          echo "src-tauri/tauri.conf.json $tauri_version"
+
+          if [ -z "$cargo_version" ]; then
+            echo "::error::Could not read [package] version from src-tauri/Cargo.toml"
+            exit 1
+          fi
+          if [ "$package_version" != "$cargo_version" ] || [ "$package_version" != "$tauri_version" ]; then
+            echo "::error::Release version mismatch. All three files must agree before a release build."
+            exit 1
+          fi
+
+          echo "version=$package_version" >> "$GITHUB_OUTPUT"
+
   publish-tauri:
+    needs: verify-version
     permissions:
       contents: write
     strategy:
@@ -144,9 +195,6 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          # Updater artifact signatures (optional until keys exist)
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: v__VERSION__
           releaseName: Alfred v__VERSION__
@@ -382,3 +430,177 @@ jobs:
           if (Test-Path $executable) {
             throw "Alfred executable remains after uninstall"
           }
+
+  acceptance-manifest:
+    name: Build the release acceptance manifest
+    needs:
+      - verify-version
+      - publish-tauri
+      - verify-macos-installers
+      - verify-windows-installer
+    permissions:
+      # GitHub only exposes draft releases to tokens with push-level access.
+      contents: write
+    runs-on: ubuntu-22.04
+    env:
+      VERSION: ${{ needs.verify-version.outputs.version }}
+
+    steps:
+      - name: Checkout release source
+        uses: actions/checkout@v4
+
+      # The required paid artifacts for this release line. Linux packages and the
+      # Windows .msi stay best-effort: they are recorded but never required, so
+      # they cannot be silently promoted to a supported paid download.
+      - name: Download and hash the required draft artifacts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          work="$RUNNER_TEMP/acceptance"
+          mkdir -p "$work"
+
+          release_id=$(gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --jq ".[] | select(.draft and .tag_name == \"v${VERSION}\") | .id" | head -1)
+          if [ -z "$release_id" ]; then
+            echo "::error::Draft release v${VERSION} was not found"
+            exit 1
+          fi
+
+          gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/releases/$release_id/assets?per_page=100" \
+            --jq '.[] | {name, id, size}' | jq -s '.' > "$work/assets.json"
+
+          # filename|platform|architecture|signing
+          required="Alfred_${VERSION}_aarch64.dmg|macos|arm64|developer-id-signed-notarized-stapled
+          Alfred_${VERSION}_x64.dmg|macos|x86_64|developer-id-signed-notarized-stapled
+          Alfred_${VERSION}_x64-setup.exe|windows|x86_64|unsigned-beta"
+
+          : > "$work/required.jsonl"
+          failed=0
+          while IFS='|' read -r name platform arch signing; do
+            name=$(echo "$name" | xargs)
+            [ -z "$name" ] && continue
+
+            matches=$(jq --arg n "$name" '[.[] | select(.name == $n)] | length' "$work/assets.json")
+            if [ "$matches" -eq 0 ]; then
+              echo "::error::Required artifact $name is missing from draft release v${VERSION}"
+              failed=1
+              continue
+            fi
+            if [ "$matches" -gt 1 ]; then
+              echo "::error::Required artifact $name appears $matches times in draft release v${VERSION}"
+              failed=1
+              continue
+            fi
+
+            asset_id=$(jq -r --arg n "$name" '.[] | select(.name == $n) | .id' "$work/assets.json")
+            path="$work/$name"
+            gh api \
+              -H "Accept: application/octet-stream" \
+              "repos/$GITHUB_REPOSITORY/releases/assets/$asset_id" > "$path"
+
+            size=$(stat -c '%s' "$path")
+            recorded_size=$(jq -r --arg n "$name" '.[] | select(.name == $n) | .size' "$work/assets.json")
+            if [ "$size" != "$recorded_size" ]; then
+              echo "::error::$name downloaded as $size bytes but the draft records $recorded_size"
+              failed=1
+              continue
+            fi
+
+            checksum=$(sha256sum "$path" | cut -d' ' -f1)
+            jq -nc \
+              --arg filename "$name" \
+              --arg platform "$platform" \
+              --arg architecture "$arch" \
+              --arg signing "$signing" \
+              --argjson sizeBytes "$size" \
+              --arg sha256 "$checksum" \
+              '{filename: $filename, platform: $platform, architecture: $architecture, signing: $signing, sizeBytes: $sizeBytes, sha256: $sha256}' \
+              >> "$work/required.jsonl"
+          done <<< "$required"
+
+          if [ "$failed" -ne 0 ]; then
+            echo "::error::The draft release does not contain exactly one copy of every required artifact"
+            exit 1
+          fi
+
+          jq -s '.' "$work/required.jsonl" > "$work/required.json"
+
+          jq --slurpfile req "$work/required.json" \
+            '[.[] | select(.name as $n | ($req[0] | map(.filename) | index($n)) | not)
+                  | {filename: .name, sizeBytes: .size}]' \
+            "$work/assets.json" > "$work/best-effort.json"
+
+          echo "WORK_DIR=$work" >> "$GITHUB_ENV"
+
+      - name: Write the acceptance manifest
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/manifest"
+          mkdir -p "$out"
+
+          jq -n \
+            --arg version "$VERSION" \
+            --arg sourceCommit "$GITHUB_SHA" \
+            --arg sourceRef "$GITHUB_REF" \
+            --arg generatedAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg workflowRun "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            --slurpfile requiredArtifacts "$WORK_DIR/required.json" \
+            --slurpfile bestEffortArtifacts "$WORK_DIR/best-effort.json" \
+            '{
+              schemaVersion: 1,
+              kind: "alfred-release-acceptance-manifest",
+              version: $version,
+              sourceCommit: $sourceCommit,
+              sourceRef: $sourceRef,
+              generatedAt: $generatedAt,
+              workflowRun: $workflowRun,
+              draftRelease: {tag: ("v" + $version), published: false},
+              distribution: "polar-file-downloads-manual",
+              automaticUpdates: false,
+              uploadUpdaterJson: false,
+              requiredArtifacts: $requiredArtifacts[0],
+              bestEffortArtifacts: $bestEffortArtifacts[0]
+            }' > "$out/acceptance-manifest.json"
+
+          {
+            echo "Alfred v$VERSION release acceptance manifest"
+            echo
+            echo "Source commit: $GITHUB_SHA"
+            echo "Source ref:    $GITHUB_REF"
+            echo "Generated at:  $(jq -r '.generatedAt' "$out/acceptance-manifest.json")"
+            echo "Workflow run:  $(jq -r '.workflowRun' "$out/acceptance-manifest.json")"
+            echo "Draft release: v$VERSION (never published)"
+            echo "Distribution:  Polar File Downloads, manual updates, no updater"
+            echo
+            echo "Required paid artifacts"
+            echo "-----------------------"
+            jq -r '.requiredArtifacts[]
+                   | "  \(.filename)\n    platform:     \(.platform)\n    architecture: \(.architecture)\n    signing:      \(.signing)\n    size:         \(.sizeBytes) bytes\n    sha256:       \(.sha256)\n"' \
+              "$out/acceptance-manifest.json"
+            echo "Best-effort artifacts (not a supported paid download)"
+            echo "----------------------------------------------------"
+            jq -r 'if (.bestEffortArtifacts | length) == 0
+                   then "  none"
+                   else (.bestEffortArtifacts[] | "  \(.filename) — \(.sizeBytes) bytes")
+                   end' \
+              "$out/acceptance-manifest.json"
+            echo
+            echo "SHA-256 checksums"
+            echo "-----------------"
+            jq -r '.requiredArtifacts[] | "\(.sha256)  \(.filename)"' \
+              "$out/acceptance-manifest.json"
+          } > "$out/acceptance-manifest.txt"
+
+          cat "$out/acceptance-manifest.txt"
+          cat "$out/acceptance-manifest.txt" >> "$GITHUB_STEP_SUMMARY"
+          echo "MANIFEST_DIR=$out" >> "$GITHUB_ENV"
+
+      - name: Upload the acceptance manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: acceptance-manifest
+          path: ${{ env.MANIFEST_DIR }}
+          if-no-files-found: error

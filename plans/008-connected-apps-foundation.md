@@ -12,6 +12,14 @@
 > src/features/workflow/api.ts`. Expected hashes begin respectively with
 > `7f8063ce`, `6e175896`, `564d3fb7`, `a329ec9a`, `6a62a170`, and `980f0274`.
 > If any differ, re-read the affected file and reconcile this plan first.
+>
+> **Drift status at 2026-08-20**: all six baseline hashes now differ (actual
+> prefixes `287fa8f5`, `2caa3535`, `394cb42b`, `848e2626`, `4fead5b9`,
+> `8aaf448a`). The repository has moved well past `36835c9` — plans 009, 010,
+> and the provider plans 012–016 all landed on top of this foundation. The
+> hashes are stale by expectation, not by regression: `bun run check` and the
+> security invariants below were re-verified against current `HEAD` and pass.
+> Treat the 2026-08-13 hash list as a historical baseline, not a live gate.
 
 ## Status
 
@@ -21,8 +29,13 @@
 - **Depends on**: none
 - **Category**: architecture / security
 - **Planned at**: 2026-08-11; reconciled at `36835c9`, 2026-08-13
-- **Implementation**: automated gates passed 2026-08-13; signed/package
-  credential-store smoke remains required on each shipping OS
+- **Implementation**: code complete. Automated gates re-verified at `HEAD`
+  (`5e62adf`) on 2026-08-20: `bun run check` passes end to end — 234 frontend
+  tests across 43 files, `tsc && vite build` clean, 371 Rust tests passing,
+  0 failures. The architecture contract was re-checked by inspection at the
+  same commit and holds (see "Verified at HEAD" below). The only outstanding
+  work is packaged-OS credential-store smoke testing, which cannot be run from
+  a development checkout.
 
 ## Why this matters
 
@@ -182,7 +195,8 @@ callback ignored, port collision retry, timeout expiry, PKCE derivation, and
 attempt-context lifetime. Refresh tests cover scheduled and on-demand success,
 rotation serialization, retryable vs terminal errors, and status ownership.
 Perform a manual packaged-app smoke test on each shipping OS before calling
-this plan done.
+this plan done — Linux here, macOS and Windows in Plan 005 matrix E (see
+"Ownership split" below).
 
 ### Step 3: Expose redacted Tauri commands
 
@@ -258,13 +272,75 @@ Document a recovery path for stale keychain entries without printing values.
 - [x] Empty-database and upgrade migrations pass.
 - [x] Frontend and Rust test/build gates pass.
 
+## Verified at HEAD (2026-08-20, commit `5e62adf`)
+
+Re-run of the plan's own gates and a fresh read of the security boundary:
+
+- `bun run check` passes: 234 frontend tests / 43 files, 1367 assertions, 0
+  failures; `tsc && vite build` succeeds (378 modules); 371 Rust tests pass, 0
+  failures, 0 ignored.
+- **No credential reaches SQLite.** `app_connections`
+  (`src-tauri/src/db/schema.sql:139-156`) stores only metadata plus a
+  `credential_ref` pointer; there is no token, secret, or payload column.
+- **No credential reaches React.** Every `#[tauri::command]` in
+  `src-tauri/src/commands/integrations.rs` returns `AppConnectionDto`,
+  `AppProviderDto`, `AppConnectionUsage`, `ActionDescriptor`, or a
+  provider-specific authorization DTO. The backend record `AppConnection`
+  (`src-tauri/src/integrations/models.rs:51`) deliberately has no `Serialize`
+  derive, and `AppConnectionDto` omits `credential_ref`, `identity_key`, and
+  `provider_metadata`. Serialization tests assert the fixture strings and the
+  `credentialRef` / `accessToken` keys never appear
+  (`src-tauri/src/commands/integrations.rs:432-456`,
+  `src-tauri/src/integrations/models.rs:242-243`).
+- **No credential reaches logs.** `CredentialEnvelope`
+  (`src-tauri/src/integrations/token_store.rs:17-62`) has a hand-written
+  `Debug` that prints `[REDACTED]` for `access_token`, `refresh_token`, and
+  `provider_fields`, plus a `Drop` that zeroizes them; covered by
+  `debug_output_is_redacted`.
+- **No credential reaches workflow JSON.** `AppActionNodeData`
+  (`src/features/workflow/types.ts:376-383`) persists only `connectionId`;
+  Rust resolves it to a credential at execution time.
+- `rg` over `src/` for `access_token|refresh_token|client_secret` returns zero
+  hits. The provider paste-token connect forms added after this plan
+  (Telegram, Sentry, Notion, Linear) are inbound-only: the value goes straight
+  to a Rust command and the form field is cleared — no outbound path was
+  introduced.
+
+No regression against the architecture contract was found.
+
 ## Release validation still required
 
+Packaged credential-store smoke testing is the only remaining work. It cannot
+be executed from a development checkout: each case needs a signed or packaged
+bundle on a clean machine of that OS, so it is release-acceptance work rather
+than implementation work. Everything else in this plan is verified at `HEAD`.
+
 - [x] macOS debug `.app` bundle compiles with the default capability set.
-- [ ] Signed/notarized macOS package: create/read/overwrite/delete credential
-  smoke test and restart persistence check.
-- [ ] Packaged Windows build: Credential Manager smoke test and restart check.
-- [ ] Packaged Linux build: Secret Service smoke test and restart check.
+- [ ] **Packaged Linux build: Secret Service smoke test and restart check.**
+  Needs a Linux desktop session with a running Secret Service provider.
+  **This plan owns this one.**
+
+### Ownership split (coordinator decision, 2026-08-20)
+
+The signed-macOS and packaged-Windows smoke tests that used to sit here have
+**moved to matrix E of
+[`plans/release-money/005-run-polar-paid-release-acceptance.md`](release-money/005-run-polar-paid-release-acceptance.md)**
+(rows E10 and E11). They are no longer this plan's to run or to track.
+
+| Smoke test | Owner | Why |
+| --- | --- | --- |
+| Signed/notarized macOS package: create/read/overwrite/delete credential + restart persistence | **Plan 005, matrix E (row E10)** | 005 already mandates clean Apple Silicon and Intel macOS machines and signed/notarized DMGs. Identical setup; running it twice buys nothing. |
+| Packaged Windows build: Credential Manager smoke + restart | **Plan 005, matrix E (row E11)** | 005 already mandates a clean Windows 10/11 x64 machine. |
+| Packaged Linux build: Secret Service smoke + restart | **This plan** | 005 has **no** Linux environment. Folding it in would silently widen a release-blocking plan's hardware requirements, and a requirement nobody can meet is a requirement that gets waived. |
+
+Nothing was dropped in the move: all three cases still exist, each with exactly
+one owner. The credential store is the same `keyring`-backed store licensing
+uses, so proving it under a signed macOS identity and a packaged Windows
+identity inside 005 covers connected apps on those two platforms too.
+
+Consequence for this plan's status: it is **not** blocked on macOS or Windows
+hardware any more. The single remaining gate is a Linux desktop session with a
+Secret Service provider.
 
 ## STOP conditions
 

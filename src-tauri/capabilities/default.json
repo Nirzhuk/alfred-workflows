@@ -10,8 +10,8 @@
     "core:window:allow-set-theme",
     "core:window:allow-start-dragging",
     "core:app:default",
-    "opener:default",
     "opener:allow-open-path",
+    "opener:allow-reveal-item-in-dir",
     {
       "identifier": "opener:allow-open-url",
       "allow": [
@@ -20,7 +20,13 @@
         { "url": "https://accounts.google.com/*" },
         { "url": "https://login.microsoftonline.com/*" },
         { "url": "https://www.notion.so/profile/integrations/internal" },
-        { "url": "https://t.me/*" }
+        { "url": "https://t.me/*" },
+        { "url": "https://buy.polar.sh/polar_cl_*" },
+        { "url": "https://polar.sh/*/portal" },
+        {
+          "url": "https://sandbox-api.polar.sh/v1/checkout-links/polar_cl_*/redirect"
+        },
+        { "url": "https://sandbox.polar.sh/*/portal" }
       ]
     },
     "window-state:default",
