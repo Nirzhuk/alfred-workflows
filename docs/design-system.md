@@ -380,8 +380,8 @@ the rails are tuned to avoid.
 
 ### Workflow canvas
 
-- The canvas uses a 22px dot field for local placement and a faint 110px line
-  grid for larger spatial rhythm. Both layers move and zoom with React Flow.
+- The canvas uses a single 22px dot grid for placement. It moves and zooms with
+  React Flow without adding graph-paper line guides behind the workflow.
 - Pattern contrast stays subordinate to nodes and connections. It organizes
   the editing surface; it is never used as decoration on cards or pages.
 

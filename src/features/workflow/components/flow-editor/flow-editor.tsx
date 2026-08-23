@@ -299,13 +299,6 @@ export function FlowEditor({ displayNodes }: Props) {
         proOptions={{ hideAttribution: true }}
       >
         <Background
-          id="canvas-guides"
-          variant={BackgroundVariant.Lines}
-          gap={110}
-          size={1}
-          color="var(--canvas-guide)"
-        />
-        <Background
           id="canvas-dots"
           variant={BackgroundVariant.Dots}
           gap={22}

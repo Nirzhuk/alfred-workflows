@@ -82,7 +82,6 @@
   --custom-agent: #f1f1f0;
   --canvas: linear-gradient(180deg, var(--bg-wash), transparent 45%), var(--bg);
   --canvas-dot: rgba(16, 16, 16, 0.12);
-  --canvas-guide: rgba(16, 16, 16, 0.065);
   --menu: rgba(255, 255, 255, 0.96);
   --danger: #bb1a1e;
   --danger-strong: #a11619;
@@ -280,7 +279,6 @@
   --custom-agent: #262626;
   --canvas: linear-gradient(180deg, var(--bg-wash), transparent 45%), var(--bg);
   --canvas-dot: rgba(255, 255, 255, 0.1);
-  --canvas-guide: rgba(255, 255, 255, 0.055);
   --menu: rgba(28, 28, 28, 0.96);
   --danger: #e55e5f;
   --danger-strong: #c74449;

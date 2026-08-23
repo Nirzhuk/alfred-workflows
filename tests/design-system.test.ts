@@ -120,14 +120,12 @@ describe("design-system foundations", () => {
     }
   });
 
-  test("uses a two-scale workflow canvas pattern", () => {
-    expect(flowEditor).toContain('id="canvas-guides"');
-    expect(flowEditor).toContain("variant={BackgroundVariant.Lines}");
-    expect(flowEditor).toContain("gap={110}");
+  test("uses a dot-only workflow canvas pattern", () => {
     expect(flowEditor).toContain('id="canvas-dots"');
     expect(flowEditor).toContain("variant={BackgroundVariant.Dots}");
     expect(flowEditor).toContain("gap={22}");
-    expect(css).toContain("--canvas-guide:");
+    expect(flowEditor).not.toContain("variant={BackgroundVariant.Lines}");
+    expect(css).not.toContain("--canvas-guide:");
   });
 
   test("does not allow fractional font-weight drift", () => {
