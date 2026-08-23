@@ -6,7 +6,7 @@ use objc2_foundation::MainThreadMarker;
 use std::{ffi::c_void, ptr::NonNull};
 use tauri::WebviewWindow;
 
-const MATERIAL_ALPHA: f64 = 0.82;
+const MATERIAL_ALPHA: f64 = 0.90;
 
 /// Builds one native macOS wallpaper-tint layer behind the transparent
 /// webview. Opaque canvas and settings surfaces mask it, leaving the shared

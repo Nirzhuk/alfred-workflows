@@ -2031,7 +2031,7 @@ button:disabled svg {
 
 html[data-platform="macos"] .sidebar,
 html[data-platform="macos"] .app-titlebar {
-  background: color-mix(in srgb, var(--surface-panel) 22%, transparent);
+  background: color-mix(in srgb, var(--surface-panel) 30%, transparent);
   -webkit-backdrop-filter: blur(32px) saturate(1.16);
   backdrop-filter: blur(32px) saturate(1.16);
 }

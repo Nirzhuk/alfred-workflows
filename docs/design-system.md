@@ -184,8 +184,8 @@ at least 28px in dense chrome and 32px for ordinary controls.
 - Use emerald only when the interface is communicating action, location,
   focus, progress, or success. Hover is neutral.
 - On macOS, the transparent window installs one full-window native
-  `NSVisualEffectView` with Sidebar material at 82% opacity. The HTML roots
-  remain transparent and add a 22% panel tint, so the same wallpaper color
+  `NSVisualEffectView` with Sidebar material at 90% opacity. The HTML roots
+  remain transparent and add a 30% panel tint, so the same wallpaper color
   reaches the sidebar and titlebar, while
   canvas and page surfaces mask it wherever content needs an opaque reading
   plane. The view uses public AppKit material and does not require a Liquid
