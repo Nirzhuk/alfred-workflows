@@ -185,11 +185,11 @@ at least 28px in dense chrome and 32px for ordinary controls.
   focus, progress, or success. Hover is neutral.
 - On macOS, the transparent window installs one full-window native
   `NSVisualEffectView` through [window-vibrancy](https://github.com/tauri-apps/window-vibrancy)
-  with HudWindow material. The HTML roots remain transparent and add a 30%
+  with HudWindow material. The HTML roots remain transparent and add a 60%
   panel tint, so the same wallpaper color reaches the sidebar and titlebar,
   while canvas and page surfaces mask it wherever content needs an opaque
   reading plane.
-- Quick Access uses the same HudWindow vibrancy and 30% theme panel tint
+- Quick Access uses the same HudWindow vibrancy and 60% theme panel tint
   inside a rounded 16px borderless window. Its light and dark appearances
   follow the shared semantic tokens. Windows, Linux, and the
   reduced-transparency fallback use the opaque panel surface.

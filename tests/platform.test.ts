@@ -95,7 +95,7 @@ describe("desktop platform contract", () => {
     expect(css).toContain('html[data-platform="macos"] #root');
     expect(css).toContain("background-color: transparent;");
     expect(css).toContain(
-      "background: color-mix(in srgb, var(--surface-panel) 30%, transparent);",
+      "background: color-mix(in srgb, var(--surface-panel) 60%, transparent);",
     );
     expect(css).toContain("background: var(--surface-panel-opaque);");
     expect(css).toMatch(
