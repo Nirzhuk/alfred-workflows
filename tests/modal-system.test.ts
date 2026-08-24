@@ -52,6 +52,7 @@ const namedModalCallers = [
 
 describe("shared modal system", () => {
   test("contains keyboard focus, Escape, and focus-return behavior", () => {
+    expect(modal).toContain('panel.querySelector<HTMLElement>("[autofocus]")');
     expect(modal).toContain("FOCUSABLE_SELECTOR");
     expect(modal).toContain('e.key !== "Tab"');
     expect(modal).toContain('e.key === "Escape"');
@@ -92,7 +93,8 @@ describe("shared modal system", () => {
     expect(confirmDialog).toContain('confirm-modal is-danger');
     expect(confirmDialog).toContain('name={danger ? "trash" : "question"}');
     expect(confirmDialog).toContain('className="confirm-modal-footer"');
-    expect(confirmDialog).toMatch(/className="ghost"[\s\S]*?autoFocus/);
+    expect(confirmDialog).toContain('type="submit"');
+    expect(confirmDialog).toMatch(/type="submit"[\s\S]*?autoFocus/);
     expect(css).toContain(".confirm-modal-icon.is-danger");
     expect(css).toContain(".confirm-modal .modal-header");
     expect(css).not.toContain(".confirm-modal.is-danger .modal-header h3");

@@ -81,9 +81,9 @@ export function Modal({
     const focusPanel = window.requestAnimationFrame(() => {
       const panel = panelRef.current;
       if (!panel || panel.contains(document.activeElement)) return;
-      const preferred = panel.querySelector<HTMLElement>(
-        `[autofocus], ${FOCUSABLE_SELECTOR}`,
-      );
+      const preferred =
+        panel.querySelector<HTMLElement>("[autofocus]") ??
+        panel.querySelector<HTMLElement>(FOCUSABLE_SELECTOR);
       (preferred ?? panel).focus();
     });
 

@@ -45,7 +45,7 @@ export function LicenseBadge({ store = useLicenseStore }: Props = {}) {
       aria-label={`License: ${badge.label}. ${badge.detail}. Open License & Billing settings.`}
       onClick={() => openLicenseBillingSettings(window)}
     >
-      {badge.label}
+      <span className="titlebar-license-label">{badge.label}</span>
     </button>
   );
 }

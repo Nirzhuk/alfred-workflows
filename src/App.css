@@ -955,22 +955,31 @@ button,
   --license-tag-edge: var(--line);
   --license-tag-ink: var(--muted);
   --license-tag-fill: color-mix(in srgb, var(--surface-card) 68%, transparent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
   height: var(--control-height-compact);
   /* geometry: caps the tag so the longest product label can never push the
      workflow tabs out of a narrow titlebar. */
   max-width: 11rem;
-  padding: 0 var(--space-2);
+  padding: 0 var(--space-2-5);
   border: 1px solid var(--license-tag-edge);
   border-radius: var(--radius-pill);
   background: var(--license-tag-fill);
   color: var(--license-tag-ink);
   font-size: var(--text-xs);
   font-weight: var(--font-weight-semibold);
-  line-height: var(--control-height-compact);
-  white-space: nowrap;
+  line-height: 1;
+  text-align: center;
+  overflow: hidden;
+}
+
+.titlebar-license-label {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Tone reuses the licensing vocabulary the settings badge already speaks. The
@@ -2127,7 +2136,7 @@ html[data-platform="macos"] .app-titlebar {
   min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
-  padding: var(--space-4) var(--space-4) var(--space-3);
+  padding: var(--space-5) var(--space-4) var(--space-3);
   display: flex;
   flex-direction: column;
   gap: var(--space-5);
@@ -2443,7 +2452,7 @@ html[data-platform="macos"] .app-titlebar {
   position: relative;
   display: flex;
   align-items: center;
-  color: var(--muted);
+  color: color-mix(in srgb, var(--muted) 58%, transparent);
 }
 
 .settings-sidebar-search-icon {
@@ -2466,10 +2475,10 @@ html[data-platform="macos"] .app-titlebar {
   min-width: 0;
   height: var(--control-height-comfortable);
   padding: var(--space-1-5) var(--space-2-5) var(--space-1-5) var(--space-8);
-  border: 1px solid var(--line);
+  border: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
   border-radius: var(--radius-md);
   outline: 0;
-  background: var(--surface-card);
+  background: color-mix(in srgb, var(--surface-card) 28%, transparent);
   color: var(--ink);
   font-size: var(--text-md);
   cursor: text;
@@ -2477,12 +2486,13 @@ html[data-platform="macos"] .app-titlebar {
 
 .settings-sidebar-search input::placeholder {
   color: var(--muted);
-  opacity: 0.8;
+  opacity: 0.5;
 }
 
 .settings-sidebar-search input:focus-visible {
-  border-color: var(--accent-border-loud);
-  box-shadow: var(--focus-ring);
+  border-color: color-mix(in srgb, var(--ink) 18%, transparent);
+  box-shadow: none;
+  outline: none;
 }
 
 .settings-sidebar-nav,
@@ -3820,10 +3830,11 @@ html[data-platform="macos"] .app-titlebar {
 }
 
 .sidebar-nav {
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
   gap: var(--sidebar-item-stack-gap);
-  padding-bottom: var(--space-0-5);
+  padding: var(--space-4) var(--space-4) 0;
   border-bottom: 0;
 }
 
@@ -3851,6 +3862,17 @@ html[data-platform="macos"] .app-titlebar {
 
 .sidebar-nav-item:hover {
   color: var(--sidebar-item-color);
+  border-color: transparent;
+  background: var(--surface-hover);
+}
+
+.sidebar-nav-item:hover:not(:disabled) {
+  border-color: transparent;
+  background: var(--surface-hover);
+}
+
+.sidebar-nav-item:active:not(:disabled) {
+  transform: none;
   background: var(--surface-hover);
 }
 
@@ -3858,6 +3880,31 @@ html[data-platform="macos"] .app-titlebar {
   color: var(--ink);
   border-color: var(--line);
   background: var(--surface-selected);
+}
+
+html[data-platform="macos"] .sidebar-nav-item.is-active {
+  border-color: color-mix(in srgb, var(--line) 32%, transparent);
+  background: color-mix(in srgb, var(--surface-selected) 28%, transparent);
+}
+
+html[data-platform="macos"] .sidebar-nav-item:hover:not(.is-active):not(:disabled) {
+  background: color-mix(in srgb, var(--surface-hover) 45%, transparent);
+}
+
+html[data-platform="macos"] .sidebar-nav-item.is-active:hover {
+  background: color-mix(in srgb, var(--surface-selected) 48%, transparent);
+}
+
+html[data-platform="macos"] .settings-sidebar-item:hover:not(.is-active):not(:disabled) {
+  background: color-mix(in srgb, var(--surface-hover) 45%, transparent);
+}
+
+html[data-platform="macos"] .settings-sidebar-item.is-active {
+  background: color-mix(in srgb, var(--surface-selected) 28%, transparent);
+}
+
+html[data-platform="macos"] .settings-sidebar-item.is-active:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--surface-selected) 48%, transparent);
 }
 
 .sidebar-nav-icon {
@@ -3881,10 +3928,12 @@ html[data-platform="macos"] .app-titlebar {
 }
 
 .sidebar-header {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-2);
+  padding: var(--space-5) var(--space-4) 0;
 }
 
 .sidebar-header h2 {

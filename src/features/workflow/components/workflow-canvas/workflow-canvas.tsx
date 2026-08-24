@@ -533,7 +533,7 @@ export function WorkflowCanvas() {
                 onBack={() => setView("canvas")}
               />
             ) : (
-              <div className="sidebar-scroll">
+              <>
                 <SidebarNav
                   view={view}
                   activityOpen={runPanelOpen && view === "canvas"}
@@ -579,33 +579,36 @@ export function WorkflowCanvas() {
                     </button>
                   </div>
                 </div>
-                <WorkflowList
-                  workflows={workflows}
-                  folders={workflowFolders}
-                  activeWorkflowId={activeWorkflowId}
-                  activeLiveNodes={nodes}
-                  activeIsDirty={dirty}
-                  schedules={workflowSchedules}
-                  runningProviderByWorkflowId={runningProviderByWorkflowId}
-                  onSelect={(id) => {
-                    setView("canvas");
-                    void selectWorkflow(id);
-                  }}
-                  onOpenMenu={({ id, name, x, y }) => {
-                    setWorkflowMenu({ id, name, x, y });
-                  }}
-                  onOpenFolderMenu={({ id, name, x, y }) => {
-                    setFolderMenu({ id, name, x, y });
-                  }}
-                  onMoveToFolder={(workflowId, folderId, beforeWorkflowId) =>
-                    void moveWorkflowToFolder(
-                      workflowId,
-                      folderId,
-                      beforeWorkflowId,
-                    )
-                  }
-                />
-              </div>
+
+                <div className="sidebar-scroll">
+                  <WorkflowList
+                    workflows={workflows}
+                    folders={workflowFolders}
+                    activeWorkflowId={activeWorkflowId}
+                    activeLiveNodes={nodes}
+                    activeIsDirty={dirty}
+                    schedules={workflowSchedules}
+                    runningProviderByWorkflowId={runningProviderByWorkflowId}
+                    onSelect={(id) => {
+                      setView("canvas");
+                      void selectWorkflow(id);
+                    }}
+                    onOpenMenu={({ id, name, x, y }) => {
+                      setWorkflowMenu({ id, name, x, y });
+                    }}
+                    onOpenFolderMenu={({ id, name, x, y }) => {
+                      setFolderMenu({ id, name, x, y });
+                    }}
+                    onMoveToFolder={(workflowId, folderId, beforeWorkflowId) =>
+                      void moveWorkflowToFolder(
+                        workflowId,
+                        folderId,
+                        beforeWorkflowId,
+                      )
+                    }
+                  />
+                </div>
+              </>
             )}
 
             <SidebarBottomBar />

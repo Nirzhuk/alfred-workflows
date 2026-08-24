@@ -47,23 +47,24 @@ export function ConfirmDialog({
         description={message}
         descriptionId="confirm-dialog-message"
       />
-      <footer className="confirm-modal-footer">
-        <button
-          type="button"
-          className="ghost"
-          onClick={onCancel}
-          autoFocus
-        >
+      <form
+        className="confirm-modal-footer"
+        onSubmit={(event) => {
+          event.preventDefault();
+          onConfirm();
+        }}
+      >
+        <button type="button" className="ghost" onClick={onCancel}>
           {cancelLabel}
         </button>
         <button
-          type="button"
+          type="submit"
           className={danger ? "primary danger-solid" : "primary"}
-          onClick={onConfirm}
+          autoFocus
         >
           {confirmLabel}
         </button>
-      </footer>
+      </form>
     </Modal>
   );
 }

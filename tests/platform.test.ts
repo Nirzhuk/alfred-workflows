@@ -86,14 +86,12 @@ describe("desktop platform contract", () => {
   test("uses one macOS wallpaper-tint layer beneath the sidebar and titlebar", () => {
     expect(tauriConfig.app.windows[0]?.transparent).toBe(true);
     expect(tauriLib).toContain("native_window_material::install(&window)");
-    expect(nativeMaterial).toContain("NSVisualEffectMaterial::Sidebar");
+    expect(nativeMaterial).toContain("window_vibrancy::{apply_vibrancy");
+    expect(nativeMaterial).toContain("NSVisualEffectMaterial::HudWindow");
     expect(nativeMaterial).toContain("NSVisualEffectState::Active");
-    expect(nativeMaterial).toContain("const MATERIAL_ALPHA: f64 = 0.90;");
-    expect(nativeMaterial).toContain("material.setAlphaValue(MATERIAL_ALPHA);");
-    expect(nativeMaterial).toContain("let material_frame = bounds;");
-    expect(nativeMaterial).toContain("NSAutoresizingMaskOptions::ViewWidthSizable");
-    expect(nativeMaterial).toContain("NSAutoresizingMaskOptions::ViewHeightSizable");
+    expect(nativeMaterial).toContain("apply_vibrancy(");
     expect(nativeMaterial).not.toContain("NSVisualEffectMaterial::Titlebar");
+    expect(nativeMaterial).not.toContain("NSVisualEffectMaterial::Sidebar");
     expect(css).toContain('html[data-platform="macos"] #root');
     expect(css).toContain("background-color: transparent;");
     expect(css).toContain(
@@ -116,9 +114,8 @@ describe("desktop platform contract", () => {
     expect(quickAccessNative).toContain(
       '.transparent(cfg!(target_os = "macos"))',
     );
-    expect(nativeMaterial).toContain("material.setWantsLayer(true);");
-    expect(nativeMaterial).toContain("layer.setCornerRadius(corner_radius);");
-    expect(nativeMaterial).toContain("layer.setMasksToBounds(true);");
+    expect(nativeMaterial).toContain("install_rounded(window: &WebviewWindow, corner_radius: f64)");
+    expect(nativeMaterial).toContain("apply_material(window, Some(corner_radius))");
     expect(css).toContain(
       'html[data-platform="macos"] .quick-access-compact,\nhtml[data-platform="macos"] .quick-access-panel',
     );
