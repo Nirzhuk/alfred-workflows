@@ -46,8 +46,8 @@ public by accident.
 3. Tag and push:
 
    ```bash
-   git tag v0.5.0 <commit>
-   git push origin v0.5.0
+   git tag vX.Y.Z <commit>
+   git push origin vX.Y.Z
    ```
 
    A manual **Actions → release → Run workflow** dispatch also exists for
@@ -66,9 +66,9 @@ public by accident.
 Disable the broken release instead of hiding history:
 
 ```bash
-gh release edit v0.5.0 --latest=false      # unmark latest
-gh release delete-asset v0.5.0 <asset>     # pull a bad artifact
-gh release delete v0.5.0 --yes && git push origin :refs/tags/v0.5.0
+gh release edit vX.Y.Z --latest=false      # unmark latest
+gh release delete-asset vX.Y.Z <asset>     # pull a bad artifact
+gh release delete vX.Y.Z --yes && git push origin :refs/tags/vX.Y.Z
 ```
 
 Then fix, retag, and rerun. There is no auto-updater, so no installed copy is

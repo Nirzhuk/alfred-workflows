@@ -33,8 +33,8 @@ The operator runbook lives in [releasing.md](releasing.md).
 - [ ] Confirm the repository stays `Nirzhuk/alfred-workflows`. The releases
   URL is baked into released binaries; renaming the repo breaks the in-app
   Download Latest link for every shipped copy.
-- [ ] Decide the first version number (currently `0.5.0` everywhere) and
-  whether to ship it as-is or bump.
+- [x] First version number: **`1.0.0`** (bumped from `0.5.0` across
+  `package.json`, `src-tauri/Cargo.toml`, `src-tauri/tauri.conf.json`).
 - [ ] Optional dry run: **Actions → release → Run workflow** from `main`,
   confirm all legs green and the draft looks right, then delete that draft.
 - [ ] Write release notes for the first public release: supported OS versions,
