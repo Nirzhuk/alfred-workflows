@@ -19,7 +19,57 @@
 - **Depends on**: Plans 030–032
 - **Category**: native provider / OAuth
 - **Planned at**: 2026-08-24
-- **Implementation**: TODO
+- **Implementation**: BLOCKED (safe provider protocol/fixtures implemented;
+  native runtime registration and release claims remain disabled)
+
+## 2026-08-25 official-source freeze and gate decision
+
+Protocol/runtime freeze: **Codex app-server 0.149.1** at tag
+[`rust-v0.149.1`](https://github.com/openai/codex/releases/tag/rust-v0.149.1),
+published 2026-08-24. The frozen schema label in Alfred is
+`rust-v0.149.1/app-server-schema`; the app-server documentation says generated
+TypeScript/JSON schemas are specific to the Codex version that generated them,
+and the initialization result does not advertise an independent protocol
+version. Alfred therefore gates the initialize response shape and dedicated
+runtime home, while the packaged artifact version and digest must be verified
+before launch.
+
+Official sources re-read on 2026-08-25:
+
+| Gate | Status | Official evidence and decision |
+| --- | --- | --- |
+| Auth | Supported by protocol | [OpenAI Codex authentication](https://developers.openai.com/codex/auth) distinguishes ChatGPT subscription access from API-key usage-based access. The pinned [app-server protocol](https://github.com/openai/codex/blob/rust-v0.149.1/codex-rs/app-server/README.md) documents `account/login/start` with `chatgpt` and `chatgptDeviceCode`, completion/cancel/logout notifications, and states that Codex owns and refreshes the persisted ChatGPT tokens. Alfred must therefore use runtime-managed custody inside a dedicated Alfred-owned runtime home; it must not import a CLI home or store raw tokens as account metadata. |
+| Runtime artifacts | Supported as release inputs | The official [0.149.1 release](https://github.com/openai/codex/releases/tag/rust-v0.149.1) publishes dedicated `codex-app-server` artifacts for aarch64/x86_64 macOS, aarch64/x86_64 Windows, and aarch64/x86_64 Linux. Native mode does not need a user Codex CLI or `find_bin`. |
+| Checksums | Supported as integrity inputs | The same official GitHub release exposes SHA-256 digests for every pinned app-server archive. The exact six digests are frozen in `src-tauri/src/agents/native/providers/codex/runtime.rs`; mismatches fail closed. |
+| License | Supported with notice obligations | The pinned [Apache License 2.0](https://github.com/openai/codex/blob/rust-v0.149.1/LICENSE) permits redistribution of object form subject to the license/notice and modification-notice conditions. The tagged repository includes an upstream [NOTICE](https://github.com/openai/codex/blob/rust-v0.149.1/NOTICE) attributing OpenAI Codex and Ratatui-derived MIT code; Alfred packaging must carry the license and this notice. |
+| Protocol | Supported, version-coupled | The pinned [app-server README](https://github.com/openai/codex/blob/rust-v0.149.1/codex-rs/app-server/README.md) documents bounded-backpressure JSONL JSON-RPC over stdio, initialize/initialized, account/model/rate-limit queries, thread/turn streaming, server-initiated approvals, and `turn/interrupt`. WebSocket transport is explicitly experimental/unsupported and is not used. |
+| Package signing | **Blocked** | The 0.149.1 official release publishes `.sigstore` bundles for Linux app-server binaries, but no corresponding Sigstore/signature artifacts for the macOS or Windows app-server assets. GitHub's SHA-256 asset digest establishes integrity, not publisher signing or Alfred package trust. No approved, implemented cross-platform signing verification and repackaging route exists in this repository as of 2026-08-25. |
+| Packaged smoke | **Blocked** | No signed Alfred packages containing the pinned runtime have passed the required macOS, Windows, and Linux no-CLI smoke matrix. |
+| Native-ready claim | **Blocked** | Runtime registration, account-provider enablement, and the native-ready UI claim stay off until signing verification, packaging, runtime-owned credential cleanup, and packaged smoke gates pass on every shipping desktop platform. |
+
+This is an inference from the official release asset set: absence of macOS and
+Windows signature/attestation assets means the Plan 033 cross-platform signing
+gate is unresolved; it does not mean Apache-2.0 forbids redistribution.
+
+Reachable artifacts delivered despite the release block:
+
+- A closed app-server method enum: no arbitrary JSON-RPC passthrough.
+- Bounded JSONL frames, pending/incoming queues, request IDs, deadlines,
+  unknown-ID rejection, initialization/home checks, process-exit draining, and
+  redacted bounded stderr retention.
+- ChatGPT browser/device-code lifecycle projections, strict returned-URL
+  allow-listing, account/logout projection, model and rate-limit parsing.
+- Thread/turn/item notification mapping that drops reasoning/raw-response
+  surfaces, maps interruption/failure, and uses the Plan 032 normalizer for
+  final redaction.
+- Approval projections and exact allow/deny/cancel replies with workspace-root
+  checks. The provider is not registered while the release gate is blocked.
+- A dedicated, versioned, account-scoped Alfred runtime-home primitive with
+  private Unix permissions and no reference to a user/global Codex home.
+- Focused fake-frame tests for malformed/oversized/unknown-ID/timeout/exit/
+  cancel/protocol mismatch, queue overload, login denial/timeout/account
+  switch/logout, models/rate limits, prompt/tool/approval/workspace behavior,
+  cleanup, and redaction.
 
 ## Goal
 

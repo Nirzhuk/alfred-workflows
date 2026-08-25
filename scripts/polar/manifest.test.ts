@@ -13,19 +13,15 @@ function validManifest(): Record<string, unknown> {
     environment: "sandbox",
     organizationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
     benefits: {
-      individual: {
+      supporter: {
         id: "11111111-1111-4111-8111-111111111111",
-        label: "Alfred Sandbox License",
-      },
-      teams: {
-        id: "22222222-2222-4222-8222-222222222222",
-        label: "Alfred Sandbox Teams",
+        label: "Alfred Supporter",
       },
     },
     checkoutLinks: {
-      individual: {
+      supporter: {
         url: SANDBOX_CHECKOUT,
-        label: "Alfred Sandbox License Checkout",
+        label: "Alfred Supporter Checkout",
       },
     },
     customerPortal: {
@@ -36,21 +32,30 @@ function validManifest(): Record<string, unknown> {
 }
 
 describe("sandbox manifest", () => {
-  test("accepts the sandbox checkout shape Polar actually issues", () => {
-    // Polar has no `buy.` host in sandbox: a sandbox checkout link is the
-    // API's own redirect endpoint on sandbox-api.polar.sh.
+  test("accepts a complete single-supporter manifest", () => {
+    // The supporter model has exactly one benefit; a full-pass fixture carries
+    // it plus a collected sandbox checkout link.
     const manifest = parseSandboxManifest(validManifest());
 
     expect(manifest.environment).toBe("sandbox");
-    expect(manifest.benefits.individual.id).toBe(
+    expect(manifest.benefits.supporter.id).toBe(
       "11111111-1111-4111-8111-111111111111",
     );
-    expect(manifest.benefits.teams.id).toBe(
-      "22222222-2222-4222-8222-222222222222",
-    );
-    expect(manifest.checkoutLinks.individual.url).toBe(SANDBOX_CHECKOUT);
+    expect(manifest.checkoutLinks.supporter.url).toBe(SANDBOX_CHECKOUT);
     // A null portal is a valid recorded state, not a missing field.
     expect(manifest.customerPortal.url).toBeNull();
+  });
+
+  test("accepts a checkout link that has not been collected yet", () => {
+    // `url: null` records "not collected yet" so a half-filled manifest still
+    // parses; the verifier fails fast on it later, pre-network.
+    const uncollected = validManifest();
+    (
+      (uncollected.checkoutLinks as Record<string, unknown>)
+        .supporter as Record<string, unknown>
+    ).url = null;
+    const manifest = parseSandboxManifest(uncollected);
+    expect(manifest.checkoutLinks.supporter.url).toBeNull();
   });
 
   test("accepts the per-organization sandbox portal, never a global path", () => {
@@ -85,15 +90,19 @@ describe("sandbox manifest", () => {
     }
   });
 
-  test("still allows a portal that has not been collected yet", () => {
-    // null records "not collected", so the rest of the manifest stays usable.
-    expect(parseSandboxManifest(validManifest()).customerPortal.url).toBeNull();
-  });
-
   test("fails closed for unconfigured, production, secret-bearing, or duplicate values", () => {
     const unconfigured = validManifest();
     unconfigured.organizationId = null;
     expect(() => parseSandboxManifest(unconfigured)).toThrow(
+      SandboxManifestError,
+    );
+
+    const unboundBenefit = validManifest();
+    (
+      (unboundBenefit.benefits as Record<string, unknown>)
+        .supporter as Record<string, unknown>
+    ).id = null;
+    expect(() => parseSandboxManifest(unboundBenefit)).toThrow(
       SandboxManifestError,
     );
 
@@ -106,23 +115,27 @@ describe("sandbox manifest", () => {
     const secretBearingLink = validManifest();
     (
       (secretBearingLink.checkoutLinks as Record<string, unknown>)
-        .individual as Record<string, unknown>
+        .supporter as Record<string, unknown>
     ).url =
       "https://token@sandbox-api.polar.sh/v1/checkout-links/polar_cl_license/redirect";
     expect(() => parseSandboxManifest(secretBearingLink)).toThrow(
       SandboxManifestError,
     );
 
+    // With one benefit, the only possible identifier collision is against the
+    // organization itself.
     const duplicate = validManifest();
     (
-      (duplicate.benefits as Record<string, unknown>).teams as Record<
-        string,
-        unknown
-      >
-    ).id = "11111111-1111-4111-8111-111111111111";
-    expect(() => parseSandboxManifest(duplicate)).toThrow(
-      SandboxManifestError,
-    );
+      (duplicate.benefits as Record<string, unknown>)
+        .supporter as Record<string, unknown>
+    ).id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    let reason = "";
+    try {
+      parseSandboxManifest(duplicate);
+    } catch (error) {
+      reason = (error as SandboxManifestError).reason;
+    }
+    expect(reason).toContain("organizationId and the benefit ID must differ");
   });
 
   test("accepts only the sandbox link shape the desktop build may open", () => {
@@ -148,7 +161,7 @@ describe("sandbox manifest", () => {
       const manifest = validManifest();
       (
         (manifest.checkoutLinks as Record<string, unknown>)
-          .individual as Record<string, unknown>
+          .supporter as Record<string, unknown>
       ).url = url;
       expect(() => parseSandboxManifest(manifest)).toThrow(
         SandboxManifestError,
@@ -173,7 +186,7 @@ describe("sandbox manifest", () => {
       const manifest = validManifest();
       (
         (manifest.checkoutLinks as Record<string, unknown>)
-          .individual as Record<string, unknown>
+          .supporter as Record<string, unknown>
       ).url = url;
       expect(() => parseSandboxManifest(manifest)).toThrow(
         SandboxManifestError,
@@ -185,7 +198,7 @@ describe("sandbox manifest", () => {
     const manifest = validManifest();
     (
       (manifest.checkoutLinks as Record<string, unknown>)
-        .individual as Record<string, unknown>
+        .supporter as Record<string, unknown>
     ).url =
       "https://sandbox-api.polar.sh/v1/checkout-links/polar_cl_license/redirect?customer_session_token=super-secret";
 
@@ -195,7 +208,7 @@ describe("sandbox manifest", () => {
     } catch (error) {
       reason = (error as SandboxManifestError).reason;
     }
-    expect(reason).toContain("checkoutLinks.individual.url");
+    expect(reason).toContain("checkoutLinks.supporter.url");
     expect(reason).not.toContain("super-secret");
   });
 
@@ -203,59 +216,114 @@ describe("sandbox manifest", () => {
     const manifest = validManifest();
     (
       (manifest.checkoutLinks as Record<string, unknown>)
-        .individual as Record<string, unknown>
+        .supporter as Record<string, unknown>
     ).url = "https://example.com/checkout";
     expect(() => parseSandboxManifest(manifest)).toThrow(
       SandboxManifestError,
     );
   });
 
-  test("rejects the retired three-benefit shape", () => {
-    // Plan 007 Step 4: the manifest must refuse the old four-product
-    // configuration outright rather than parse the two classes it recognises
-    // and silently ignore the third.
-    const legacy = validManifest();
-    (legacy.benefits as Record<string, unknown>).companySeat = {
-      id: "33333333-3333-4333-8333-333333333333",
-      label: "Alfred Sandbox Company Seat",
-    };
+  test("rejects the retired individual and teams classes by name", () => {
+    // The owner collapsed to a single supporter product on 2026-08-25. A
+    // manifest still carrying either two-product class name is an error
+    // against the wrong plan and gets its own rejection reason, not a generic
+    // unknown-key error.
+    for (const retiredClass of ["individual", "teams"]) {
+      const retired = validManifest();
+      (retired.benefits as Record<string, unknown>)[retiredClass] = {
+        id: "33333333-3333-4333-8333-333333333333",
+        label: `Alfred Sandbox ${retiredClass}`,
+      };
 
-    let reason = "";
-    try {
-      parseSandboxManifest(legacy);
-    } catch (error) {
-      reason = (error as SandboxManifestError).reason;
+      let reason = "";
+      try {
+        parseSandboxManifest(retired);
+      } catch (error) {
+        reason = (error as SandboxManifestError).reason;
+      }
+      expect(reason).toContain(`benefits.${retiredClass}`);
+      expect(reason).toContain("retired");
+      expect(reason).toContain("exactly one benefit");
     }
-    expect(reason).toContain("benefits.companySeat");
-    expect(() => parseSandboxManifest(legacy)).toThrow(SandboxManifestError);
+
+    // The same applies to checkout links invented under the old naming.
+    const retiredCheckout = validManifest();
+    (retiredCheckout.checkoutLinks as Record<string, unknown>).individual = {
+      url: SANDBOX_CHECKOUT,
+      label: "Alfred Sandbox License Checkout",
+    };
+    expect(() => parseSandboxManifest(retiredCheckout)).toThrow(
+      SandboxManifestError,
+    );
   });
 
-  test("requires both benefit IDs, with no optional class left", () => {
-    // The Company seat benefit used to be allowed as `id: null`. Alfred Teams
-    // is a shipped product with its own key benefit, so an unbound ID is an
-    // incomplete configuration, not a complete one.
-    for (const kind of ["individual", "teams"]) {
+  test("rejects every legacy four-product class with a reason naming it", () => {
+    // The pre-two-product configuration is likewise refused outright rather
+    // than parsed-and-ignored. Each retired name gets its own clear rejection.
+    for (const legacyClass of [
+      "desktopAnnual",
+      "desktopLifetime",
+      "companySeat",
+    ]) {
+      const legacy = validManifest();
+      (legacy.benefits as Record<string, unknown>)[legacyClass] = {
+        id: "33333333-3333-4333-8333-333333333333",
+        label: `Alfred Sandbox ${legacyClass}`,
+      };
+
+      let reason = "";
+      try {
+        parseSandboxManifest(legacy);
+      } catch (error) {
+        reason = (error as SandboxManifestError).reason;
+      }
+      expect(reason).toContain(`benefits.${legacyClass}`);
+      expect(reason).toContain("retired");
+      expect(reason).toContain("exactly one benefit");
+    }
+  });
+
+  test("rejects an expiry that is structurally invalid", () => {
+    // Null (or absent) means "no expiration configured" and parses; anything
+    // recorded must be a positive integer ttl with one of Polar's timeframes.
+    // Whether a recorded value is allowed at all is the verifier's rule, not
+    // the parser's — any recorded expiry then fails verification.
+    const cases: Array<(benefit: Record<string, unknown>) => void> = [
+      (benefit) => {
+        benefit.expiry = { ttl: 0, timeframe: "year" };
+      },
+      (benefit) => {
+        benefit.expiry = { ttl: 1.5, timeframe: "year" };
+      },
+      (benefit) => {
+        benefit.expiry = { ttl: 1, timeframe: "decade" };
+      },
+      (benefit) => {
+        benefit.expiry = { ttl: 1, timeframe: "year", graceDays: 7 };
+      },
+    ];
+    for (const breakExpiry of cases) {
       const manifest = validManifest();
-      (
-        (manifest.benefits as Record<string, unknown>)[kind] as Record<
-          string,
-          unknown
-        >
-      ).id = null;
+      breakExpiry(
+        (manifest.benefits as Record<string, unknown>)
+          .supporter as Record<string, unknown>,
+      );
       expect(() => parseSandboxManifest(manifest)).toThrow(
         SandboxManifestError,
       );
     }
   });
 
-  test("rejects a Teams checkout link, which the app never opens", () => {
-    // Teams is sold on the marketing website. A recorded Teams link would look
-    // bound while nothing in the app could ever open it.
-    const manifest = validManifest();
-    (manifest.checkoutLinks as Record<string, unknown>).teams = {
-      url: SANDBOX_CHECKOUT,
-      label: "Alfred Sandbox Teams Checkout",
-    };
-    expect(() => parseSandboxManifest(manifest)).toThrow(SandboxManifestError);
+  test("accepts an expiry recorded as null, and an absent one, at parse time", () => {
+    // Null or absent means "no expiration configured", which is the required
+    // state under the perpetual-supporter model. Parsing accepts it; a
+    // RECORDED value is what fails verification, not the parser.
+    expect(() => parseSandboxManifest(validManifest())).not.toThrow();
+    const explicitNull = validManifest();
+    (
+      (explicitNull.benefits as Record<string, unknown>)
+        .supporter as Record<string, unknown>
+    ).expiry = null;
+    expect(() => parseSandboxManifest(explicitNull)).not.toThrow();
   });
 });

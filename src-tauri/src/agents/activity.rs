@@ -1,7 +1,8 @@
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
-const MAX_LABEL_CHARS: usize = 160;
-const MAX_DETAIL_BYTES: usize = 32 * 1024;
+const MAX_LABEL_CHARS: usize = 96;
+const ACTIVITY_ID_DIGEST_BYTES: usize = 12;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -33,189 +34,284 @@ pub struct AgentActivity {
 }
 
 impl AgentActivity {
+    /// Builds an activity from an adapter event.
+    ///
+    /// Adapter text is untrusted. The label is reduced to a closed set of
+    /// activity categories and detail is deliberately discarded. The legacy
+    /// arguments remain so adapters can migrate independently without exposing
+    /// provider payloads in run events.
     pub fn new(
         id: impl Into<String>,
         kind: AgentActivityKind,
         state: AgentActivityState,
         label: impl AsRef<str>,
-        detail: Option<&str>,
+        _detail: Option<&str>,
     ) -> Self {
+        let id = opaque_activity_id(&id.into());
+        let label = safe_label(&kind, &state, label.as_ref());
         Self {
-            id: id.into(),
+            id,
             kind,
             state,
-            label: normalize_label(label.as_ref()),
-            detail: detail
-                .map(redact_detail)
-                .filter(|value| !value.trim().is_empty()),
+            label,
+            detail: None,
+        }
+    }
+
+    /// Rebuilds adapter activity at the run-event boundary.
+    ///
+    /// This also protects against a deserialized or manually constructed value
+    /// that did not pass through `new`.
+    pub fn safe_for_emission(&self, label_suffix: &str) -> Self {
+        let label = safe_label(&self.kind, &self.state, &self.label);
+        let label = match safe_source_suffix(label_suffix) {
+            Some(suffix) => format!("{label} · {suffix}"),
+            None => label,
+        };
+        Self {
+            id: opaque_activity_id(&self.id),
+            kind: self.kind.clone(),
+            state: self.state.clone(),
+            label: bound_label(label),
+            detail: None,
         }
     }
 }
 
-fn normalize_label(value: &str) -> String {
-    value
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-        .chars()
-        .take(MAX_LABEL_CHARS)
-        .collect()
+fn opaque_activity_id(value: &str) -> String {
+    if is_opaque_activity_id(value) {
+        return value.to_owned();
+    }
+
+    let digest = Sha256::digest(value.as_bytes());
+    let suffix = digest
+        .iter()
+        .take(ACTIVITY_ID_DIGEST_BYTES)
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    format!("agent_activity_{suffix}")
 }
 
-fn redact_detail(value: &str) -> String {
-    if looks_like_environment_dump(value) {
-        return "Environment output hidden".to_string();
-    }
-    let mut redacted = value
-        .lines()
-        .map(redact_line)
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    while redacted.len() > MAX_DETAIL_BYTES {
-        redacted.pop();
-    }
-    redacted
-}
-
-fn looks_like_environment_dump(value: &str) -> bool {
-    let lines = value.lines().filter(|line| !line.trim().is_empty());
-    let mut total = 0_usize;
-    let mut assignments = 0_usize;
-    for line in lines.take(64) {
-        total += 1;
-        let Some((key, _)) = line.split_once('=') else {
-            continue;
-        };
-        let key = key.trim();
-        if key.len() >= 2
-            && key
-                .chars()
-                .all(|character| character.is_ascii_uppercase() || character == '_')
-        {
-            assignments += 1;
-        }
-    }
-    total >= 5 && assignments * 4 >= total * 3
-}
-
-fn redact_line(line: &str) -> String {
-    let mut value = redact_bearer_tokens(line);
-    let lowercase = value.to_ascii_lowercase();
-    const SECRET_KEYS: [&str; 8] = [
-        "api_key",
-        "api-key",
-        "apikey",
-        "access_token",
-        "auth_token",
-        "password",
-        "secret",
-        "token",
-    ];
-
-    for key in SECRET_KEYS {
-        let Some(key_at) = lowercase.find(key) else {
-            continue;
-        };
-        let suffix = &value[key_at + key.len()..];
-        let Some(separator_at) = suffix.find(['=', ':']) else {
-            continue;
-        };
-        let cutoff = key_at + key.len() + separator_at + 1;
-        value.truncate(cutoff);
-        value.push_str(" [REDACTED]");
-        break;
-    }
-    value
-}
-
-fn redact_bearer_tokens(value: &str) -> String {
-    let lowercase = value.to_ascii_lowercase();
-    let Some(start) = lowercase.find("bearer ") else {
-        return value.to_string();
+fn is_opaque_activity_id(value: &str) -> bool {
+    let Some(suffix) = value.strip_prefix("agent_activity_") else {
+        return false;
     };
-    let token_start = start + "bearer ".len();
-    let token_end = value[token_start..]
-        .find(char::is_whitespace)
-        .map(|offset| token_start + offset)
-        .unwrap_or(value.len());
-    format!("{}[REDACTED]{}", &value[..token_start], &value[token_end..])
+    suffix.len() == ACTIVITY_ID_DIGEST_BYTES * 2
+        && suffix.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+fn safe_label(
+    kind: &AgentActivityKind,
+    state: &AgentActivityState,
+    candidate: &str,
+) -> String {
+    let label = match (kind, state, candidate) {
+        (AgentActivityKind::Status, AgentActivityState::Started, "Thinking") => "Thinking",
+        (AgentActivityKind::Status, AgentActivityState::Started, "Working") => "Working",
+        (AgentActivityKind::Status, AgentActivityState::Completed, "Work completed") => {
+            "Work completed"
+        }
+        (AgentActivityKind::Status, AgentActivityState::Completed, "Codex session started") => {
+            "Codex session started"
+        }
+        (AgentActivityKind::Status, AgentActivityState::Completed, "Gemini session started") => {
+            "Gemini session started"
+        }
+        (AgentActivityKind::Status, AgentActivityState::Completed, "Claude Code session started") => {
+            "Claude Code session started"
+        }
+        (AgentActivityKind::Status, AgentActivityState::Completed, "Cursor session started") => {
+            "Cursor session started"
+        }
+        (AgentActivityKind::Status, AgentActivityState::Completed, "OpenCode session started") => {
+            "OpenCode session started"
+        }
+        (AgentActivityKind::Status, AgentActivityState::Started, _) => "Working",
+        (AgentActivityKind::Status, AgentActivityState::Completed, _) => "Status updated",
+        (AgentActivityKind::Assistant, _, _) => "Agent response",
+        (AgentActivityKind::Tool, AgentActivityState::Started, "Web search") => "Web search",
+        (AgentActivityKind::Tool, AgentActivityState::Started, _) => "Using tool",
+        (AgentActivityKind::Tool, AgentActivityState::Completed, _) => "Tool completed",
+        (AgentActivityKind::Command, AgentActivityState::Started, _) => "Running command",
+        (AgentActivityKind::Command, AgentActivityState::Completed, _) => "Command completed",
+        (AgentActivityKind::File, AgentActivityState::Started, _) => "Changing file",
+        (AgentActivityKind::File, AgentActivityState::Completed, _) => "File changed",
+        (AgentActivityKind::Error, _, _) => "Agent error",
+    };
+    bound_label(label)
+}
+
+fn safe_source_suffix(value: &str) -> Option<&'static str> {
+    match value {
+        "CLI" => Some("CLI"),
+        "Alfred" => Some("Alfred"),
+        _ => None,
+    }
+}
+
+fn bound_label(value: impl AsRef<str>) -> String {
+    value.as_ref().chars().take(MAX_LABEL_CHARS).collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn normalizes_and_caps_labels_by_unicode_scalar_value() {
-        let label = format!("  one\n two   {}", "é".repeat(200));
-        let activity = AgentActivity::new(
-            "test",
-            AgentActivityKind::Status,
-            AgentActivityState::Completed,
-            label,
-            None,
-        );
-
-        assert_eq!(activity.label.chars().count(), MAX_LABEL_CHARS);
-        assert!(activity.label.starts_with("one two "));
-        assert!(!activity.label.contains('\n'));
+    fn emitted_with(
+        kind: AgentActivityKind,
+        state: AgentActivityState,
+        label: &str,
+        detail: Option<&str>,
+    ) -> AgentActivity {
+        AgentActivity::new("provider-id", kind, state, label, detail).safe_for_emission("CLI")
     }
 
     #[test]
-    fn redacts_credentials_and_caps_details_on_a_character_boundary() {
-        let detail = format!(
-            "Authorization: Bearer top-secret\nAPI_KEY=also-secret\n{}",
-            "é".repeat(MAX_DETAIL_BYTES)
-        );
-        let activity = AgentActivity::new(
-            "test",
-            AgentActivityKind::Tool,
-            AgentActivityState::Completed,
-            "Tool",
-            Some(&detail),
-        );
-        let detail = activity.detail.expect("detail");
+    fn drops_all_unstructured_provider_detail() {
+        for detail in [
+            "arbitrary provider output",
+            "credential=plain-sensitive-value",
+            "Authorization: Bearer bearer-sensitive-value",
+            "Cookie: session=cookie-sensitive-value",
+            "API_KEY=key-sensitive-value",
+            "reasoning: private chain of thought",
+        ] {
+            let activity = emitted_with(
+                AgentActivityKind::Assistant,
+                AgentActivityState::Completed,
+                "Agent response",
+                Some(detail),
+            );
+            let serialized = serde_json::to_string(&activity).unwrap();
 
-        assert!(detail.len() <= MAX_DETAIL_BYTES);
-        assert!(detail.contains("Bearer [REDACTED]"));
-        assert!(detail.contains("API_KEY= [REDACTED]"));
-        assert!(!detail.contains("top-secret"));
-        assert!(!detail.contains("also-secret"));
+            assert_eq!(activity.detail, None);
+            assert!(!serialized.contains(detail));
+            assert!(!serialized.contains("plain-sensitive-value"));
+            assert!(!serialized.contains("bearer-sensitive-value"));
+            assert!(!serialized.contains("cookie-sensitive-value"));
+            assert!(!serialized.contains("key-sensitive-value"));
+            assert!(!serialized.contains("private chain of thought"));
+        }
     }
 
     #[test]
-    fn omits_empty_details() {
-        let activity = AgentActivity::new(
-            "test",
-            AgentActivityKind::Assistant,
-            AgentActivityState::Completed,
-            "Response",
-            Some("   "),
-        );
-        assert_eq!(activity.detail, None);
-    }
-
-    #[test]
-    fn replaces_environment_dumps_with_an_explicit_safe_summary() {
-        let detail = [
-            "PATH=/usr/bin",
-            "HOME=/Users/person",
-            "SHELL=/bin/zsh",
-            "API_KEY=private",
-            "DATABASE_URL=postgres://private",
-        ]
-        .join("\n");
-        let activity = AgentActivity::new(
-            "test",
+    fn drops_oversized_detail_instead_of_truncating_and_emitting_it() {
+        let detail = format!("credential=plain-sensitive-value{}", "x".repeat(100_000));
+        let activity = emitted_with(
             AgentActivityKind::Command,
             AgentActivityState::Completed,
             "Command",
             Some(&detail),
         );
-        assert_eq!(
-            activity.detail.as_deref(),
-            Some("Environment output hidden")
+        let serialized = serde_json::to_string(&activity).unwrap();
+
+        assert_eq!(activity.detail, None);
+        assert!(!serialized.contains("plain-sensitive-value"));
+        assert!(serialized.len() < 512);
+    }
+
+    #[test]
+    fn arbitrary_labels_reduce_to_bounded_activity_categories() {
+        let unsafe_label = format!(
+            "reasoning credential=plain-sensitive-value Bearer bearer-value Cookie=cookie-value {}",
+            "x".repeat(100_000)
         );
+        let cases = [
+            (
+                AgentActivityKind::Status,
+                AgentActivityState::Started,
+                "Working · CLI",
+            ),
+            (
+                AgentActivityKind::Tool,
+                AgentActivityState::Started,
+                "Using tool · CLI",
+            ),
+            (
+                AgentActivityKind::File,
+                AgentActivityState::Completed,
+                "File changed · CLI",
+            ),
+            (
+                AgentActivityKind::Command,
+                AgentActivityState::Completed,
+                "Command completed · CLI",
+            ),
+            (
+                AgentActivityKind::Error,
+                AgentActivityState::Completed,
+                "Agent error · CLI",
+            ),
+        ];
+
+        for (kind, state, expected) in cases {
+            let activity = emitted_with(kind, state, &unsafe_label, None);
+            assert_eq!(activity.label, expected);
+            assert!(activity.label.chars().count() <= MAX_LABEL_CHARS);
+            assert!(!activity.label.contains("plain-sensitive-value"));
+            assert!(!activity.label.contains("bearer-value"));
+            assert!(!activity.label.contains("cookie-value"));
+        }
+    }
+
+    #[test]
+    fn keeps_known_safe_status_and_tool_labels_useful() {
+        let cases = [
+            (
+                AgentActivityKind::Status,
+                AgentActivityState::Started,
+                "Thinking",
+                "Thinking · Alfred",
+            ),
+            (
+                AgentActivityKind::Status,
+                AgentActivityState::Completed,
+                "Work completed",
+                "Work completed · Alfred",
+            ),
+            (
+                AgentActivityKind::Tool,
+                AgentActivityState::Started,
+                "Web search",
+                "Web search · Alfred",
+            ),
+        ];
+
+        for (kind, state, label, expected) in cases {
+            let activity =
+                AgentActivity::new("id", kind, state, label, None).safe_for_emission("Alfred");
+            assert_eq!(activity.label, expected);
+            assert!(activity.label.chars().count() <= MAX_LABEL_CHARS);
+        }
+    }
+
+    #[test]
+    fn forged_activity_is_closed_again_at_emission() {
+        let unsafe_activity = AgentActivity {
+            id: "credential=plain-sensitive-value".into(),
+            kind: AgentActivityKind::Tool,
+            state: AgentActivityState::Completed,
+            label: "Bearer bearer-sensitive-value".into(),
+            detail: Some("reasoning and Cookie=cookie-sensitive-value".into()),
+        };
+        let safe = unsafe_activity.safe_for_emission("credential=suffix-sensitive-value");
+        let serialized = serde_json::to_string(&safe).unwrap();
+
+        assert_eq!(safe.label, "Tool completed");
+        assert_eq!(safe.detail, None);
+        assert!(safe.id.starts_with("agent_activity_"));
+        assert_eq!(
+            safe.id.len(),
+            "agent_activity_".len() + ACTIVITY_ID_DIGEST_BYTES * 2
+        );
+        for secret in [
+            "plain-sensitive-value",
+            "bearer-sensitive-value",
+            "cookie-sensitive-value",
+            "suffix-sensitive-value",
+            "reasoning",
+        ] {
+            assert!(!serialized.contains(secret));
+        }
     }
 }

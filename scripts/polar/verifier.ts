@@ -26,37 +26,39 @@ export type VerificationResult = {
   readonly caseNames: readonly string[];
 };
 
-const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
- * Under the two-product model EVERY Alfred key carries a one-year expiry: the
- * update window is enforced by comparing the build's `ALFRED_RELEASE_DATE`
- * against this deadline (Plan 007). A key issued with no expiry, or with one
- * dated years out, means the Polar product is misconfigured — the opposite of
- * the retired rule, which required the lifetime key to have no expiry at all.
- *
- * The lower bound is only "still in the future". A test key issued months ago
- * legitimately expires in less than a year, and the license read carries no
- * issue date to measure the window from, so an exact one-year assertion would
- * fail correct configurations. A week of slack above one year absorbs clock
- * skew and Polar's own rounding.
+ * Supporter licences are PERPETUAL (model settled 2026-08, superseding the
+ * one-year rule of Plan 007): the benefit is configured WITHOUT a
+ * license-key expiration, and the manifest records none. A recorded ttl or
+ * timeframe means the Polar product is misconfigured against that model.
+ * Reasons name the offending field so the operator knows exactly which
+ * dashboard setting to remove.
  */
-export function isOneYearExpiry(
-  expiresAt: string | null,
-  now: Date = new Date(),
-): boolean {
-  if (expiresAt === null) return false;
-  const deadline = Date.parse(expiresAt);
-  if (Number.isNaN(deadline)) return false;
-  const latest = new Date(now);
-  latest.setUTCFullYear(latest.getUTCFullYear() + 1);
-  return deadline > now.getTime() && deadline <= latest.getTime() + ONE_WEEK_MS;
+export function expiryConfigMismatches(manifest: SandboxManifest): string[] {
+  const problems: string[] = [];
+  for (const kind of BENEFIT_CLASSES) {
+    const { ttl, timeframe } = manifest.benefits[kind].expiry;
+    // A recorded ttl below 1 cannot reach here: parsing already rejected it.
+    if (ttl !== null) {
+      problems.push(
+        `benefits.${kind}.expiry.ttl is ${ttl} — supporter licences are perpetual; remove the license-key expiration from this benefit in Polar`,
+      );
+    }
+    if (timeframe !== null) {
+      problems.push(
+        `benefits.${kind}.expiry.timeframe is "${timeframe}" — supporter licences are perpetual; remove the license-key expiration from this benefit in Polar`,
+      );
+    }
+  }
+  return problems;
 }
 
 /**
  * Names every mismatched field rather than collapsing five distinct checks
- * into one opaque failure. An operator seeing `FAIL individual.activate-1`
- * with no detail cannot tell a wrong benefit ID from a missing expiry.
+ * into one opaque failure. An operator seeing `FAIL supporter.activate-1`
+ * with no detail cannot tell a wrong benefit ID from an expiry Polar should
+ * not have issued at all.
  *
  * Only non-secret configuration is reported: organization and benefit IDs are
  * public by design, and status/limit/expiry are product configuration. The
@@ -64,7 +66,6 @@ export function isOneYearExpiry(
  */
 export function licenseMismatches(
   manifest: SandboxManifest,
-  kind: BenefitClass,
   license: ActivationRead["license_key"],
 ): string[] {
   const problems: string[] = [];
@@ -75,9 +76,9 @@ export function licenseMismatches(
     );
   }
   const benefit = license.benefit_id.toLowerCase();
-  if (benefit !== manifest.benefits[kind].id) {
+  if (benefit !== manifest.benefits.supporter.id) {
     problems.push(
-      `benefit_id is ${benefit}, manifest expects ${manifest.benefits[kind].id} for benefits.${kind}.id`,
+      `benefit_id is ${benefit}, manifest expects ${manifest.benefits.supporter.id} for benefits.supporter.id`,
     );
   }
   if (license.status !== "granted") {
@@ -88,11 +89,9 @@ export function licenseMismatches(
       `limit_activations is ${String(license.limit_activations)}, expected 3 — set the benefit's activation limit to 3 in Polar`,
     );
   }
-  if (!isOneYearExpiry(license.expires_at)) {
+  if (license.expires_at !== null) {
     problems.push(
-      license.expires_at === null
-        ? "expires_at is null — every key must carry a one-year expiry; set the benefit's expiration to 1 year in Polar"
-        : `expires_at is ${license.expires_at}, which is not within one year from now`,
+      `expires_at is ${license.expires_at} — supporter licences are perpetual; remove the benefit's license-key expiration in Polar`,
     );
   }
   return problems;
@@ -100,10 +99,9 @@ export function licenseMismatches(
 
 function assertLicense(
   manifest: SandboxManifest,
-  kind: BenefitClass,
   license: ActivationRead["license_key"],
 ): void {
-  const problems = licenseMismatches(manifest, kind, license);
+  const problems = licenseMismatches(manifest, license);
   if (problems.length > 0) throw new PolarPublicEndpointError(problems);
 }
 
@@ -118,7 +116,6 @@ async function verifyClass(
   const key = keys[kind];
   const active = new Set<string>();
   let passed = true;
-
   const stage = async <T>(caseName: string, action: () => Promise<T>) => {
     caseNames.push(caseName);
     try {
@@ -149,14 +146,14 @@ async function verifyClass(
         );
         active.add(value.id);
         if (value.label !== expectedLabel) throw new PolarPublicEndpointError();
-        assertLicense(manifest, kind, value.license_key);
+        assertLicense(manifest, value.license_key);
         return value;
       });
       activations.push(activation);
 
       await stage(`${kind}.validate-${index}`, async () => {
         const license = await client.validate(key, activation.id);
-        assertLicense(manifest, kind, license);
+        assertLicense(manifest, license);
       });
     }
 
@@ -183,9 +180,9 @@ async function verifyClass(
       if (replacement.label !== expectedLabel) {
         throw new PolarPublicEndpointError();
       }
-      assertLicense(manifest, kind, replacement.license_key);
+      assertLicense(manifest, replacement.license_key);
       const license = await client.validate(key, replacement.id);
-      assertLicense(manifest, kind, license);
+      assertLicense(manifest, license);
     });
   } catch {
     passed = false;
@@ -223,6 +220,28 @@ export async function verifyPolarSandbox(options: {
     options.fetcher,
   );
   const caseNames: string[] = [];
+  // No live key can compensate for a misconfigured benefit, so a recorded
+  // expiration on it fails before any network call is made.
+  const configProblems = expiryConfigMismatches(options.manifest);
+  if (configProblems.length > 0) {
+    const caseName = "manifest.expiry";
+    caseNames.push(caseName);
+    options.report(false, caseName, configProblems);
+    return { passed: false, caseNames };
+  }
+  // Same fail-closed principle for a checkout link that has not been created
+  // in the Polar dashboard yet: nothing downstream could succeed, so name the
+  // missing field instead of half-running against live endpoints.
+  for (const kind of BENEFIT_CLASSES) {
+    if (options.manifest.checkoutLinks[kind].url === null) {
+      const caseName = `manifest.checkout.${kind}`;
+      caseNames.push(caseName);
+      options.report(false, caseName, [
+        "collect the checkout link from the Polar dashboard",
+      ]);
+      return { passed: false, caseNames };
+    }
+  }
   let passed = true;
 
   for (const kind of BENEFIT_CLASSES) {

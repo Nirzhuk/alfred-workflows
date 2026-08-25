@@ -488,7 +488,6 @@ impl LicenseService {
         now: DateTime<Utc>,
     ) -> Result<LicenseStatusDto, LicenseCommandError> {
         let mut dto = LicenseStatusDto::from_stored(&snapshot).map_err(|_| local_state_error())?;
-        dto.error_code = Some(error.code().into());
         let prior_state = dto.state;
         dto.state = if error.is_transient() {
             state_after_transient_failure(
@@ -498,7 +497,25 @@ impl LicenseService {
             )
         } else {
             match error {
-                PolarClientError::InvalidLicense => LicenseStatus::Revoked,
+                PolarClientError::InvalidLicense => {
+                    // Polar answers 404 for an unknown key, a revoked or
+                    // disabled key, AND an expired one — the wire differs only
+                    // in English `detail` prose with no contract, so it must
+                    // not decide entitlement (POLAR-CAPABILITY-FINDINGS §5).
+                    // Option A: arbitrate against the deadline Polar gave us
+                    // on every earlier successful validation, which the app
+                    // persists as the snapshot's update deadline. Past it, a
+                    // 404 is a lapsed window (`Expired`: entitled); with no
+                    // stored deadline or one still in the future, the key was
+                    // really withdrawn and stays a revocation.
+                    if parse_time(dto.update_deadline.as_deref())
+                        .is_some_and(|deadline| now >= deadline)
+                    {
+                        LicenseStatus::Expired
+                    } else {
+                        LicenseStatus::Revoked
+                    }
+                }
                 PolarClientError::DeviceLimit => LicenseStatus::DeviceLimit,
                 PolarClientError::ResponseTooLarge | PolarClientError::InvalidResponse => {
                     LicenseStatus::NeedsOnline
@@ -506,6 +523,11 @@ impl LicenseService {
                 _ => prior_state,
             }
         };
+        dto.error_code = Some(match dto.state {
+            // A closed window is not an error; report the stable fact instead.
+            LicenseStatus::Expired => UPDATE_WINDOW_CLOSED.into(),
+            _ => error.code().into(),
+        });
         db.put_license_snapshot(
             &dto.clone()
                 .into_stored(snapshot.credential_ref.clone(), now),
@@ -621,6 +643,12 @@ fn failure_status(masked_key: String, state: LicenseStatus, code: &str) -> Licen
 /// included update window, never the end of the license. A key past it is
 /// `Expired`: still entitled, window closed. `Revoked` and `Disabled` are the
 /// two answers that do end entitlement, so they are read first.
+/// The online confirmation path can no longer reach `Expired` through this
+/// function: Polar answers 404 once a key lapses and never serializes a 200
+/// body past its own deadline. The live path gets there via 404 arbitration
+/// against the persisted deadline in `persist_validation_error`; this branch
+/// still serves directly constructed results and the offline cache aging
+/// past the deadline (`evaluate_cached_state`).
 fn confirmed_state(result: &PolarLicenseResult, now: DateTime<Utc>) -> LicenseStatus {
     match result.status {
         PolarLicenseState::Revoked => LicenseStatus::Revoked,

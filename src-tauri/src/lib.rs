@@ -1,4 +1,5 @@
 mod agents;
+mod agent_accounts;
 mod commands;
 mod db;
 // Provider-neutral seams are intentionally consumed by follow-on connector plans.
@@ -17,7 +18,12 @@ mod skills;
 mod tray;
 mod triggers;
 
+use agent_accounts::{AgentAccountResolver, AgentAccountsState};
+use agents::native::{
+    DenyAllApprovalHandler, DenyAllToolExecutor, NativeExecutionRouter, NativeRuntimeRegistry,
+};
 use db::Db;
+use std::sync::Arc;
 use integrations::IntegrationsState;
 use licensing::LicensingState;
 use std::sync::Mutex;
@@ -99,11 +105,30 @@ fn sync_macos_traffic_lights(window: tauri::Window) {
 pub fn run() {
     let database = Db::open().expect("failed to open sqlite database");
 
+    // Native-agent accounts and runtimes. The registry stays empty until a
+    // provider plan registers one; until then Alfred-harness steps surface
+    // `native_runtime_unavailable` and never fall back to a CLI adapter.
+    let agent_accounts = AgentAccountsState::default();
+    let native_registry = Arc::new(NativeRuntimeRegistry::default());
+    // The resolver needs its own handle because the managed `Db` is owned by
+    // Tauri state; SQLite is safe to open twice against the same file.
+    let resolver_db = Arc::new(Db::open().expect("failed to open sqlite database"));
+    let native_router = NativeExecutionRouter::new(
+        Arc::clone(&native_registry),
+        Arc::new(AgentAccountResolver::new(resolver_db, &agent_accounts)),
+        // Deny-by-default: no Alfred tool executor or approver ships yet.
+        Arc::new(DenyAllToolExecutor),
+        Arc::new(DenyAllApprovalHandler),
+    );
+
     let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(database)
+        .manage(agent_accounts)
+        .manage(native_registry)
+        .manage(native_router)
         .manage(IntegrationsState::default())
         .manage(LicensingState::default())
         .manage(notifications::NotificationPreferences::default())
@@ -150,6 +175,17 @@ pub fn run() {
 
     builder
         .setup(|app| {
+            let resource_root = app.path().resource_dir().ok();
+            let capability_manifest = agents::capability_manifest::manifest_for_resource_root(
+                agents::capability_manifest::current_platform(),
+                agents::capability_manifest::current_build_kind(),
+                resource_root.as_deref(),
+            );
+            if !capability_manifest.is_valid() {
+                return Err("agent capability manifest is invalid".into());
+            }
+            app.manage(capability_manifest);
+
             #[cfg(target_os = "macos")]
             {
                 notifications::prepare_notification_identity(app.handle());
@@ -299,6 +335,14 @@ pub fn run() {
             commands::refresh_license,
             commands::deactivate_license,
             commands::get_license_status,
+            commands::agent_accounts::list_agent_account_providers,
+            commands::agent_accounts::list_agent_accounts,
+            commands::agent_accounts::get_agent_account,
+            commands::agent_accounts::start_agent_authorization,
+            commands::agent_accounts::complete_agent_authorization,
+            commands::agent_accounts::cancel_agent_authorization,
+            commands::agent_accounts::refresh_agent_account,
+            commands::agent_accounts::disconnect_agent_account,
             commands::integrations::list_app_providers,
             commands::integrations::list_app_action_descriptors,
             commands::integrations::list_app_action_resources,
@@ -345,6 +389,8 @@ pub fn run() {
             commands::reorder_workflow_folders,
             commands::move_workflow_to_folder,
             commands::list_agent_providers,
+            commands::get_agent_capability_manifest,
+            commands::get_agent_harness_diagnostics,
             commands::list_agent_models,
             commands::get_agent_usage,
             commands::list_skills,

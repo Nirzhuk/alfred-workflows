@@ -20,7 +20,7 @@
 - **Depends on**: none
 - **Category**: agent architecture / compatibility
 - **Planned at**: 2026-08-24
-- **Implementation**: TODO
+- **Implementation**: DONE
 
 ## Goal
 
@@ -213,10 +213,10 @@ pass.
 
 ## Done criteria
 
-- [ ] `cli` and `alfred` are explicit first-class harness values.
-- [ ] Existing graphs without `harness` still use the current CLI path.
-- [ ] No CLI adapter was renamed, removed, or hidden.
-- [ ] Native-unavailable errors are explicit and never fall through to CLI.
-- [ ] Workflow JSON and run events contain no credentials.
-- [ ] Focused and full verification gates pass.
-- [ ] `plans/README.md` reflects the actual status.
+- [x] `cli` and `alfred` are explicit first-class harness values.
+- [x] Existing graphs without `harness` still use the current CLI path.
+- [x] No CLI adapter was renamed, removed, or hidden.
+- [x] Native-unavailable errors are explicit and never fall through to CLI.
+- [x] Workflow JSON and run events contain no credentials.
+- [x] Focused and full verification gates pass.
+- [x] `plans/README.md` reflects the actual status.

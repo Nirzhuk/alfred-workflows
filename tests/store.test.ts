@@ -1,7 +1,13 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { useToastStore } from "../src/components/toast/toast-store";
-import { useWorkflowStore } from "../src/features/workflow/store";
-import type { WorkflowNode } from "../src/features/workflow/types";
+import {
+  normalizeNodes,
+  useWorkflowStore,
+} from "../src/features/workflow/store";
+import {
+  defaultAgentNodeData,
+  type WorkflowNode,
+} from "../src/features/workflow/types";
 import type {
   AgentActivity,
   RunEvent,
@@ -31,6 +37,117 @@ function inputNode(blocked: boolean): WorkflowNode {
     },
   };
 }
+
+describe("agent harness graph migration", () => {
+  test("new agent nodes emit an explicit CLI harness", () => {
+    expect(defaultAgentNodeData("omp", "default")).toEqual({
+      label: "Agent",
+      provider: "omp",
+      harness: "cli",
+      model: "default",
+      skillNames: [],
+    });
+  });
+
+  test("defaults old agent nodes to CLI and removes credential-shaped fields", () => {
+    const [node] = normalizeNodes([
+      {
+        id: "agent-old",
+        type: "agent",
+        position: { x: 0, y: 0 },
+        data: {
+          label: "Agent",
+          provider: "pi",
+          model: "default",
+          accessToken: "must-not-persist",
+          refreshToken: "must-not-persist",
+          apiKey: "must-not-persist",
+          credentials: { secret: "must-not-persist" },
+        } as never,
+      },
+    ]);
+
+    expect(node.data).toMatchObject({ provider: "pi", harness: "cli" });
+    const serialized = JSON.stringify(node);
+    expect(serialized).not.toContain("must-not-persist");
+    expect(serialized).not.toContain("accessToken");
+    expect(serialized).not.toContain("refreshToken");
+    expect(serialized).not.toContain("apiKey");
+  });
+
+  test("old, imported, duplicated, and template graphs all stay on CLI", () => {
+    for (const source of ["old", "imported", "duplicated", "template"]) {
+      const [node] = normalizeNodes([
+        {
+          id: `agent-${source}`,
+          type: "agent",
+          position: { x: 0, y: 0 },
+          data: {
+            label: `${source} agent`,
+            provider: "codex",
+            model: "gpt-5.6-luna",
+          },
+        },
+      ]);
+      expect(node.data).toMatchObject({
+        provider: "codex",
+        harness: "cli",
+      });
+    }
+  });
+
+  test("preserves an explicit native selection without rewriting it to CLI", () => {
+    const [node] = normalizeNodes([
+      {
+        id: "agent-native",
+        type: "agent",
+        position: { x: 0, y: 0 },
+        data: {
+          label: "Native selection",
+          provider: "codex",
+          harness: "alfred",
+          accountRef: "account_opaque",
+        },
+      },
+    ]);
+    expect(node.data).toMatchObject({
+      provider: "codex",
+      harness: "alfred",
+      accountRef: "account_opaque",
+    });
+  });
+
+  test("rejects unknown persisted harness values with a stable error", () => {
+    expect(() =>
+      normalizeNodes([
+        {
+          id: "agent-invalid",
+          type: "agent",
+          position: { x: 0, y: 0 },
+          data: {
+            label: "Agent",
+            provider: "codex",
+            harness: "vendor-native",
+          } as never,
+        },
+      ]),
+    ).toThrow("invalid_agent_harness");
+    expect(() =>
+      normalizeNodes([
+        {
+          id: "agent-null",
+          type: "agent",
+          position: { x: 0, y: 0 },
+          data: {
+            label: "Agent",
+            provider: "codex",
+            harness: null,
+          } as never,
+        },
+      ]),
+    ).toThrow("invalid_agent_harness");
+  });
+});
 
 describe("blocked Input nodes", () => {
   beforeEach(() => {

@@ -13,7 +13,7 @@
 //! - OMP: `omp models --json`
 
 use super::pi;
-use super::AgentProvider;
+use super::{valid_model_id, AgentError, AgentHarness, AgentProvider, NATIVE_RUNTIME_UNAVAILABLE};
 use directories::BaseDirs;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -43,16 +43,70 @@ pub struct ModelOption {
 #[serde(rename_all = "camelCase")]
 pub struct ProviderModels {
     pub provider: String,
+    #[serde(flatten)]
+    pub capabilities: HarnessModelCapabilities,
     pub default_model: String,
     pub models: Vec<ModelOption>,
     /// Allow typing a custom model id (useful for OpenCode provider/model).
     pub allow_custom: bool,
-    /// `discovered` when loaded from the agent; `fallback` when CLI/cache missing.
+    /// `discovered`, `fallback`, or `unavailable` for an unregistered native runtime.
     pub source: String,
     /// Whether the agent binary/cache was found.
     pub available: bool,
     #[serde(default)]
     pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HarnessModelCapabilities {
+    pub harness: AgentHarness,
+    pub requires_account: bool,
+    pub supports_o_auth: bool,
+    pub supports_api_key: bool,
+    pub supports_usage: bool,
+    pub account_connected: bool,
+    pub native_runtime_available: bool,
+}
+
+fn cli_capabilities() -> HarnessModelCapabilities {
+    HarnessModelCapabilities {
+        harness: AgentHarness::Cli,
+        requires_account: false,
+        supports_o_auth: false,
+        supports_api_key: false,
+        supports_usage: false,
+        account_connected: false,
+        native_runtime_available: false,
+    }
+}
+
+fn unavailable_native_capabilities(
+    provider: AgentProvider,
+    manifest: &super::capability_manifest::AgentCapabilityManifest,
+) -> HarnessModelCapabilities {
+    let entry = manifest.entry(provider, AgentHarness::Alfred);
+    HarnessModelCapabilities {
+        harness: AgentHarness::Alfred,
+        requires_account: true,
+        supports_o_auth: entry.is_some_and(|entry| {
+            entry
+                .auth_methods
+                .iter()
+                .any(|method| method.contains("oauth") || method.contains("device_code"))
+        }),
+        supports_api_key: entry.is_some_and(|entry| {
+            entry
+                .auth_methods
+                .iter()
+                .any(|method| method.contains("api_key") || method.contains("secret"))
+        }),
+        supports_usage: entry.is_some_and(|entry| entry.usage_source != "unavailable"),
+        account_connected: false,
+        native_runtime_available: entry.is_some_and(|entry| {
+            entry.permits_execution(manifest.platform, manifest.build_kind)
+        }),
+    }
 }
 
 fn opt(
@@ -281,6 +335,7 @@ pub fn fallback_models(provider: AgentProvider) -> ProviderModels {
 
     ProviderModels {
         provider: provider.as_str().into(),
+        capabilities: cli_capabilities(),
         default_model: default_model(provider).into(),
         models,
         allow_custom: true,
@@ -308,8 +363,109 @@ pub fn discover_all() -> Vec<ProviderModels> {
     .collect()
 }
 
-pub fn list_all_provider_models() -> Vec<ProviderModels> {
-    discover_all()
+pub fn list_provider_models(harness: Option<AgentHarness>) -> Vec<ProviderModels> {
+    let manifest = super::capability_manifest::manifest();
+    list_provider_models_with_manifest(harness, &manifest)
+}
+
+pub fn list_provider_models_with_manifest(
+    harness: Option<AgentHarness>,
+    manifest: &super::capability_manifest::AgentCapabilityManifest,
+) -> Vec<ProviderModels> {
+    match harness.unwrap_or_default() {
+        AgentHarness::Cli => discover_all(),
+        AgentHarness::Alfred => native_unavailable_models(manifest),
+    }
+}
+
+/// Resolve and validate the model for one execution target. CLI keeps its
+/// historical default; Alfred never borrows that default and may execute with
+/// no model only so the native runtime can report its honest availability.
+pub fn resolve_model_for_execution(
+    provider: AgentProvider,
+    harness: AgentHarness,
+    requested: Option<&str>,
+) -> Result<Option<String>, AgentError> {
+    let requested = requested.map(str::trim).filter(|value| !value.is_empty());
+    let candidate = match (harness, requested) {
+        (AgentHarness::Cli, Some(model)) => Some(model),
+        (AgentHarness::Cli, None) => Some(default_model(provider)),
+        (AgentHarness::Alfred, Some(model)) => Some(model),
+        (AgentHarness::Alfred, None) => return Ok(None),
+    };
+    let candidate = candidate.expect("model candidate is present");
+    if !valid_model_id(candidate) {
+        return Err(AgentError::InvalidModel);
+    }
+    let catalog = match harness {
+        AgentHarness::Cli => discover_for(provider),
+        AgentHarness::Alfred => native_unavailable_model(provider),
+    };
+    validate_model_in_catalog(&catalog, candidate)?;
+    Ok(Some(candidate.to_owned()))
+}
+
+fn validate_model_in_catalog(catalog: &ProviderModels, model: &str) -> Result<(), AgentError> {
+    let listed = catalog.models.iter().any(|option| {
+        option.id == model
+            || option.base_id.as_deref() == Some(model)
+            || option.fast_variant_id.as_deref() == Some(model)
+    });
+    if listed || catalog.allow_custom {
+        Ok(())
+    } else {
+        Err(AgentError::InvalidModel)
+    }
+}
+
+fn native_unavailable_models(
+    manifest: &super::capability_manifest::AgentCapabilityManifest,
+) -> Vec<ProviderModels> {
+    [
+        AgentProvider::ClaudeCode,
+        AgentProvider::Cursor,
+        AgentProvider::Codex,
+        AgentProvider::Opencode,
+        AgentProvider::GithubCopilot,
+        AgentProvider::Gemini,
+        AgentProvider::Grok,
+        AgentProvider::Pi,
+        AgentProvider::Omp,
+    ]
+    .into_iter()
+    .map(|provider| native_unavailable_model_from_manifest(provider, manifest))
+    .collect()
+}
+
+fn native_unavailable_model(provider: AgentProvider) -> ProviderModels {
+    let manifest = super::capability_manifest::manifest();
+    native_unavailable_model_from_manifest(provider, &manifest)
+}
+
+fn native_unavailable_model_from_manifest(
+    provider: AgentProvider,
+    manifest: &super::capability_manifest::AgentCapabilityManifest,
+) -> ProviderModels {
+    let entry = manifest.entry(provider, AgentHarness::Alfred);
+    let available = entry.is_some_and(|entry| {
+        entry.permits_execution(manifest.platform, manifest.build_kind)
+    });
+    ProviderModels {
+        provider: provider.as_str().into(),
+        capabilities: unavailable_native_capabilities(provider, manifest),
+        default_model: String::new(),
+        models: vec![],
+        allow_custom: false,
+        source: entry
+            .map(|entry| entry.status.as_str().to_owned())
+            .unwrap_or_else(|| "disabled".into()),
+        available,
+        error: (!available).then(|| {
+            entry
+                .and_then(|entry| entry.block_reason.clone())
+                .unwrap_or_else(|| NATIVE_RUNTIME_UNAVAILABLE.into())
+        }),
+    }
 }
 
 fn discover_for(provider: AgentProvider) -> ProviderModels {
@@ -360,6 +516,7 @@ fn discover_static_cli(provider: AgentProvider, command: &str) -> Result<Provide
     let fallback = fallback_models(provider);
     Ok(ProviderModels {
         provider: String::new(),
+        capabilities: cli_capabilities(),
         default_model: fallback.default_model,
         models: fallback.models,
         allow_custom: true,
@@ -380,6 +537,7 @@ fn discover_claude() -> Result<ProviderModels, String> {
 
     Ok(ProviderModels {
         provider: String::new(),
+        capabilities: cli_capabilities(),
         default_model: fallback.default_model,
         models: fallback.models,
         allow_custom: true,
@@ -421,6 +579,7 @@ fn discover_opencode() -> Result<ProviderModels, String> {
 
     Ok(ProviderModels {
         provider: String::new(),
+        capabilities: cli_capabilities(),
         default_model: default,
         models,
         allow_custom: true,
@@ -523,6 +682,7 @@ fn pi_family_catalog(discovered: Vec<ModelOption>) -> ProviderModels {
 
     ProviderModels {
         provider: String::new(),
+        capabilities: cli_capabilities(),
         default_model: pi::CLI_DEFAULT_MODEL.into(),
         models,
         allow_custom: true,
@@ -594,6 +754,7 @@ fn discover_codex() -> Result<ProviderModels, String> {
 
     Ok(ProviderModels {
         provider: String::new(),
+        capabilities: cli_capabilities(),
         default_model: default,
         models,
         allow_custom: true,
@@ -1012,6 +1173,7 @@ fn discover_cursor_from_ide_state() -> Result<ProviderModels, String> {
 
     Ok(ProviderModels {
         provider: String::new(),
+        capabilities: cli_capabilities(),
         default_model: default,
         models,
         allow_custom: true,
@@ -1030,6 +1192,7 @@ fn cursor_catalog_from_models(models: Vec<ModelOption>, _source: &str) -> Provid
 
     ProviderModels {
         provider: String::new(),
+        capabilities: cli_capabilities(),
         default_model: default,
         models,
         allow_custom: true,
@@ -1141,6 +1304,70 @@ fn find_bin(name: &str) -> Option<PathBuf> {
 #[cfg(test)]
 mod pi_family_tests {
     use super::*;
+
+    #[test]
+    fn omitted_harness_returns_one_cli_catalog_per_provider() {
+        let catalogs = list_provider_models(None);
+        assert_eq!(catalogs.len(), 9);
+        assert!(catalogs
+            .iter()
+            .all(|catalog| catalog.capabilities.harness == AgentHarness::Cli));
+        let providers = catalogs
+            .iter()
+            .map(|catalog| catalog.provider.as_str())
+            .collect::<std::collections::HashSet<_>>();
+        assert_eq!(providers.len(), catalogs.len());
+    }
+
+    #[test]
+    fn model_validation_is_harness_scoped_and_alfred_has_no_cli_default() {
+        assert_eq!(
+            resolve_model_for_execution(AgentProvider::Codex, AgentHarness::Alfred, None)
+                .unwrap(),
+            None
+        );
+        assert!(matches!(
+            resolve_model_for_execution(
+                AgentProvider::Codex,
+                AgentHarness::Alfred,
+                Some("gpt-5.6-luna")
+            ),
+            Err(AgentError::InvalidModel)
+        ));
+
+        let mut strict = fallback_models(AgentProvider::Codex);
+        strict.allow_custom = false;
+        assert!(validate_model_in_catalog(&strict, "gpt-5.6-luna").is_ok());
+        assert!(matches!(
+            validate_model_in_catalog(&strict, "sonnet"),
+            Err(AgentError::InvalidModel)
+        ));
+    }
+
+    #[test]
+    fn native_catalogs_are_explicit_unavailable_and_secret_free() {
+        let manifest = crate::agents::capability_manifest::manifest();
+        let catalogs = native_unavailable_models(&manifest);
+        assert_eq!(catalogs.len(), 9);
+        assert!(catalogs.iter().all(|catalog| {
+            let provider = AgentProvider::from_str(&catalog.provider).expect("known provider");
+            let expected_error = manifest
+                .entry(provider, AgentHarness::Alfred)
+                .and_then(|entry| entry.block_reason.as_deref())
+                .unwrap_or(NATIVE_RUNTIME_UNAVAILABLE);
+            catalog.capabilities.harness == AgentHarness::Alfred
+                && !catalog.available
+                && !catalog.capabilities.account_connected
+                && catalog.capabilities.requires_account
+                && catalog.error.as_deref() == Some(expected_error)
+        }));
+        let json = serde_json::to_string(&catalogs).unwrap();
+        assert!(json.contains(r#""harness":"alfred""#));
+        assert!(json.contains(r#""supportsOAuth":false"#));
+        for forbidden in ["accessToken", "refreshToken", "apiKey", "credential"] {
+            assert!(!json.contains(forbidden));
+        }
+    }
 
     #[test]
     fn parses_the_pi_model_table_and_skips_its_header() {

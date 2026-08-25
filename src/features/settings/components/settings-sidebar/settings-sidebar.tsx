@@ -148,6 +148,28 @@ function ConnectedAppsIcon() {
   );
 }
 
+function NativeAgentsIcon() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden>
+      <rect
+        x="2.25"
+        y="4"
+        width="11.5"
+        height="8.75"
+        rx="2.25"
+        stroke="currentColor"
+        strokeWidth="1.3"
+      />
+      <path
+        d="M8 1.75V4M5.25 8h.5M10.25 8h.5M5.75 10.5h4.5"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
 function DataIcon() {
   return (
     <svg viewBox="0 0 16 16" fill="none" aria-hidden>
@@ -226,6 +248,12 @@ const NAV_GROUPS: SettingsNavGroup[] = [
   {
     label: "Integrations",
     items: [
+      {
+        id: "native-agents",
+        label: SETTINGS_SECTION_LABELS["native-agents"],
+        description: "Accounts for Alfred's native agent harness",
+        icon: <NativeAgentsIcon />,
+      },
       {
         id: "connected-apps",
         label: SETTINGS_SECTION_LABELS["connected-apps"],

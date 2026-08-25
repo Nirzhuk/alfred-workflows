@@ -3,19 +3,15 @@
   "environment": "sandbox",
   "organizationId": "e0cc243c-4521-439f-97d4-cc9b0016a554",
   "benefits": {
-    "individual": {
-      "id": "69d283e8-fa0d-4d60-a474-5e3fee5cbe71",
-      "label": "Alfred Sandbox License"
-    },
-    "teams": {
-      "id": "64d78b24-7e6c-4b6a-9f94-08525c53a157",
-      "label": "Alfred Sandbox Teams"
+    "supporter": {
+      "id": "3efa1743-af00-47f4-a85c-cd4bb3c71086",
+      "label": "Alfred Supporter"
     }
   },
   "checkoutLinks": {
-    "individual": {
-      "url": "https://sandbox-api.polar.sh/v1/checkout-links/polar_cl_VlQMEEhbMnyjMsDRJqRcbWaCA2FhibeBAWuQd2eQUQ2/redirect",
-      "label": "Alfred Sandbox License Checkout"
+    "supporter": {
+      "url": "https://sandbox-api.polar.sh/v1/checkout-links/polar_cl_LJIXzLcPVkJIO02NgkmmOAAQnBCD9FmnbhV8T0bHF36/redirect",
+      "label": "Alfred Supporter Checkout"
     }
   },
   "customerPortal": {

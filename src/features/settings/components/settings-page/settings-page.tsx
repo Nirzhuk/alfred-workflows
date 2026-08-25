@@ -1,6 +1,10 @@
 import { useEffect, useState } from "react";
 import { SelectControl } from "../../../../components/select-control";
 import { ConnectedAppsSettings } from "../../../integrations/connected-apps-settings";
+import {
+  NativeAgentSettings,
+  useAgentAccountsStore,
+} from "../../../agent-accounts";
 import { useIntegrationsStore } from "../../../integrations/store";
 import { LicenseSettings } from "../../../licensing";
 import {
@@ -59,6 +63,8 @@ export function SettingsPage({ activeSection }: Props) {
 
   const integrationsLoading = useIntegrationsStore((s) => s.loading);
   const refreshIntegrations = useIntegrationsStore((s) => s.refresh);
+  const agentAccountsLoading = useAgentAccountsStore((s) => s.loading);
+  const refreshAgentAccounts = useAgentAccountsStore((s) => s.load);
 
   const [shortcutHeaderActions, setShortcutHeaderActions] =
     useState<HTMLDivElement | null>(null);
@@ -104,6 +110,16 @@ export function SettingsPage({ activeSection }: Props) {
             onClick={() => void refreshIntegrations()}
           >
             {integrationsLoading ? "Refreshing…" : "Refresh"}
+          </button>
+        ) : null}
+        {activeSection === "native-agents" ? (
+          <button
+            type="button"
+            className="ghost settings-header-action"
+            disabled={agentAccountsLoading}
+            onClick={() => void refreshAgentAccounts()}
+          >
+            {agentAccountsLoading ? "Refreshing..." : "Refresh"}
           </button>
         ) : null}
         {activeSection === "shortcuts" ? (
@@ -158,6 +174,8 @@ export function SettingsPage({ activeSection }: Props) {
         ) : null}
 
         {activeSection === "connected-apps" ? <ConnectedAppsSettings /> : null}
+
+        {activeSection === "native-agents" ? <NativeAgentSettings /> : null}
 
         {activeSection === "license-billing" ? <LicenseSettings /> : null}
 

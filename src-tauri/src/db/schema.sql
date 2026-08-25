@@ -155,6 +155,28 @@ CREATE TABLE IF NOT EXISTS app_connections (
   updated_at TEXT NOT NULL
 );
 
+-- Native-agent account metadata only. Credentials use the isolated
+-- com.alfred.agent-harness OS credential-store namespace.
+CREATE TABLE IF NOT EXISTS agent_accounts (
+  id TEXT PRIMARY KEY NOT NULL,
+  provider_id TEXT NOT NULL,
+  harness TEXT NOT NULL,
+  identity_key TEXT NOT NULL,
+  display_name TEXT,
+  external_account_id TEXT,
+  external_workspace_id TEXT,
+  auth_method TEXT NOT NULL,
+  custody_mode TEXT NOT NULL,
+  scopes_json TEXT NOT NULL DEFAULT '[]',
+  status TEXT NOT NULL DEFAULT 'error' CHECK (status IN ('connected', 'expired', 'error', 'revoked', 'disconnect_pending')),
+  expires_at TEXT,
+  last_checked_at TEXT,
+  last_error_code TEXT,
+  credential_ref TEXT NOT NULL UNIQUE,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
 -- Provider-neutral app event delivery. Normalized payloads are bounded and
 -- minimized before entering this queue; provider bodies and headers never do.
 CREATE TABLE IF NOT EXISTS app_trigger_state (
@@ -223,5 +245,8 @@ CREATE INDEX IF NOT EXISTS idx_memory_links_memory_id ON memory_links(memory_id)
 CREATE UNIQUE INDEX IF NOT EXISTS idx_app_connections_identity
   ON app_connections(provider_id, connection_mode, identity_key);
 CREATE INDEX IF NOT EXISTS idx_app_connections_provider_id ON app_connections(provider_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_accounts_identity
+  ON agent_accounts(provider_id, harness, identity_key);
+CREATE INDEX IF NOT EXISTS idx_agent_accounts_provider_id ON agent_accounts(provider_id);
 CREATE INDEX IF NOT EXISTS idx_app_event_queue_trigger ON app_event_queue(trigger_id, enqueued_at);
 CREATE INDEX IF NOT EXISTS idx_app_event_receipts_received ON app_event_receipts(received_at);

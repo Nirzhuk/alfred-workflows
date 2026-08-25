@@ -212,6 +212,17 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Public Polar commerce configuration, baked into the binaries at
+          # compile time (build.rs / Vite). Repository VARIABLES, not secrets —
+          # every value here is public by design. Leave any of them unset and
+          # the build ships unconfigured: perks never gate, the in-app
+          # download action falls back to source-build instructions.
+          ALFRED_POLAR_ENVIRONMENT: ${{ vars.ALFRED_POLAR_ENVIRONMENT }}
+          ALFRED_POLAR_ORGANIZATION_ID: ${{ vars.ALFRED_POLAR_ORGANIZATION_ID }}
+          ALFRED_POLAR_INDIVIDUAL_BENEFIT_ID: ${{ vars.ALFRED_POLAR_INDIVIDUAL_BENEFIT_ID }}
+          ALFRED_POLAR_TEAMS_BENEFIT_ID: ${{ vars.ALFRED_POLAR_TEAMS_BENEFIT_ID }}
+          VITE_POLAR_DESKTOP_CHECKOUT_URL: ${{ vars.VITE_POLAR_DESKTOP_CHECKOUT_URL }}
+          VITE_POLAR_CUSTOMER_PORTAL_URL: ${{ vars.VITE_POLAR_CUSTOMER_PORTAL_URL }}
         with:
           tagName: v__VERSION__
           releaseName: Alfred v__VERSION__

@@ -1,7 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { ProviderModels } from "./models";
+import type { AgentCapabilityManifest } from "./agent-capabilities";
 import type {
   AgentProvider,
+  AgentHarness,
   AgentProviderId,
   AgentUsageSnapshot,
   ActiveRunInfo,
@@ -87,12 +89,31 @@ export async function moveWorkflowToFolder(
   return invoke("move_workflow_to_folder", { workflowId, folderId });
 }
 
-export async function listAgentProviders(): Promise<AgentProvider[]> {
-  return invoke("list_agent_providers");
+export async function listAgentProviders(
+  harness?: AgentHarness,
+): Promise<AgentProvider[]> {
+  return invoke("list_agent_providers", { harness: harness ?? null });
 }
 
-export async function listAgentModels(): Promise<ProviderModels[]> {
-  return invoke("list_agent_models");
+export async function listAgentModels(
+  harness: AgentHarness = "cli",
+): Promise<ProviderModels[]> {
+  return invoke<ProviderModels[]>("list_agent_models", {
+    harness,
+  });
+}
+
+/** Explicit combined view for the editor; the compatibility API stays CLI-only. */
+export async function listAllAgentModels(): Promise<ProviderModels[]> {
+  const [cli, alfred] = await Promise.all([
+    listAgentModels("cli"),
+    listAgentModels("alfred"),
+  ]);
+  return [...cli, ...alfred];
+}
+
+export async function getAgentCapabilityManifest(): Promise<AgentCapabilityManifest> {
+  return invoke("get_agent_capability_manifest");
 }
 
 /** Read native subscription windows for providers used by the workflow. */

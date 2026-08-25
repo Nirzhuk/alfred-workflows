@@ -11,12 +11,15 @@ import {
 } from "../../../integrations/app-event-form";
 import { integrationsApi } from "../../../integrations/api";
 import { useIntegrationsStore } from "../../../integrations/store";
+import { LockedCapability } from "../../../licensing/components";
+import type { CapabilityDecision } from "../../../licensing";
+import { useWorkflowCapability } from "../../capability";
+import { useWorkflowStore } from "../../store";
 import type {
   ActionFieldDescriptor,
   AppEventDescriptor,
   AppEventResourceItem,
 } from "../../../integrations/types";
-import { useWorkflowStore } from "../../store";
 import type {
   AppTriggerConfig,
   AppTriggerStatus,
@@ -81,9 +84,14 @@ type Props = {
   workflowId: string;
   workflowName: string;
   onClose: () => void;
+  /** Test seam: overrides the resolver's answer. Production never passes it;
+   * the build kind is compile-time fact either way. */
+  decision?: CapabilityDecision;
 };
 
-export function TriggersModal({ workflowId, workflowName, onClose }: Props) {
+export function TriggersModal({ workflowId, workflowName, onClose, decision }: Props) {
+  const resolved = useWorkflowCapability("triggers");
+  const gate = decision ?? resolved;
   const triggers = useWorkflowStore((state) => state.triggers);
   const statuses = useWorkflowStore((state) => state.appTriggerStatuses);
   const webhookBase = useWorkflowStore((state) => state.webhookBaseUrl);
@@ -196,7 +204,8 @@ export function TriggersModal({ workflowId, workflowName, onClose }: Props) {
         }
       />
 
-      <div className="schedule-modal-body">
+      {gate.available ? (
+        <div className="schedule-modal-body">
         <p className="muted">
           Start this automation when a file changes, a local HTTP request
           arrives, or a connected app reports an event. Local triggers run only
@@ -304,8 +313,42 @@ export function TriggersModal({ workflowId, workflowName, onClose }: Props) {
             Add trigger
           </button>
         </div>
-      </div>
+        </div>
+      ) : (
+        <TriggersLockedContent triggers={triggers} />
+      )}
     </Modal>
+  );
+}
+
+/**
+ * The locked treatment for the trigger authoring surface (Plan 008 Step 4):
+ * the shared LockedCapability card, plus every saved trigger stated plainly
+ * and read-only — a lock never hides or drops what is already persisted.
+ * Exported so tests can render it statically without the portal-based modal
+ * shell.
+ */
+export function TriggersLockedContent({ triggers }: { triggers: Trigger[] }) {
+  return (
+    <div className="schedule-modal-body" data-locked-capability="triggers">
+      <LockedCapability
+        capabilityName="Triggers"
+        description="Start this workflow from a file change, a webhook, or a connected-app event while Alfred is open. Manual runs stay free in every build."
+      />
+      <p className="muted">Saved triggers, kept exactly as configured:</p>
+      {triggers.length === 0 ? (
+        <p className="hint">No triggers yet.</p>
+      ) : (
+        <ul className="trigger-list">
+          {triggers.map((trigger) => (
+            <li key={trigger.id}>
+              {trigger.label || trigger.source} — {trigger.source} (
+              {trigger.enabled ? "enabled" : "paused"})
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 

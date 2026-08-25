@@ -7,10 +7,14 @@ export type SandboxTestKeys = Readonly<Record<BenefitClass, string>>;
  * runs the verifier through a secret runner (`op run --`, `gh secret`, etc.)
  * instead of the ignored local file. Names only ever appear in output; values
  * never do.
+ *
+ * The supporter class deliberately keeps the previously individual-named slot
+ * so an operator's existing secret-runner invocation keeps working; the same
+ * legacy-slot pattern holds on the Rust side
+ * (`ALFRED_POLAR_INDIVIDUAL_BENEFIT_ID`). See scripts/polar/README.md.
  */
 export const SECRET_ENV_VARS: Readonly<Record<BenefitClass, string>> = {
-  individual: "POLAR_TEST_INDIVIDUAL_KEY",
-  teams: "POLAR_TEST_TEAMS_KEY",
+  supporter: "POLAR_TEST_INDIVIDUAL_KEY",
 };
 
 export const SECRET_FILE_NAME = "sandbox-secrets.json.local";
@@ -41,8 +45,13 @@ export function parseSandboxTestKeys(value: unknown): SandboxTestKeys {
     throw new SandboxSecretsError("input is not a JSON object");
   }
   const record = value as Record<string, unknown>;
+  // "individual" is accepted as an alias of "supporter" so a secrets file
+  // written under the retired two-product naming still loads.
+  const raw = ["supporter", "individual"]
+    .map((name) => record[name])
+    .find((candidate) => candidate !== undefined);
   return Object.fromEntries(
-    BENEFIT_CLASSES.map((kind) => [kind, requiredKey(kind, record[kind])]),
+    BENEFIT_CLASSES.map((kind) => [kind, requiredKey(kind, raw)]),
   ) as SandboxTestKeys;
 }
 

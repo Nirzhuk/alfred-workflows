@@ -8,7 +8,8 @@ Compose workflows as visual graphs: write prompts, route them through agents you
 > [GPL-3.0-or-later](LICENSE). Official maintainer-built installers are
 > published as public
 > [GitHub Release assets](https://github.com/Nirzhuk/alfred-workflows/releases/latest)
-> — free for everyone, no purchase, no account.
+> — free for everyone. An optional one-time supporter licence exists (see
+> [Support Alfred](#support-alfred)); nobody is ever required to pay.
 
 | Get Alfred | Cost | What you get |
 | --- | --- | --- |
@@ -23,6 +24,18 @@ workflows, runs, schedules, and memories are local and survive an upgrade.
 Fees charged by Claude, Cursor, OpenAI, or other agent providers for their own
 services are separate from Alfred in every case. See
 [Open-source and distribution policy](docs/open-source.md) for details.
+
+## Support Alfred
+
+Official binaries and source builds are both completely free, and nobody is
+ever required to pay for Alfred. If you want to support its development, a
+one-time **Alfred Supporter** licence permanently unlocks two automation
+perks — cron **schedules** and file-watch/webhook **triggers** — in official
+builds. The licence never expires, and nothing you bought is ever taken away
+later. A build you compile from source includes those features unlocked by
+design, and manual workflow runs stay free in every build.
+
+<!-- TODO: supporter checkout link (`VITE_POLAR_DESKTOP_CHECKOUT_URL`) once configured -->
 
 ## Install
 
@@ -45,7 +58,10 @@ Short version:
    - Grok Build → `grok`
 3. Confirm the CLI works in a normal terminal, then open Alfred and run a workflow.
 
-Alfred does **not** replace those subscriptions or store their API keys. It shells out to CLIs that are already authenticated on your machine.
+Alfred does **not** replace those subscriptions or store their API keys. The
+first-class Provider CLI harness shells out to CLIs already authenticated on
+your machine; the additive Alfred harness has separate accounts and currently
+reports native execution as unavailable. See [Agent harnesses](docs/agent-harnesses.md).
 
 Schedules, file triggers, and webhooks only run while the app is open (including tray / menu bar).
 

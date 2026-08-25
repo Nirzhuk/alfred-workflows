@@ -20,7 +20,7 @@
 - **Depends on**: Plans 030–032
 - **Category**: native provider / API authentication
 - **Planned at**: 2026-08-24
-- **Implementation**: TODO
+- **Implementation**: **BLOCKED (gemini_api_key_account_intake_unavailable; gemini_live_api_key_smoke_missing)**
 
 ## Goal
 
@@ -151,8 +151,116 @@ and disconnect. Run a separate CLI regression smoke.
 
 ## Done criteria
 
-- [ ] Official native auth/runtime surface is selected.
-- [ ] Consumer subscription versus API/Vertex billing is explicit.
-- [ ] Native mode has no CLI dependency or credential scraping.
-- [ ] Streaming, tools, safety states, cancellation, and redaction pass Plan 032.
-- [ ] CLI mode remains unchanged.
+- [x] Official native auth/runtime surface is selected.
+- [x] Consumer subscription versus API/Vertex billing is explicit.
+- [x] Native mode has no CLI dependency or credential scraping.
+- [x] Streaming, tools, safety states, cancellation, and redaction have bounded
+  Plan 032 fixtures.
+- [x] CLI mode remains unchanged.
+- [ ] Settings can securely register an Alfred-managed Gemini API key account.
+- [ ] A live paid-project API-key smoke has passed without Gemini CLI installed.
+
+## Implementation evidence (2026-08-25)
+
+### Official surface decision
+
+Official documentation was re-read on 2026-08-25:
+
+- Gemini Developer API authentication requires `x-goog-api-key`. Standard keys
+  identify a Cloud project for billing/quota; authorization keys bind a service
+  account, are restricted to the Generative Language API by default, and become
+  the required key type in September 2026. The selected native surface is the
+  fixed host `generativelanguage.googleapis.com`, API `v1beta`, with an
+  Alfred-managed user-supplied key.
+- `models.list` is the authoritative live catalog. Alfred requests the maximum
+  documented page size and filters models to `generateContent`; an empty or
+  malformed catalog is `model_unavailable`, never a static CLI fallback.
+- `streamGenerateContent?alt=sse` is the selected streaming endpoint. Function
+  calls are model predictions: Alfred executes them behind the shared tool and
+  approval boundary, echoes provider call IDs and opaque thought signatures,
+  and never emits thought/reasoning content.
+- `usageMetadata` is per-response token accounting, not an authoritative
+  remaining-quota API. Rate limits are project-scoped and visible in AI Studio;
+  native account usage therefore stays `unavailable` rather than inferred.
+- Gemini API data terms distinguish unpaid and paid services. Unpaid content may
+  be used for product improvement and human review; paid content is not used for
+  product improvement. Paid-data handling applies in the EEA/Switzerland/UK even
+  to unpaid quota, but API clients made available there must use Paid Services.
+- Google OAuth's installed-app guide is explicitly a simplified testing flow,
+  requires a registered desktop client configuration, and demonstrates ADC/token
+  files plus a broad `cloud-platform` scope. Alfred has no registered/verified
+  public-client package or least-privilege production flow, so
+  `gemini_oauth_client_packaging_unresolved` remains BLOCKED.
+- Standard Vertex AI requires a Cloud project, location, billing, IAM identity,
+  and ADC/service-account/authorization-key choice. Vertex Express Mode is a
+  separate Preview API-key onboarding surface. The shared account shape cannot
+  yet distinguish or display those choices, so
+  `gemini_vertex_project_binding_unresolved` remains BLOCKED.
+- Gemini CLI Google-account login and consumer Gemini/Google AI subscription
+  entitlement are not Gemini Developer API credentials. Gemini CLI's official
+  terms prohibit third-party software from directly accessing the services
+  powering the CLI by piggybacking its OAuth, so
+  `gemini_consumer_subscription_prohibited` remains BLOCKED.
+
+Primary references:
+
+- <https://ai.google.dev/api>
+- <https://ai.google.dev/api/generate-content>
+- <https://ai.google.dev/api/models>
+- <https://ai.google.dev/gemini-api/docs/api-key>
+- <https://ai.google.dev/gemini-api/docs/oauth>
+- <https://ai.google.dev/gemini-api/docs/function-calling>
+- <https://ai.google.dev/gemini-api/docs/rate-limits>
+- <https://ai.google.dev/gemini-api/terms>
+- <https://docs.cloud.google.com/vertex-ai/generative-ai/docs/start/quickstart>
+- <https://docs.cloud.google.com/docs/authentication>
+- <https://github.com/google-gemini/gemini-cli/blob/main/docs/resources/tos-privacy.md>
+
+### Code and safety gates
+
+- `credential.rs` accepts only an Alfred-managed resolved credential, validates
+  a bounded key shape without assuming the retiring `AIza` prefix, gives the
+  key a redacted `Debug`, and scrubs the exact account secret from provider text.
+- `transport.rs` fixes the API host/version/header, disables redirects, never
+  accepts workflow URLs or headers, bounds the model catalog, and checkpoints
+  cancellation while sending and reading the response stream.
+- `protocol.rs` bounds SSE frames/chunks, chunk count, function arguments,
+  function calls, tool rounds, and model catalog data. It maps auth/revocation,
+  429, model absence, malformed streams, and safety/prompt blocks to stable
+  native errors; safety blocks cannot become empty successful turns.
+- `runtime.rs` implements `NativeAgentRuntime`, live model discovery, streamed
+  assistant events, per-turn (not quota) usage metadata, Alfred-owned tools,
+  approval denial, cooperative cancellation/deadline checks, result replay, and
+  usage-unavailable state. No session/resume, OAuth, MCP, subagent, CLI, or
+  consumer-subscription capability is claimed.
+- `tests.rs` drives the real shared registry with a scripted transport. Fixtures
+  cover auth failure/revocation, content block, function call, thought-signature
+  replay, approval denial, malformed/partial/oversized stream, oversized output,
+  429, timeout, cancellation, usage unavailable, exact-key redaction, secret
+  tool-argument rejection, and split SSE frames.
+
+The runtime and production HTTP transport modules are provider-private,
+fixture construction is test-only, and public registration fails closed.
+Native readiness is false until both exact gates pass:
+
+1. `gemini_api_key_account_intake_unavailable` — Settings has no approved secure
+   API-key-native registration flow, and this provider slice is forbidden from
+   adding a generic secret UI or changing the shared account schema.
+2. `gemini_live_api_key_smoke_missing` — no approved paid-project test key was
+   supplied, so no live turn/model/tool/disconnect smoke can be claimed.
+
+Vertex, desktop OAuth/ADC, and consumer OAuth remain separate BLOCKED methods;
+none is silently substituted for the selected Developer API key surface.
+
+### Verification evidence
+
+The provider-filtered command allowed by this dispatch passed on 2026-08-25:
+
+```bash
+cargo test --locked --manifest-path src-tauri/Cargo.toml agents::native::providers::gemini
+```
+
+Result: 13 passed, 0 failed, 607 filtered out. The full suite, broad
+builds/checks, formatters, desktop dev, and packaging were skipped as required.
+No live credential was available, so the live smoke remains BLOCKED rather
+than simulated.

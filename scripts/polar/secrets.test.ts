@@ -8,38 +8,40 @@ import {
   SECRET_ENV_VARS,
 } from "./secrets";
 
-const FIXTURE = {
-  individual: "individual-private-value",
-  teams: "teams-private-value",
-};
+const KEY_VALUE = "supporter-private-value";
 
 function envFixture(): Record<string, string | undefined> {
   return {
-    [SECRET_ENV_VARS.individual]: FIXTURE.individual,
-    [SECRET_ENV_VARS.teams]: FIXTURE.teams,
+    [SECRET_ENV_VARS.supporter]: KEY_VALUE,
   };
 }
 
 describe("sandbox secret input", () => {
-  test("parses both keys without transforming their values", () => {
-    const keys = parseSandboxTestKeys(FIXTURE);
+  test("parses the supporter key without transforming its value", () => {
+    const keys = parseSandboxTestKeys({ supporter: KEY_VALUE });
 
-    expect(keys.individual).toBe(FIXTURE.individual);
-    expect(keys.teams).toBe(FIXTURE.teams);
+    expect(keys.supporter).toBe(KEY_VALUE);
+  });
+
+  test("still loads a secrets file written with the retired individual name", () => {
+    // The supporter class deliberately reuses the previously individual-named
+    // slot so an operator's existing secret setup keeps working.
+    const keys = parseSandboxTestKeys({ individual: KEY_VALUE });
+    expect(keys.supporter).toBe(KEY_VALUE);
   });
 
   test("rejects incomplete input and paths that are not ignored local files", async () => {
-    expect(() =>
-      parseSandboxTestKeys({ individual: FIXTURE.individual }),
-    ).toThrow(SandboxSecretsError);
+    expect(() => parseSandboxTestKeys({})).toThrow(SandboxSecretsError);
 
     await expect(
       loadSandboxTestKeysFromFile("scripts/polar/sandbox-secrets.json"),
     ).rejects.toBeInstanceOf(SandboxSecretsError);
   });
 
-  test("reads both keys from a secret runner's environment", () => {
-    expect(readSandboxTestKeysFromEnv(envFixture())).toEqual(FIXTURE);
+  test("reads the key from a secret runner's environment", () => {
+    expect(readSandboxTestKeysFromEnv(envFixture())).toEqual({
+      supporter: KEY_VALUE,
+    });
   });
 
   test("falls through to the local file only when no variable is set", async () => {
@@ -60,30 +62,14 @@ describe("sandbox secret input", () => {
     ).rejects.toBeInstanceOf(SandboxSecretsError);
   });
 
-  test("refuses a half-configured secret runner and names the missing variable", () => {
-    const partial = envFixture();
-    delete partial[SECRET_ENV_VARS.teams];
-
-    let reason = "";
-    try {
-      readSandboxTestKeysFromEnv(partial);
-    } catch (error) {
-      reason = (error as SandboxSecretsError).reason;
-    }
-    expect(reason).toContain(SECRET_ENV_VARS.teams);
-    expect(reason).not.toContain("private-value");
-  });
-
   test("never puts a key value into an error message", () => {
-    const tooShort = { ...FIXTURE, individual: "short" };
-
     let message = "";
     try {
-      parseSandboxTestKeys(tooShort);
+      parseSandboxTestKeys({ supporter: "short" });
     } catch (error) {
       message = String(error);
     }
-    expect(message).toContain("individual");
+    expect(message).toContain("supporter");
     expect(message).not.toContain("short");
   });
 });

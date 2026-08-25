@@ -3,6 +3,8 @@ import {
   isFastModel,
   modelIdForFastToggle,
   modelOptionForValue,
+  modelsForProvider,
+  selectionForAgentTarget,
   supportsFastToggle,
   type ModelOption,
   type ProviderModels,
@@ -19,9 +21,16 @@ const pairedModel: ModelOption = {
 
 const catalog: ProviderModels = {
   provider: "cursor",
+  harness: "cli",
   defaultModel: pairedModel.id,
   allowCustom: true,
   models: [pairedModel],
+  requiresAccount: false,
+  supportsOAuth: false,
+  supportsApiKey: false,
+  supportsUsage: false,
+  accountConnected: false,
+  nativeRuntimeAvailable: false,
 };
 
 describe("fast model picker state", () => {
@@ -56,5 +65,73 @@ describe("fast model picker state", () => {
     expect(isFastModel(selected, "cursor-grok-4.5-high-fast")).toBe(true);
     expect(isFastModel(selected, "cursor-grok-4.5-high")).toBe(false);
     expect(modelOptionForValue(catalog, "my-custom-model")).toBeUndefined();
+  });
+});
+
+describe("agent harness model boundaries", () => {
+  const nativeCatalog: ProviderModels = {
+    provider: "cursor",
+    harness: "alfred",
+    defaultModel: "",
+    allowCustom: false,
+    models: [],
+    available: false,
+    error: "native_runtime_unavailable",
+    requiresAccount: true,
+    supportsOAuth: false,
+    supportsApiKey: false,
+    supportsUsage: false,
+    accountConnected: false,
+    nativeRuntimeAvailable: false,
+  };
+
+  test("scopes catalogs to provider and harness", () => {
+    expect(modelsForProvider([catalog, nativeCatalog], "cursor", "cli")).toBe(
+      catalog,
+    );
+    expect(
+      modelsForProvider([catalog, nativeCatalog], "cursor", "alfred"),
+    ).toBe(nativeCatalog);
+  });
+
+  test("clears only incompatible target fields when switching", () => {
+    expect(
+      selectionForAgentTarget(
+        [catalog, nativeCatalog],
+        "cursor",
+        "alfred",
+        pairedModel.id,
+      ),
+    ).toEqual({ harness: "alfred", model: null, accountRef: null });
+    expect(
+      selectionForAgentTarget(
+        [catalog, nativeCatalog],
+        "cursor",
+        "cli",
+        pairedModel.id,
+      ),
+    ).toEqual({
+      harness: "cli",
+      model: pairedModel.id,
+      accountRef: null,
+    });
+
+    const compatibleNative = {
+      ...nativeCatalog,
+      models: [pairedModel],
+      defaultModel: pairedModel.id,
+    };
+    expect(
+      selectionForAgentTarget(
+        [catalog, compatibleNative],
+        "cursor",
+        "alfred",
+        pairedModel.id,
+      ),
+    ).toEqual({
+      harness: "alfred",
+      model: pairedModel.id,
+      accountRef: null,
+    });
   });
 });

@@ -387,6 +387,13 @@ fn response_metadata(
 mod tests {
     use super::*;
 
+    /// Activity ids are hashed at the boundary, so a provider id never
+    /// reaches a run event verbatim.
+    fn is_opaque(id: &str) -> bool {
+        id.strip_prefix("agent_activity_")
+            .is_some_and(|suffix| suffix.len() == 24 && suffix.bytes().all(|b| b.is_ascii_hexdigit()))
+    }
+
     #[test]
     fn maps_stream_events_without_exposing_thinking_or_tool_input() {
         let events = [
@@ -399,16 +406,48 @@ mod tests {
             .flat_map(|event| activities_from_event(event))
             .collect::<Vec<_>>();
 
+        // Lifecycle and ordering are unchanged; only provider text is dropped.
+        assert_eq!(activities.len(), 5);
+        assert_eq!(activities[0].kind, AgentActivityKind::Status);
+        assert_eq!(activities[0].state, AgentActivityState::Completed);
         assert_eq!(activities[0].label, "Claude Code session started");
+
+        assert_eq!(activities[1].kind, AgentActivityKind::Status);
+        assert_eq!(activities[1].state, AgentActivityState::Started);
         assert_eq!(activities[1].label, "Thinking");
-        assert_eq!(activities[1].detail, None);
-        assert_eq!(activities[2].id, "tool_1");
+
+        assert_eq!(activities[2].kind, AgentActivityKind::Tool);
         assert_eq!(activities[2].state, AgentActivityState::Started);
-        assert_eq!(activities[3].detail.as_deref(), Some("Working on it"));
-        assert_eq!(activities[4].id, "tool_1");
+        assert_eq!(activities[2].label, "Using tool");
+
+        assert_eq!(activities[3].kind, AgentActivityKind::Assistant);
+        assert_eq!(activities[3].state, AgentActivityState::Completed);
+        assert_eq!(activities[3].label, "Agent response");
+
+        assert_eq!(activities[4].kind, AgentActivityKind::Tool);
         assert_eq!(activities[4].state, AgentActivityState::Completed);
-        assert!(!format!("{activities:?}").contains("private reasoning"));
-        assert!(!format!("{activities:?}").contains("file_path"));
+        assert_eq!(activities[4].label, "Tool completed");
+
+        // The tool call still correlates start to completion, through an
+        // opaque id rather than the provider's own `tool_1`.
+        assert_eq!(activities[2].id, activities[4].id);
+        assert_ne!(activities[2].id, activities[1].id);
+        assert!(activities.iter().all(|activity| is_opaque(&activity.id)));
+
+        // No provider-originated text survives, in any field.
+        assert!(activities.iter().all(|activity| activity.detail.is_none()));
+        let rendered = format!("{activities:?}");
+        for leaked in [
+            "private reasoning",
+            "file_path",
+            "secret",
+            "Working on it",
+            "file contents",
+            "tool_1",
+            "msg_1",
+        ] {
+            assert!(!rendered.contains(leaked), "leaked {leaked} in {rendered}");
+        }
     }
 
     #[test]

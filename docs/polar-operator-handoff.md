@@ -1,7 +1,7 @@
 # Polar operator handoff
 
 Everything a human operator needs to configure Alfred's Polar **sandbox** and
-hand five public values back to the repository, executing
+hand four public values back to the repository, executing
 [Plan 003](../plans/release-money/003-configure-polar-commerce.md) Steps 2–8 as
 amended by
 [Plan 007](../plans/release-money/007-two-product-perpetual-model.md).
@@ -13,13 +13,15 @@ repository.
 > **Sandbox only.** Do not enable live mode, take a real payment, or publish a
 > checkout link until Plan 006 says so.
 
-> **The product model changed on 2026-08-20.** Alfred now sells **two**
-> products, both one-time, and **every** license key is issued with a
-> **one-year expiry**. If you configured anything from an earlier version of
-> this document — four products, three key benefits, a lifetime key with no
-> expiry — that configuration is superseded. See section 2 for which recorded
-> values are now stale.
-
+> **SUPERSEDED 2026-08-25 — read first.** The owner replaced the two-product
+> paid model with a **supporter licence**: one one-time product, perks are
+> `schedules` + `triggers`, entitlement permanent, and licence keys are issued
+> **without expiry**. Any instruction below that mandates a one-year expiry,
+> Teams seats, or an update window describes the retired model and awaits the
+> Plan 003 re-plan. Where the two conflict, the verifier
+> (`bun run verify:polar-sandbox`) is authoritative: it now **fails** a benefit
+> configured with an expiry.
+>
 ---
 
 ## 0. Approve the commercial policy first
@@ -87,45 +89,43 @@ shape:
 
 ### Step 3 — Products and license benefits (Plan 003 Step 3)
 
-Build exactly this. Two products, two License Keys benefits, one File Downloads
+Build exactly this. One product, one License Keys benefit, one File Downloads
 benefit.
 
 **Products**
 
 | # | Product name | Pricing type | Billing |
 | --- | --- | --- | --- |
-| 1 | Alfred License | standard one-time | one payment, one named user |
-| 2 | Alfred Teams | seat-based | one payment **per seat** |
+| 1 | Alfred Supporter | standard one-time | one payment |
 
-**License Keys benefits — two, not three**
+**License Keys benefits — one**
 
 | Benefit | Activation limit | Expiration | Attached to |
 | --- | --- | --- | --- |
-| Alfred License key | **3** | **one year** from issue | Alfred License |
-| Alfred Teams key | **3** | **one year** from issue | Alfred Teams (per claimed seat) |
+| Alfred Supporter key | **3** | **none** — perpetual | the supporter product |
 
 **File Downloads benefit — one, shared**
 
 | Benefit | Attached to |
 | --- | --- |
-| Alfred installers | Alfred License and Alfred Teams (both) |
+| Alfred installers | Alfred Supporter |
 
 **Attachment matrix — check every cell**
 
-| Product | Alfred License key | Alfred Teams key | Installers |
-| --- | --- | --- | --- |
-| Alfred License | ✅ | — | ✅ |
-| Alfred Teams | — | ✅ | ✅ |
+| Product | Alfred Supporter key | Installers |
+| --- | --- | --- |
+| Alfred Supporter | ✅ | ✅ |
 
 - [ ] Every license-key benefit uses a **three**-activation limit.
-- [ ] Every license-key benefit expires **one year** after issue. A key with no
-      expiry cannot carry an update deadline and fails the verifier.
+- [ ] The license-key benefit has **no expiration configured**. Supporter
+      licences are perpetual; a benefit recorded with an expiry fails the
+      verifier.
 - [ ] Use a recognizable Alfred key prefix.
-- [ ] **No product grants two license keys.** Alfred identifies which product
-      class a customer bought from the `benefit_id` alone; two keys on one
-      product makes that ambiguous.
-- [ ] Revoking or refunding a purchase still revokes the key. Only the *expiry*
-      is a window; a revoked key is a loss of entitlement.
+- [ ] One product grants exactly one license key. Alfred identifies the
+      purchase from the `benefit_id` alone; two keys on one product makes that
+      ambiguous.
+- [ ] Revoking or refunding a purchase still revokes the key. Revocation is
+      the only thing that ends entitlement — there is no expiry window.
 
 ### Step 4 — Teams seats and portal ownership (Plan 003 Step 4)
 
@@ -148,11 +148,13 @@ benefit.
 
 ### Step 5 — Checkout link and portal entry points (Plan 003 Step 5)
 
-- [ ] Create one **Alfred License** checkout link.
-- [ ] Do **not** create an in-app Teams checkout link. Teams is sold on the
-      marketing website and Alfred has no Teams checkout entry point; a
-      recorded Teams link is rejected by the manifest.
-- [ ] Leave the success URL on Polar's hosted confirmation page.
+- [ ] Create one **Alfred Supporter** checkout link and record it as
+      `checkoutLinks.supporter.url`; until then the manifest keeps `null`
+      there and the verifier stops at `manifest.checkout.supporter`.
+      Leave the success URL on Polar's hosted confirmation page.
+- [ ] Do **not** create any other checkout link: a link recorded under a
+      retired or invented name (`individual`, `teams`) is rejected by the
+      manifest.
 - [ ] Enable only approved discount and billing options.
 - [ ] Open the link in a **private browser window** and confirm: correct
       product, currency, tax display, terms, and return behavior.
@@ -169,20 +171,18 @@ benefit.
 
 ### Step 6 — Shared downloads benefit (Plan 003 Step 6)
 
-- [ ] Attach the single File Downloads benefit to **both** products.
+- [ ] Attach the single File Downloads benefit to **the supporter product**.
 - [ ] Upload a small **non-production** fixture file for the sandbox proof.
-- [ ] An Alfred License purchaser can download it from the portal.
-- [ ] A **claimed** Teams member can download it.
-- [ ] An **unclaimed** invite cannot.
+- [ ] A supporter purchaser can download it from the portal.
 - [ ] An unrelated email cannot obtain the file URL or its bytes.
 
 ### Step 7 — Prove the activation lifecycle (Plan 003 Step 7)
 
-Fill the manifest first (Step 8 table below), then supply the two sandbox
-**test** license keys and run the verifier. It talks only to Polar's public
+Fill the manifest first (Step 8 table below), then supply the sandbox
+**test** license key and run the verifier. It talks only to Polar's public
 customer-portal endpoints and never sends an access token.
 
-Supply the keys one of two ways — never as a command-line argument:
+Supply the key one of two ways — never as a command-line argument:
 
 ```bash
 # Preferred: a secret runner injects the values, nothing touches the disk.
@@ -191,22 +191,21 @@ op run -- bun run verify:polar-sandbox
 
 ```bash
 # Or: the git-ignored file scripts/polar/sandbox-secrets.json.local
-# { "individual": "…", "teams": "…" }
+# { "supporter": "…" }
 bun run verify:polar-sandbox
 ```
 
 The verifier prints case names and `PASS`/`FAIL` only. If it stops on a
 configuration problem it names the field and how to fix it, never the value.
 
-- [ ] Both benefit classes activate, validate, and deactivate.
+- [ ] The supporter benefit activates, validates, and deactivates.
 - [ ] A fourth activation is rejected, then succeeds after one deactivate.
-- [ ] **Both** keys report a non-null expiry roughly one year out. A key with no
-      expiry fails the verifier — this is the reverse of the retired rule.
+- [ ] The key validates with `expires_at: null`. Supporter licences are
+      perpetual — a benefit configured with an expiry fails the verifier.
 - [ ] Refund a purchase in sandbox → its key stops being granted on Polar's
       documented timing.
-- [ ] Revoke a Teams member → their key stops being granted.
-- [ ] A key that has passed its expiry still proves a completed purchase.
-      Expiry closes the *update window*; it does not revoke the licence.
+- [ ] Entitlement is permanent once granted: nothing time-based ever ends it.
+      Only revocation or refund does.
 
 ### Step 8 — Bind the public values (Plan 003 Step 8)
 
@@ -222,13 +221,13 @@ Fill in the table in section 2, then:
       bakes the `ALFRED_*` values into the binary and Vite bakes the `VITE_*`
       values into the bundle.
 - [ ] Run `bun run check`.
-- [ ] Activate one key of each class in the built app, relaunch, refresh, open
+- [ ] Activate the supporter key in the built app, relaunch, refresh, open
       the checkout link and the portal, then deactivate.
 - [ ] Run the secret scan (section 4) and confirm it is clean.
 
 ---
 
-## 2. The five public values
+## 2. The public values
 
 Every value below is **public**. None of them is a credential. Product IDs,
 price IDs, access tokens, webhook secrets, and customer IDs are **not needed**
@@ -239,10 +238,9 @@ All of these describe the **sandbox** organization.
 | # | Value | Where to find it in Polar | Recorded value | Binds to |
 | --- | --- | --- | --- | --- |
 | 1 | Organization ID | Settings → General | ⚠️ `e0cc243c-4521-439f-97d4-cc9b0016a554` — provisional, re-verify | `ALFRED_POLAR_ORGANIZATION_ID` in `.env` |
-| 2 | Alfred License benefit ID | Benefits → Alfred License key | 🔴 **UNBOUND — re-read from the new product** | `ALFRED_POLAR_INDIVIDUAL_BENEFIT_ID` in `.env` |
-| 3 | Alfred Teams benefit ID | Benefits → Alfred Teams key | 🔴 **UNBOUND — re-read from the new product** | `ALFRED_POLAR_TEAMS_BENEFIT_ID` in `.env` |
-| 4 | Alfred License checkout link | Products → Checkout links | ⚠️ `https://sandbox-api.polar.sh/v1/checkout-links/polar_cl_VlQMEEhbMnyjMsDRJqRcbWaCA2FhibeBAWuQd2eQUQ2/redirect` — provisional, re-verify | `VITE_POLAR_INDIVIDUAL_CHECKOUT_URL` in `.env` |
-| 5 | Hosted customer-portal URL | Customer portal settings | ⚠️ `https://sandbox.polar.sh/nirzhuk/portal` (verified live: 200) — re-verify the slug | `VITE_POLAR_CUSTOMER_PORTAL_URL` in `.env` |
+| 2 | Alfred Supporter benefit ID | Benefits → Alfred Supporter key | ✅ `3efa1743-af00-47f4-a85c-cd4bb3c71086` (created 2026-08-25) | `ALFRED_POLAR_INDIVIDUAL_BENEFIT_ID` in `.env` — legacy slot, kept on purpose (see note below) |
+| 3 | Alfred Supporter checkout link | Products → Checkout links | 🔴 **NOT COLLECTED YET** — the manifest records `null` until it exists | `VITE_POLAR_INDIVIDUAL_CHECKOUT_URL` in `.env` |
+| 4 | Hosted customer-portal URL | Customer portal settings | ⚠️ `https://sandbox.polar.sh/nirzhuk/portal` (verified live: 200) — re-verify the slug | `VITE_POLAR_CUSTOMER_PORTAL_URL` in `.env` |
 
 Plus two build settings that are not Polar values:
 
@@ -251,59 +249,49 @@ Plus two build settings that are not Polar values:
 | Environment | `sandbox` | `ALFRED_POLAR_ENVIRONMENT` in `.env` |
 | Release date | **leave blank** — the release workflow sets it | `ALFRED_RELEASE_DATE` in `.env` |
 
-> ### 🔴 The previously bound benefit IDs are STALE
+> ### 🔴 Previously bound benefit IDs are STALE
 >
-> Earlier versions of this document recorded three benefit IDs against the
-> retired four-product model:
+> Earlier versions of this document recorded benefit IDs against the retired
+> multi-product models:
 >
 > | Retired row | Recorded value | Status |
 > | --- | --- | --- |
-> | Desktop annual benefit ID | `69d283e8-fa0d-4d60-a474-5e3fee5cbe71` | ⚠️ **REUSED — now the `individual` benefit** (see note below) |
+> | Desktop annual / later `individual` benefit ID | `69d283e8-fa0d-4d60-a474-5e3fee5cbe71` | ❌ **STALE — do not paste anywhere** |
 > | Desktop lifetime benefit ID | `caed58b2-92c9-4859-9f73-258abe849f40` | ❌ **STALE — do not paste anywhere** |
-> | Company seat benefit ID | never bound (was optional) | ❌ retired; there is no optional class now |
+> | `teams` benefit ID | `64d78b24-7e6c-4b6a-9f94-08525c53a157` | ❌ **STALE — do not paste anywhere** |
 >
-> The operator **reset the Polar products**, so these IDs point at benefits
-> that may no longer exist and certainly do not match the two-product model.
-> They are recorded here only so nobody re-binds them by memory.
+> On 2026-08-25 the owner collapsed the model to a single supporter licence
+> and created a fresh benefit, so none of those IDs matches what Polar serves
+> today. They are recorded here only so nobody re-binds them by memory.
 >
-> **Exception, confirmed by the operator on 2026-08-20.** The former
-> *Desktop annual* benefit `69d283e8-…` was **re-attached** to the new
-> **Alfred License** product (`b98b91a7-d7f6-4141-b383-a591802a41eb`), so it is
-> live and is now bound as the `individual` benefit. Polar permits attaching an
-> existing benefit to a new product, so a surviving ID is expected here rather
-> than suspicious. The *Desktop lifetime* ID above remains stale and must not
-> be bound. The `teams` benefit is a new object,
-> `64d78b24-7e6c-4b6a-9f94-08525c53a157`.
+> The live supporter benefit is
+> `3efa1743-af00-47f4-a85c-cd4bb3c71086`, bound in
+> `scripts/polar/sandbox-manifest.json` as `benefits.supporter.id`.
 >
-> This binding is still **unproven against Polar**: it is confirmed by dashboard
-> inspection only. `bun run verify:polar-sandbox` is what proves it, and it
-> needs sandbox test license keys from real sandbox purchases.
+> This binding is still **unproven against Polar**: it is confirmed by
+> dashboard inspection only. `bun run verify:polar-sandbox` is what proves
+> it, once the checkout link is collected and a sandbox test license key
+> exists.
 >
 > Treat **every** value in the table above as provisional until it has been
-> read off the *current* sandbox products and re-verified. Rows 1, 4 and 5 may
-> well have survived the reset — confirm them, do not assume them.
+> read off the *current* sandbox organization and re-verified. Rows 1 and 4
+> may well have survived the reset — confirm them, do not assume them.
 
 `scripts/polar/sandbox-manifest.json` is the committed, reviewed, non-secret
-record the verifier checks against, and it now records both benefit IDs as
-`null`. Until they are filled in, `bun run verify:polar-sandbox` stops at
-`FAIL verifier-input.manifest` and names the field. That is the intended
-fail-closed state, not a bug. The file is safe to commit because it contains no
-credential.
+record the verifier checks against. It records the supporter benefit ID and
+leaves `checkoutLinks.supporter.url` as `null`. Until that link is filled in,
+`bun run verify:polar-sandbox` stops pre-network at
+`FAIL manifest.checkout.supporter` with "collect the checkout link from the
+Polar dashboard". That is the intended fail-closed state, not a bug. The file
+is safe to commit because it contains no credential.
 
-> **Teams is sold on the marketing website.** Alfred ships no Teams checkout
-> entry point: an in-app customer sees only the Alfred License purchase path. A
-> Teams **seat holder** still activates their license key in Alfred exactly
-> like any other licensee, and still reaches seats and downloads through the
-> customer portal. Only the *purchase* path lives outside the app.
+> **The supporter benefit binds through the legacy `individual` slot.**
+> `ALFRED_POLAR_INDIVIDUAL_BENEFIT_ID` was deliberately not renamed when the
+> model collapsed to one product, so nothing else had to move with it;
+> `ALFRED_POLAR_TEAMS_BENEFIT_ID` stays unset-optional. The same mapping
+> holds for the verifier's test-key sources. See `scripts/polar/README.md`.
 
-> **Both benefit IDs are required.** The Company seat benefit used to be
-> optional because Polar manages seats natively. Alfred Teams is a shipped
-> product with its own License Keys benefit, so a blank Teams benefit ID is an
-> **incomplete** configuration. Alfred distinguishes product classes by
-> `benefit_id` alone: if both products shared one benefit, a Teams customer and
-> a License customer would be indistinguishable to the app.
-
-> **Row 5 was confirmed empirically, not guessed.** Polar's hosted portal is
+> **Row 4 was confirmed empirically, not guessed.** Polar's hosted portal is
 > per-organization: `https://sandbox.polar.sh/<org-slug>/portal` returns 200 and
 > redirects to `/portal/request` for the email sign-in code. The organization
 > slug (`nirzhuk`) was read from the live checkout session. The previously
@@ -314,9 +302,9 @@ credential.
 
 | Value | Shape |
 | --- | --- |
-| Organization / benefit IDs (1–3) | UUID v4, e.g. `xxxxxxxx-xxxx-4xxx-8xxx-xxxxxxxxxxxx`, all different. None may be omitted. |
-| Alfred License checkout link (4) | `https://sandbox-api.polar.sh/v1/checkout-links/polar_cl_…/redirect`, no query string, no fragment |
-| Customer portal (5) | `https://sandbox.polar.sh/<org-slug>/portal` — one slug segment, then `/portal` |
+| Organization / benefit ID (1–2) | UUID v4, e.g. `xxxxxxxx-xxxx-4xxx-8xxx-xxxxxxxxxxxx`, and they must differ. None may be omitted. |
+| Alfred Supporter checkout link (3) | `https://sandbox-api.polar.sh/v1/checkout-links/polar_cl_…/redirect`, no query string, no fragment |
+| Customer portal (4) | `https://sandbox.polar.sh/<org-slug>/portal` — one slug segment, then `/portal` |
 
 ---
 
@@ -388,12 +376,13 @@ talk to a developer, not to widen anything yourself.
    than `https`. A portal or checkout URL carrying a `customer_session_token`
    — or any query parameter at all — is a credential, not a public link, and
    is rejected.
-4. **Alfred reads `benefit_id` only.** If the two products end up sharing one
-   license benefit — or one product grants two — Alfred cannot tell the
-   customer's product class apart. Re-check the attachment matrix.
-5. **Alfred reads the key's expiry as an update deadline.** A benefit issued
-   without an expiry, or with a multi-year one, silently changes what customers
-   are entitled to. The verifier fails such a key rather than accept it.
+4. **Alfred reads `benefit_id` only.** One product grants exactly one
+   license-key benefit: if more than one benefit ends up attached to it — or
+   the manifest's recorded ID drifts from Polar's — validation fails.
+   Re-check the attachment matrix.
+5. **Alfred treats a licence key as perpetual.** A benefit issued *with* an
+   expiry would silently time-box what supporters paid for. The verifier fails
+   any recorded expiry rather than accept it.
 
 ---
 
@@ -442,10 +431,10 @@ these is true. Do not work around one.
    Teams offer.
 4. **The billing purchaser cannot self-claim a seat** through Polar's hosted
    flow.
-5. **A License Keys benefit cannot be issued with a one-year expiry**, or the
-   expiry is not exposed on the public validation response. Without that date
-   the one-year update window is unenforceable, and the promise must be removed
-   from the offer rather than advertised.
+5. **A License Keys benefit cannot be created without an expiration**, or the
+   public validation response stops exposing `expires_at` as nullable. The
+   supporter model needs Polar to issue keys that simply never expire; if that
+   becomes impossible, the offer must change rather than fake an expiry.
 6. **The public license endpoints demand a Polar access token**, or expose any
    privileged operation. Alfred is a desktop app with no backend; it can only
    use endpoints that are safe without a credential.

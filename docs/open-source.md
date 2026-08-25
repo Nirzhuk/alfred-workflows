@@ -1,9 +1,28 @@
 # Open-source and distribution policy
 
 Alfred is **free and open source software** under the
-[GNU General Public License, version 3 or later](../LICENSE). There is no paid
-tier and no feature lock: official maintainer-built installers and a build you
-compile yourself have exactly the same features.
+[GNU General Public License, version 3 or later](../LICENSE). Nobody is ever
+required to pay to use, build, or redistribute it. Official maintainer-built
+installers and a build you compile yourself are both free; the only
+difference is that an official build unlocks its automation perks with an
+optional one-time supporter licence, while a self-built Alfred has every
+feature enabled by design.
+
+## Supporting Alfred
+
+Payment is optional and buys nothing you cannot already have by compiling
+Alfred yourself:
+
+- A one-time **Alfred Supporter** licence permanently enables cron
+  **schedules** and file-watch/webhook **triggers** in official builds. It
+  never expires, and nothing a supporter paid for is ever removed later.
+- A source build includes schedules and triggers unlocked from the start,
+  with no licence entry and no nagging. Under the GPL the gate is a switch,
+  not enforcement.
+- Manual workflow runs, your data, export, and history stay free in every
+  build.
+
+<!-- TODO: supporter checkout link (`VITE_POLAR_DESKTOP_CHECKOUT_URL`) once configured -->
 
 ## What you may do
 

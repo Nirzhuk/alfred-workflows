@@ -386,17 +386,17 @@ Grok) and harness (`cli` or `alfred`).
 
 | Plan | Title | Priority | Effort | Depends on | Status |
 |------|-------|----------|--------|------------|--------|
-| 030 | Make CLI and Alfred harnesses first-class | P0 | L | — | TODO |
-| 031 | Add secure native-agent accounts and credential lifecycle | P0 | L | 030 | TODO |
-| 032 | Define the native harness compatibility contract | P0 | L | 030, 031 | TODO |
-| 033 | Run Codex through Alfred with ChatGPT OAuth | P0 | XL | 030–032 | TODO |
-| 034 | Add a native Claude harness without weakening CLI support | P1 | XL | 030–032 | TODO |
-| 035 | Add a native Cursor harness | P1 | XL | 030–032 | TODO |
-| 036 | Add an Alfred-managed OpenCode runtime | P1 | XL | 030–032 | TODO |
-| 037 | Add a native GitHub Copilot harness | P1 | XL | 030–032 | TODO |
-| 038 | Add a native Gemini harness | P1 | L–XL | 030–032 | TODO |
-| 039 | Add a native Grok harness | P2 | L–XL | 030–032 | TODO |
-| 040 | Release and roll out the dual-harness system | P0 | XL | 030–039 | TODO |
+| 030 | Make CLI and Alfred harnesses first-class | P0 | L | — | DONE |
+| 031 | Add secure native-agent accounts and credential lifecycle | P0 | L | 030 | DONE |
+| 032 | Define the native harness compatibility contract | P0 | L | 030, 031 | DONE |
+| 033 | Run Codex through Alfred with ChatGPT OAuth | P0 | XL | 030–032 | BLOCKED (cross-platform signing and packaged no-CLI smoke missing) |
+| 034 | Add a native Claude harness without weakening CLI support | P1 | XL | 030–032 | BLOCKED (API-key secret entry and live smoke missing; subscription OAuth unapproved) |
+| 035 | Add a native Cursor harness | P1 | XL | 030–032 | BLOCKED (API-key intake, repository consent, and per-tool approval missing) |
+| 036 | Add an Alfred-managed OpenCode runtime | P1 | XL | 030–032 | BLOCKED (package signing, secret entry, and typed tool bridge missing) |
+| 037 | Add a native GitHub Copilot harness | P1 | XL | 030–032 | BLOCKED (SDK package/license notices and live seat/SSO smoke missing) |
+| 038 | Add a native Gemini harness | P1 | L–XL | 030–032 | BLOCKED (API-key intake and live smoke missing) |
+| 039 | Add a native Grok harness | P2 | L–XL | 030–032 | BLOCKED (API-key intake and live smoke missing) |
+| 040 | Release and roll out the dual-harness system | P0 | XL | 030–039 | DONE (zero-native fail-closed rollout verified) |
 
 ### Required execution order
 

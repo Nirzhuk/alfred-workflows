@@ -1,5 +1,26 @@
 export { createLicensingApi, licensingApi } from "./api";
 export { openLatestDownload } from "./download-latest";
+export {
+  PRO_CAPABILITIES,
+  appBuildKind,
+  readBuildKind,
+  resolveCapability,
+  resolveEntitlement,
+} from "./entitlement";
+export type {
+  BuildKind,
+  Capability,
+  CapabilityDecision,
+  CapabilityLockReason,
+  EntitlementInput,
+} from "./entitlement";
+export {
+  UPDATE_WINDOW_NOTICE_BODY,
+  UPDATE_WINDOW_NOTICE_KEY,
+  UPDATE_WINDOW_NOTICE_TITLE,
+  dismissUpdateWindowNotice,
+  readUpdateWindowNoticeDismissed,
+} from "./update-window-notice";
 export { LicenseBadge, LicenseSettings } from "./components";
 export {
   createPolarPublicLinks,

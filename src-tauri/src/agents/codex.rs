@@ -348,6 +348,13 @@ fn parse_json_output(
 mod tests {
     use super::*;
 
+    /// Activity ids are hashed at the boundary, so a provider id never
+    /// reaches a run event verbatim.
+    fn is_opaque(id: &str) -> bool {
+        id.strip_prefix("agent_activity_")
+            .is_some_and(|suffix| suffix.len() == 24 && suffix.bytes().all(|b| b.is_ascii_hexdigit()))
+    }
+
     #[test]
     fn maps_supported_items_and_hides_reasoning_text() {
         let events = [
@@ -364,15 +371,52 @@ mod tests {
             .flat_map(|event| activities_from_event(event))
             .collect::<Vec<_>>();
 
+        // Every supported item still produces its activity in order; the
+        // unknown `future.event` is still ignored.
+        assert_eq!(activities.len(), 6);
+        assert_eq!(activities[0].kind, AgentActivityKind::Status);
+        assert_eq!(activities[0].state, AgentActivityState::Completed);
         assert_eq!(activities[0].label, "Codex session started");
+
+        assert_eq!(activities[1].kind, AgentActivityKind::Status);
+        assert_eq!(activities[1].state, AgentActivityState::Started);
         assert_eq!(activities[1].label, "Thinking");
-        assert_eq!(activities[1].detail, None);
-        assert_eq!(activities[2].id, "c1");
-        assert_eq!(activities[3].id, "c1");
-        assert_eq!(activities[4].label, "Changed src/app.rs");
-        assert_eq!(activities[5].detail.as_deref(), Some("Done"));
-        assert!(!format!("{activities:?}").contains("private chain"));
-        assert!(!format!("{activities:?}").contains("secret"));
+
+        assert_eq!(activities[2].kind, AgentActivityKind::Command);
+        assert_eq!(activities[2].state, AgentActivityState::Started);
+        assert_eq!(activities[2].label, "Running command");
+
+        assert_eq!(activities[3].kind, AgentActivityKind::Command);
+        assert_eq!(activities[3].state, AgentActivityState::Completed);
+        assert_eq!(activities[3].label, "Command completed");
+
+        // The changed path is a category now, not the path itself.
+        assert_eq!(activities[4].kind, AgentActivityKind::File);
+        assert_eq!(activities[4].state, AgentActivityState::Completed);
+        assert_eq!(activities[4].label, "File changed");
+
+        assert_eq!(activities[5].kind, AgentActivityKind::Assistant);
+        assert_eq!(activities[5].state, AgentActivityState::Completed);
+        assert_eq!(activities[5].label, "Agent response");
+
+        // The command still correlates start to completion via an opaque id.
+        assert_eq!(activities[2].id, activities[3].id);
+        assert_ne!(activities[2].id, activities[4].id);
+        assert!(activities.iter().all(|activity| is_opaque(&activity.id)));
+        // Provider item ids are short and hex-like, so compare them exactly
+        // rather than scanning the rendered digest for a substring.
+        for raw_id in ["abc", "r1", "c1", "f1", "m1"] {
+            assert!(
+                activities.iter().all(|activity| activity.id != raw_id),
+                "provider id {raw_id} reached a run event"
+            );
+        }
+
+        assert!(activities.iter().all(|activity| activity.detail.is_none()));
+        let rendered = format!("{activities:?}");
+        for leaked in ["private chain", "secret", "src/app.rs", "pwd", "/tmp", "Done"] {
+            assert!(!rendered.contains(leaked), "leaked {leaked} in {rendered}");
+        }
     }
 
     #[test]

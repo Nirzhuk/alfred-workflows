@@ -190,6 +190,13 @@ impl PolarClient {
                 }
             }
             StatusCode::NOT_FOUND | StatusCode::UNPROCESSABLE_ENTITY => {
+                // Polar answers 404 alike for an unknown key, a revoked or
+                // disabled key, and an EXPIRED one; the wire differs only in
+                // English `detail` prose with no contract, so it must not
+                // decide entitlement (POLAR-CAPABILITY-FINDINGS §5). The
+                // service layer arbitrates a 404 against the locally
+                // persisted update deadline before treating it as a
+                // revocation; see `LicenseService::persist_validation_error`.
                 Err(PolarClientError::InvalidLicense)
             }
             StatusCode::TOO_MANY_REQUESTS => Err(PolarClientError::RateLimited),

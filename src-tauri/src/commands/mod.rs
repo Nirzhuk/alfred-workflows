@@ -1,3 +1,4 @@
+pub mod agent_accounts;
 pub mod integrations;
 
 use crate::agents;
@@ -56,21 +57,42 @@ pub fn get_license_status(
 
 #[tauri::command]
 pub fn list_workflows(db: State<'_, Db>) -> Result<Vec<Workflow>, String> {
-    db.list_workflows().map_err(|e| e.to_string())
+    let mut workflows = db.list_workflows().map_err(|e| e.to_string())?;
+    for workflow in &mut workflows {
+        agents::normalize_agent_nodes_in_graph(&mut workflow.graph)
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(workflows)
 }
 
 #[tauri::command]
 pub fn get_workflow(db: State<'_, Db>, id: String) -> Result<Option<Workflow>, String> {
-    db.get_workflow(&id).map_err(|e| e.to_string())
+    let mut workflow = db.get_workflow(&id).map_err(|e| e.to_string())?;
+    if let Some(workflow) = &mut workflow {
+        agents::normalize_agent_nodes_in_graph(&mut workflow.graph)
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(workflow)
 }
 
 #[tauri::command]
-pub fn create_workflow(db: State<'_, Db>, input: CreateWorkflowInput) -> Result<Workflow, String> {
+pub fn create_workflow(
+    db: State<'_, Db>,
+    mut input: CreateWorkflowInput,
+) -> Result<Workflow, String> {
+    agents::normalize_agent_nodes_in_graph(&mut input.graph)
+        .map_err(|error| error.to_string())?;
     db.create_workflow(input).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn update_workflow(db: State<'_, Db>, input: UpdateWorkflowInput) -> Result<Workflow, String> {
+pub fn update_workflow(
+    db: State<'_, Db>,
+    mut input: UpdateWorkflowInput,
+) -> Result<Workflow, String> {
+    if let Some(graph) = &mut input.graph {
+        agents::normalize_agent_nodes_in_graph(graph).map_err(|error| error.to_string())?;
+    }
     db.update_workflow(input).map_err(|e| e.to_string())
 }
 
@@ -128,14 +150,55 @@ pub fn move_workflow_to_folder(
 }
 
 #[tauri::command]
-pub fn list_agent_providers() -> Vec<serde_json::Value> {
-    agents::list_providers()
+pub fn list_agent_providers(
+    manifest: State<'_, agents::capability_manifest::AgentCapabilityManifest>,
+    harness: Option<agents::AgentHarness>,
+) -> Vec<serde_json::Value> {
+    agents::list_providers(manifest.inner(), harness)
 }
 
-/// Discover models from each installed agent CLI / local cache.
+/// One versioned source for runner gates and UI availability. Missing entries
+/// are disabled by the consumer; this command never probes provider CLIs.
 #[tauri::command]
-pub async fn list_agent_models() -> Result<Vec<agents::ProviderModels>, String> {
-    tauri::async_runtime::spawn_blocking(agents::list_all_provider_models)
+pub fn get_agent_capability_manifest(
+    manifest: State<'_, agents::capability_manifest::AgentCapabilityManifest>,
+) -> agents::capability_manifest::AgentCapabilityManifest {
+    manifest.inner().clone()
+}
+
+/// Bounded support snapshot. It intentionally excludes prompts, outputs,
+/// provider payloads, credential references, raw identities, and file paths.
+#[tauri::command]
+pub fn get_agent_harness_diagnostics(
+    db: State<'_, Db>,
+    manifest: State<'_, agents::capability_manifest::AgentCapabilityManifest>,
+    native_registry: State<'_, std::sync::Arc<agents::native::NativeRuntimeRegistry>>,
+    provider: Option<agents::AgentProvider>,
+    harness: Option<agents::AgentHarness>,
+) -> Result<agents::capability_manifest::AgentHarnessDiagnostics, String> {
+    let accounts = db
+        .list_agent_accounts()
+        .map_err(|_| "agent_harness_diagnostics_unavailable".to_string())?;
+    Ok(agents::capability_manifest::support_diagnostics(
+        manifest.inner(),
+        &accounts,
+        native_registry.inner().as_ref(),
+        provider,
+        harness,
+    ))
+}
+
+/// Return one harness-scoped catalog per provider. Omission preserves the
+/// historical CLI-only response; native-only requests never probe a CLI.
+#[tauri::command]
+pub async fn list_agent_models(
+    manifest: State<'_, agents::capability_manifest::AgentCapabilityManifest>,
+    harness: Option<agents::AgentHarness>,
+) -> Result<Vec<agents::ProviderModels>, String> {
+    let manifest = manifest.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        agents::models::list_provider_models_with_manifest(harness, &manifest)
+    })
         .await
         .map_err(|e| e.to_string())
 }

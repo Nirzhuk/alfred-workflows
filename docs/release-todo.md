@@ -50,27 +50,36 @@ The operator runbook lives in [releasing.md](releasing.md).
   Windows warning. The desktop app must stay Tauri-wrapped — do not turn Vite
   into a hosted site (see `scripts/guard-desktop-tauri.mjs`).
 
-### Prod Polar configuration
+### Prod Polar configuration — decided 2026-08-25
 
-Polar's original role (merchant of record for paid official binaries) is gone:
-binaries are free and public. Before touching prod Polar, decide what it is
-for now:
+Polar's remaining purpose is now decided: sell the optional one-time
+**Alfred Supporter** licence whose perks are cron schedules and
+file/webhook triggers. Perks are permanent and licence keys carry **no
+expiry**; official binaries stay free and public, and nobody is required to
+pay. Configure exactly this, nothing more:
 
-- [ ] **Donations/sponsorships only** — simplest path; no app changes needed.
-- [ ] **Revive paid licensing** (support contracts, hosted features, priority
-  builds?) — then revisit all of: checkout/portal links
-  (`VITE_POLAR_*` env seam), the dormant in-app licensing UI, and possibly
-  `ALFRED_RELEASE_DATE` wiring. Do not half-configure this.
-- [ ] Whatever the choice: remove or fulfill every remaining Polar reference
-  outside `plans/release-money/` (historical archive) so docs match reality.
+- [ ] Approve the supporter price, then create **one** one-time product in
+  prod Polar named **Alfred Supporter**.
+- [ ] Attach a license-key benefit **without expiry** to that product (a
+  recorded expiry is a configuration failure under the perpetual model).
+- [ ] Create the hosted checkout link and wire it to
+  `VITE_POLAR_DESKTOP_CHECKOUT_URL` (see the public-links seam in
+  `src/features/licensing/public-links.ts`).
+- [ ] Create/confirm the customer portal URL for
+  `VITE_POLAR_CUSTOMER_PORTAL_URL`.
+- [ ] Remove or fulfill every remaining Polar reference outside
+  `plans/release-money/` (historical archive) so docs match reality.
 
-### In-app licensing subsystem (dormant)
+### In-app licensing subsystem (supporter licences)
 
-- [ ] Decide the fate of `src/features/licensing/` and
-  `src-tauri/src/licensing/`: activation UI, key storage, and validation exist
-  and are tested, but nothing gates features on them today ("Plan 008 owns
-  the gating" per `models.rs`). Free distribution needs no gating; keep the
-  code dormant or strip it deliberately — not both.
+- [x] Decided 2026-08-25: `src/features/licensing/` and
+  `src-tauri/src/licensing/` stay and serve the Alfred Supporter licence.
+  Activation UI, key storage, and validation exist and are tested; the
+  approved pro capabilities (`schedules`, `triggers`) are being wired to the
+  entitlement resolver by Plan 008.
+- [ ] After that wiring lands and is verified: confirm the in-app licence UI,
+  checkout link, and portal link behave in a distribution build with and
+  without a supporter key, with no nagging in source builds.
 
 ### Windows smoke test (gaming PC)
 

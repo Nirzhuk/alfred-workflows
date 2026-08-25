@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "cases": [
+    { "platform": "macos", "buildKind": "development" },
+    { "platform": "macos", "buildKind": "packaged" },
+    { "platform": "windows", "buildKind": "development" },
+    { "platform": "windows", "buildKind": "packaged" },
+    { "platform": "linux", "buildKind": "development" },
+    { "platform": "linux", "buildKind": "packaged" }
+  ],
+  "cliProviders": [
+    "claude_code",
+    "cursor",
+    "codex",
+    "opencode",
+    "github_copilot",
+    "gemini",
+    "grok",
+    "pi",
+    "omp"
+  ],
+  "enabledNativeProviders": []
+}

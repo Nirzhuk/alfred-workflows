@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Icon } from "../../../../components/icon";
 import { Modal, ModalHeader } from "../../../../components/modal";
 import { SelectControl } from "../../../../components/select-control";
+import { LockedCapability } from "../../../licensing/components";
 import {
   formatNextRunLabel,
   previewNextRunAt,
@@ -18,12 +19,18 @@ import {
   type SchedulePickerValue,
   type ScheduleRepeat,
 } from "../../schedule-picker";
+import { useWorkflowCapability } from "../../capability";
 import { useWorkflowStore } from "../../store";
+import type { CapabilityDecision } from "../../../licensing";
+import type { Schedule } from "../../types";
 
 type Props = {
   workflowId: string;
   workflowName: string;
   onClose: () => void;
+  /** Test seam: overrides the resolver's answer. Production never passes it;
+   * the build kind is compile-time fact either way. */
+  decision?: CapabilityDecision;
 };
 
 function toggleDay(days: number[], day: number): number[] {
@@ -34,7 +41,9 @@ function toggleDay(days: number[], day: number): number[] {
   return [...days, day];
 }
 
-export function ScheduleModal({ workflowId, workflowName, onClose }: Props) {
+export function ScheduleModal({ workflowId, workflowName, onClose, decision }: Props) {
+  const resolved = useWorkflowCapability("schedules");
+  const gate = decision ?? resolved;
   const schedule = useWorkflowStore((s) => s.schedule);
   const loading = useWorkflowStore((s) => s.loading);
   const loadSchedule = useWorkflowStore((s) => s.loadSchedule);
@@ -115,166 +124,198 @@ export function ScheduleModal({ workflowId, workflowName, onClose }: Props) {
         }
       />
 
-      <div className="schedule-modal-body">
-        <label className="field checkbox-field">
-          <input
-            type="checkbox"
-            checked={enabled}
-            onChange={(e) => setEnabled(e.target.checked)}
-          />
-          <span>Enable schedule</span>
-        </label>
-
-        {cronMode ? (
-          <label className="field">
-            <span>Cron expression</span>
+      {gate.available ? (
+        <div className="schedule-modal-body">
+          <label className="field checkbox-field">
             <input
-              type="text"
-              value={customCron}
-              placeholder="0 0 9 * * 1-5"
-              spellCheck={false}
-              autoCapitalize="off"
-              autoCorrect="off"
-              onChange={(e) => setCustomCron(e.target.value)}
+              type="checkbox"
+              checked={enabled}
+              onChange={(e) => setEnabled(e.target.checked)}
             />
+            <span>Enable schedule</span>
           </label>
-        ) : (
-          <>
+
+          {cronMode ? (
             <label className="field">
-              <span>Repeat</span>
-              <SelectControl
-                value={picker.repeat}
-                onChange={(e) => {
-                  const repeat = e.target.value as ScheduleRepeat;
-                  setPicker((current) => ({
-                    ...current,
-                    repeat,
-                    days:
-                      repeat === "weekly" && current.days.length === 0
-                        ? [1]
-                        : current.days,
-                  }));
-                }}
-              >
-                {SCHEDULE_REPEAT_OPTIONS.map((option) => (
-                  <option key={option.id} value={option.id}>
-                    {option.label}
-                  </option>
-                ))}
-              </SelectControl>
+              <span>Cron expression</span>
+              <input
+                type="text"
+                value={customCron}
+                placeholder="0 0 9 * * 1-5"
+                spellCheck={false}
+                autoCapitalize="off"
+                autoCorrect="off"
+                onChange={(e) => setCustomCron(e.target.value)}
+              />
             </label>
-
-            {picker.repeat === "weekly" ? (
-              <div className="field">
-                <span id="schedule-days-label">Days</span>
-                <div
-                  className="schedule-day-row"
-                  role="group"
-                  aria-labelledby="schedule-days-label"
-                >
-                  {SCHEDULE_WEEKDAYS.map((day) => {
-                    const selected = picker.days.includes(day.value);
-                    return (
-                      <button
-                        key={day.value}
-                        type="button"
-                        className={
-                          selected ? "schedule-day is-selected" : "schedule-day"
-                        }
-                        aria-pressed={selected}
-                        aria-label={day.name}
-                        title={day.name}
-                        onClick={() =>
-                          setPicker((current) => ({
-                            ...current,
-                            days: toggleDay(current.days, day.value),
-                          }))
-                        }
-                      >
-                        {day.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            ) : null}
-
-            {showTime ? (
+          ) : (
+            <>
               <label className="field">
-                <span>Time</span>
-                <input
-                  type="time"
-                  className="schedule-time-input"
-                  value={timeInputValue(picker.hour, picker.minute)}
-                  step={60}
+                <span>Repeat</span>
+                <SelectControl
+                  value={picker.repeat}
                   onChange={(e) => {
-                    const next = parseTimeInput(e.target.value);
-                    if (!next) return;
-                    setPicker((current) => ({ ...current, ...next }));
+                    const repeat = e.target.value as ScheduleRepeat;
+                    setPicker((current) => ({
+                      ...current,
+                      repeat,
+                      days:
+                        repeat === "weekly" && current.days.length === 0
+                          ? [1]
+                          : current.days,
+                    }));
                   }}
-                />
+                >
+                  {SCHEDULE_REPEAT_OPTIONS.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </SelectControl>
               </label>
-            ) : null}
-          </>
-        )}
 
-        {nextRunLabel ? (
-          <div className="field">
-            <span>Next run</span>
-            <p className="schedule-next-run">{nextRunLabel}</p>
-          </div>
-        ) : null}
+              {picker.repeat === "weekly" ? (
+                <div className="field">
+                  <span id="schedule-days-label">Days</span>
+                  <div
+                    className="schedule-day-row"
+                    role="group"
+                    aria-labelledby="schedule-days-label"
+                  >
+                    {SCHEDULE_WEEKDAYS.map((day) => {
+                      const selected = picker.days.includes(day.value);
+                      return (
+                        <button
+                          key={day.value}
+                          type="button"
+                          className={
+                            selected ? "schedule-day is-selected" : "schedule-day"
+                          }
+                          aria-pressed={selected}
+                          aria-label={day.name}
+                          title={day.name}
+                          onClick={() =>
+                            setPicker((current) => ({
+                              ...current,
+                              days: toggleDay(current.days, day.value),
+                            }))
+                          }
+                        >
+                          {day.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : null}
 
-        <label className="field checkbox-field">
-          <input
-            type="checkbox"
-            checked={cronMode}
-            onChange={(e) => {
-              const next = e.target.checked;
-              if (next) {
-                setCustomCron(cron || "0 0 9 * * 1-5");
-                setCronMode(true);
-                return;
-              }
-              const parsed = cronToPicker(customCron);
-              if (parsed) setPicker(parsed);
-              setCronMode(false);
-            }}
-          />
-          <span>Use a cron expression</span>
-        </label>
+              {showTime ? (
+                <label className="field">
+                  <span>Time</span>
+                  <input
+                    type="time"
+                    className="schedule-time-input"
+                    value={timeInputValue(picker.hour, picker.minute)}
+                    step={60}
+                    onChange={(e) => {
+                      const next = parseTimeInput(e.target.value);
+                      if (!next) return;
+                      setPicker((current) => ({ ...current, ...next }));
+                    }}
+                  />
+                </label>
+              ) : null}
+            </>
+          )}
 
-        <div className="schedule-actions">
-          <button
-            type="button"
-            className="primary"
-            disabled={loading || !cron}
-            onClick={() => {
-              void (async () => {
-                await saveSchedule({ workflowId, cron, enabled });
-                if (!useWorkflowStore.getState().error) onClose();
-              })();
-            }}
-          >
-            Save schedule
-          </button>
-          {scheduleForWorkflow ? (
+          {nextRunLabel ? (
+            <div className="field">
+              <span>Next run</span>
+              <p className="schedule-next-run">{nextRunLabel}</p>
+            </div>
+          ) : null}
+
+          <label className="field checkbox-field">
+            <input
+              type="checkbox"
+              checked={cronMode}
+              onChange={(e) => {
+                const next = e.target.checked;
+                if (next) {
+                  setCustomCron(cron || "0 0 9 * * 1-5");
+                  setCronMode(true);
+                  return;
+                }
+                const parsed = cronToPicker(customCron);
+                if (parsed) setPicker(parsed);
+                setCronMode(false);
+              }}
+            />
+            <span>Use a cron expression</span>
+          </label>
+
+          <div className="schedule-actions">
             <button
               type="button"
-              className="ghost"
-              disabled={loading}
+              className="primary"
+              disabled={loading || !cron}
               onClick={() => {
                 void (async () => {
-                  await clearSchedule(workflowId);
+                  await saveSchedule({ workflowId, cron, enabled });
                   if (!useWorkflowStore.getState().error) onClose();
                 })();
               }}
             >
-              Remove
+              Save schedule
             </button>
-          ) : null}
+            {scheduleForWorkflow ? (
+              <button
+                type="button"
+                className="ghost"
+                disabled={loading}
+                onClick={() => {
+                  void (async () => {
+                    await clearSchedule(workflowId);
+                    if (!useWorkflowStore.getState().error) onClose();
+                  })();
+                }}
+              >
+                Remove
+              </button>
+            ) : null}
+          </div>
         </div>
-      </div>
+      ) : (
+        <ScheduleLockedContent savedSchedule={scheduleForWorkflow} />
+      )}
     </Modal>
+  );
+}
+
+/**
+ * The locked treatment for the schedule authoring surface (Plan 008 Step 4):
+ * the shared LockedCapability card, plus the saved schedule stated plainly —
+ * a lock never hides or drops what is already persisted. Exported so tests
+ * can render it statically without the portal-based modal shell.
+ */
+export function ScheduleLockedContent({
+  savedSchedule,
+}: {
+  savedSchedule: Schedule | null;
+}) {
+  return (
+    <div className="schedule-modal-body" data-locked-capability="schedules">
+      <LockedCapability
+        capabilityName="Schedules"
+        description="Run this workflow automatically on a cron cadence while Alfred is open. Manual runs stay free in every build."
+      />
+      {savedSchedule ? (
+        <p className="muted">
+          Saved schedule kept (
+          {savedSchedule.enabled ? "enabled" : "paused"}):{" "}
+          <code>{savedSchedule.cron}</code>. Nothing was removed.
+        </p>
+      ) : null}
+    </div>
   );
 }

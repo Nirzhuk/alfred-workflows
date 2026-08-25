@@ -21,6 +21,7 @@ import {
 import { nodeTypes } from "../node-types";
 import { useWorkflowStore } from "../../store";
 import {
+  defaultAgentNodeData,
   defaultOutputNodeData,
   isPromptNodeData,
   titleForNodeType,
@@ -202,17 +203,15 @@ export function FlowEditor({ displayNodes }: Props) {
 
   const onAddAgent = useCallback(
     (provider: AgentProviderId, position: { x: number; y: number }) => {
-      const catalog = providerModels.find((c) => c.provider === provider);
+      const catalog = providerModels.find(
+        (candidate) =>
+          candidate.provider === provider && candidate.harness === "cli",
+      );
       addNode({
         id: newId(),
         type: "agent",
         position,
-        data: {
-          label: "Agent",
-          provider,
-          model: catalog?.defaultModel ?? null,
-          skillNames: [],
-        },
+        data: defaultAgentNodeData(provider, catalog?.defaultModel ?? null),
       });
     },
     [addNode, providerModels],

@@ -21,6 +21,14 @@ Status values: `TODO`, `IN PROGRESS`, `DONE`, `BLOCKED (reason)`, or
 > shipped reality. This contract remains the spec **if paid licensing is
 > revived**; re-approving prices and "what payment buys" is a prerequisite for
 > Plans 003/005/006.
+>
+> **Updated 2026-08-25:** the owner approved the successor model. Official
+> binaries stay **free and public**; Polar's remaining role is exactly one
+> optional one-time **Alfred Supporter** licence whose perks are `schedules`
+> and `triggers` (cron, file-watch, webhooks). Perks are permanent and keys
+> carry **no expiry**, so the one-year update window and every "one-year
+> expiry" requirement below are historical. Still undecided for Plans
+> 003/005/006: the supporter price and Polar sandbox access.
 
 This is the current contract. It replaced the four-product
 annual/lifetime/seat model on 2026-08-20 via
@@ -107,12 +115,12 @@ under "Historical" at the end of this section.
 | --- | --- | --- | --- | --- | --- |
 | [001](archive/001-connect-desktop-polar-licensing.md) | Build the direct Polar license client with injected fixtures, secure storage, and a 30-day offline window | P0 | L | — | DONE (archived) |
 | [002](archive/002-build-polar-license-settings.md) | Build License & Billing settings with injected checkout/portal configuration | P0 | M | 001 | DONE (archived) |
-| [003](003-configure-polar-commerce.md) | Configure Polar sandbox for the two products, bind public IDs/URLs, and prove the real integration | P0 | M | 001, 002, **007** | BLOCKED — rewritten 2026-08-20 for the two-product model. Step 1's verifier/manifest shape is re-opened by 007 Step 4 (still three benefit classes; `verifier.ts` still asserts a key with no expiry). Steps 2–8 need the two approved prices, authenticated Polar sandbox access, and proof that Polar can issue a one-time product's key with a one-year expiry and sell a seat product one-time per seat |
+| [003](003-configure-polar-commerce.md) | Configure Polar sandbox for the supporter product, bind public IDs/URLs, and prove the real integration | P0 | M | 001, 002, **007** | BLOCKED — rewritten 2026-08-20 for the two-product model; re-decided 2026-08-25 as the single one-time Alfred Supporter licence (perks `schedules`+`triggers`, keys **without expiry**), which replaces the former proof that Polar can issue a key with a one-year expiry or sell seats. The two-product manifest/verifier shape needs its own re-plan. Still needed before any of it runs: the approved supporter price and authenticated Polar sandbox login |
 | [004](004-publish-signed-polar-downloads.md) | Publish official installers as **public GitHub Release assets** (free distribution) | P0 | M | signing reference | IN PROGRESS — rewritten 2026-08-25 for the free/public-distribution pivot; pipeline, gates, checksums, docs, and in-app download action shipped and verified. Remaining: push `v1.0.0`, polish release notes. Supersedes the Polar-delivery premise; [005](005-run-polar-paid-release-acceptance.md)/[006](006-launch-polar-paid-release.md) need their own re-plan if licensing revives |
 | [005](005-run-polar-paid-release-acceptance.md) | Pass the packaged Polar sandbox acceptance matrix | P0 | L | 004 | IN PROGRESS — rewritten 2026-08-20. Matrix D's offline boundaries stay automated (15 injected-clock tests, exact) with the `expired` row corrected; nine update-window rows (W1–W9) are new; matrix E inherits the signed-macOS and packaged-Windows credential-store smokes from [plans/008](../008-connected-apps-foundation.md). [Acceptance template](../../docs/release-acceptance/TEMPLATE-polar.md) updated. Matrices A–C and E–F need Polar sandbox, sandbox purchases, and clean macOS/Windows machines |
 | [006](006-launch-polar-paid-release.md) | Configure production Polar, run live canaries, and open sales | P0 | M | 005 | TODO |
-| [007](007-two-product-perpetual-model.md) | Move to two one-time products with permanent features and a one-year update window | P0 | L | 001, 002 | TODO — **blocks 003–006**; needs the two approved prices and the Polar one-time/expiring-key/one-time-per-seat confirmation. Plans 003/004/005 and the acceptance template are already rewritten to its model, so the remaining work is code plus operator input, not planning |
-| [008](008-pro-entitlement-and-source-freedom.md) | Gate pro features in distribution builds only; keep self-built Alfred free and equal | P0 | L | 007 | TODO — **not release-blocking**; blocked on the approved pro capability list. See "008 does not block the launch" below |
+| [007](007-two-product-perpetual-model.md) | Move to two one-time products with permanent features and a one-year update window | P0 | L | 001, 002 | IN PROGRESS — code complete 2026-08-25: two-product enum + legacy migration, `expired` = entitled-with-window-closed incl. **404 arbitration against the stored deadline** (Option A, per POLAR-CAPABILITY-FINDINGS; prose matching rejected), release-date rule as one tested pure function, verifier enforces one-year expiry and rejects retired benefit classes, W1/W2/W5-W8 automated in acceptance.rs (68 licensing tests green). Remaining: owner prices + sandbox confirmation (click paths A–C in the findings doc) |
+| [008](008-pro-entitlement-and-source-freedom.md) | Gate pro features in distribution builds only; keep self-built Alfred free and equal | P0 | L | 007 | IN PROGRESS — capability list APPROVED 2026-08-25 (`schedules`, `triggers`; recorded in Plan 008 Step 1). Skeleton shipped 2026-08-25: pure entitlement resolver (40-cell test matrix, source builds always unlocked), shared LockedCapability component, explain-once out-of-window notice (copy DRAFT, unwired). Call-site wiring underway 2026-08-25 in a parallel change — not yet verified |
 
 **Sequencing changed on 2026-08-20, and again later the same day.**
 
@@ -211,7 +219,7 @@ separate cleanup action and is not authorized by these plans.
 | Previous plan | Canonical destination |
 | --- | --- |
 | `001-polar-offline-licensing.md` | Plans 001–003 |
-| `002-freemium-entitlement-enforcement.md` | Plan 001. **The "local feature gating is rejected" decision is superseded on 2026-08-20 by [Plan 008](008-pro-entitlement-and-source-freedom.md)**, which gates pro features in distribution builds only. It is an honest switch, never enforcement: under GPL a source build is unlocked by design, and anti-tamper techniques are explicitly prohibited. |
+| `002-freemium-entitlement-enforcement.md` | Plan 001. **The "local feature gating is rejected" decision is superseded on 2026-08-20 by [Plan 008](008-pro-entitlement-and-source-freedom.md)**, whose pro capability list (`schedules`, `triggers`) the owner approved on 2026-08-25. The reversal exists because under GPL a gate can only ever be an honest switch, never enforcement: a source build is unlocked by design, anti-tamper techniques are explicitly prohibited, and payment buys convenience, not capability. |
 | `003-freemium-license-ux.md` | Plan 002 |
 | `004-release-signing-secrets.md` | Signing reference + Plan 004 |
 | `005-homebrew-cask.md` | Deferred Homebrew note |

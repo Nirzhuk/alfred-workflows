@@ -8,8 +8,9 @@ use crate::agents::process::{
     find_bin, prefer_stdout, run_cmd, run_cmd_with_stdin, run_cmd_with_stdin_env,
 };
 use crate::agents::{
-    adapter_for, auth_required, AgentActivity, AgentActivityKind, AgentActivityState,
-    AgentAuthRequired, AgentError, AgentProvider, AgentRequest, AgentRunHooks,
+    auth_required, execute_target, AgentActivity, AgentActivityKind, AgentActivityState,
+    AgentAuthRequired, AgentError, AgentExecutionTarget, AgentHarness, AgentProvider, AgentRequest,
+    AgentRequestMetadata, AgentRunHooks, OpaqueAgentAccountRef, SafeAgentRunMetadata,
 };
 use crate::db::Db;
 use crate::integrations::actions::{
@@ -310,6 +311,32 @@ fn parse_skill_names(data: &Value) -> Vec<String> {
         .filter(|s| !s.is_empty())
         .map(|s| vec![s.trim_start_matches('/').to_string()])
         .unwrap_or_default()
+}
+
+fn safe_agent_error(error: &AgentError) -> &'static str {
+    match error {
+        AgentError::Cancelled => "cancelled",
+        AgentError::InvalidHarness => crate::agents::INVALID_AGENT_HARNESS,
+        AgentError::InvalidAccountRef => crate::agents::INVALID_AGENT_ACCOUNT_REF,
+        AgentError::InvalidRequestMetadata => "invalid_agent_request_metadata",
+        AgentError::InvalidModel => crate::agents::INVALID_AGENT_MODEL,
+        AgentError::NativeRuntimeUnavailable => crate::agents::NATIVE_RUNTIME_UNAVAILABLE,
+        AgentError::Message(_) => "agent_execution_failed",
+    }
+}
+
+fn safe_metadata_value(metadata: &SafeAgentRunMetadata) -> Value {
+    serde_json::to_value(metadata).unwrap_or_else(|_| serde_json::json!({}))
+}
+
+fn safe_activity_for_run_event(
+    activity: &AgentActivity,
+    harness: AgentHarness,
+) -> AgentActivity {
+    activity.safe_for_emission(match harness {
+        AgentHarness::Cli => "CLI",
+        AgentHarness::Alfred => "Alfred",
+    })
 }
 
 const HTML_REPORT_INSTRUCTION: &str = "Return the final answer as a complete, self-contained HTML report. Output only valid HTML beginning with <!doctype html> or <html>; do not wrap it in Markdown code fences. Use semantic HTML and inline CSS so the report renders without external assets.";
@@ -737,6 +764,9 @@ pub fn execute_run(
         )?;
 
         let mut step_auth_required: Option<AgentAuthRequired> = None;
+        let mut step_agent_provider: Option<String> = None;
+        let mut step_agent_skill: Option<String> = None;
+        let mut step_agent_metadata: Option<SafeAgentRunMetadata> = None;
         let step_result = match node_type.as_str() {
             "prompt" | "input" => {
                 let prompt = data
@@ -910,123 +940,197 @@ pub fn execute_run(
                 };
                 let provider =
                     AgentProvider::from_str(provider_str).unwrap_or(AgentProvider::ClaudeCode);
+                let harness = AgentHarness::parse_persisted(data.get("harness"))
+                    .map_err(|error| RunnerError::Message(error.to_string()))?;
+                step_agent_provider = Some(provider.as_str().to_owned());
+                step_agent_skill = skill_label.clone();
+                step_agent_metadata = Some(SafeAgentRunMetadata::identity(provider, harness, None));
 
-                let base_prompt = if context_prompt.is_empty() {
-                    last_output.clone()
-                } else {
-                    context_prompt.clone()
-                };
-                let prompt = if prelude.is_empty() {
-                    base_prompt
-                } else {
-                    format!("{prelude}\n---\n\n{base_prompt}")
-                };
-                let prompt = if html_report_agents.contains(&node_id) {
-                    with_html_report_instruction(&prompt)
-                } else {
-                    prompt
-                };
+                (|| -> Result<(String, Option<String>, Option<String>, Option<Value>), String> {
+                    let capability_manifest = app
+                        .try_state::<crate::agents::capability_manifest::AgentCapabilityManifest>()
+                        .ok_or_else(|| crate::agents::NATIVE_RUNTIME_UNAVAILABLE.to_owned())?;
+                    capability_manifest
+                        .require_execution(provider, harness)
+                        .map_err(|error| safe_agent_error(&error).to_owned())?;
+                    let resolved_model = crate::agents::models::resolve_model_for_execution(
+                        provider,
+                        harness,
+                        model.as_deref(),
+                    )
+                    .map_err(|error| safe_agent_error(&error).to_owned())?;
+                    step_agent_metadata = Some(SafeAgentRunMetadata::identity(
+                        provider,
+                        harness,
+                        resolved_model.as_deref(),
+                    ));
+                    let account_ref = if harness == AgentHarness::Alfred {
+                        data.get("accountRef")
+                            .and_then(Value::as_str)
+                            .map(str::trim)
+                            .filter(|value| !value.is_empty())
+                            .map(OpaqueAgentAccountRef::parse)
+                            .transpose()
+                            .map_err(|error| safe_agent_error(&error).to_owned())?
+                    } else {
+                        None
+                    };
 
-                let adapter = adapter_for(provider);
-                let request = AgentRequest {
-                    prompt: prompt.clone(),
-                    model: model.clone(),
-                    skill: None,
-                    skill_name: None,
-                    skill_names: skill_names.clone(),
-                    working_directory: working_directory.clone(),
-                    extra: Value::Null,
-                };
-                let resolved_model = request.effective_model(provider);
-                // Snapshot the working tree so we can report which files this
-                // step touched — CLI-agnostic, works for any provider as long
-                // as the workflow's working directory is a git repo.
-                let git_before = working_directory.as_deref().map(git_status_snapshot);
+                    let base_prompt = if context_prompt.is_empty() {
+                        last_output.clone()
+                    } else {
+                        context_prompt.clone()
+                    };
+                    let prompt = if prelude.is_empty() {
+                        base_prompt
+                    } else {
+                        format!("{prelude}\n---\n\n{base_prompt}")
+                    };
+                    let prompt = if html_report_agents.contains(&node_id) {
+                        with_html_report_instruction(&prompt)
+                    } else {
+                        prompt
+                    };
 
-                emit(
-                    app,
-                    RunEvent {
-                        run_id: run_id.into(),
-                        workflow_id: workflow_id.into(),
-                        kind: "step_log".into(),
-                        node_id: Some(node_id.clone()),
-                        node_type: Some(node_type.clone()),
-                        node_label: Some(label.clone()),
-                        status: Some("running".into()),
-                        message: format!(
-                            "Running {} · `{resolved_model}`{}",
-                            provider.label(),
-                            skill_label
-                                .as_deref()
-                                .map(|s| format!(" · {s}"))
-                                .unwrap_or_default()
-                        ),
-                        output: None,
-                        stats: None,
-                        activity: None,
-                        auth_required: None,
-                        at: Utc::now().to_rfc3339(),
-                    },
-                )?;
+                    let request = AgentRequest {
+                        prompt,
+                        model: resolved_model.clone(),
+                        skill: None,
+                        skill_name: None,
+                        skill_names: skill_names.clone(),
+                        working_directory: working_directory.clone(),
+                        extra: Value::Null,
+                    };
+                    let target = AgentExecutionTarget {
+                        provider,
+                        harness,
+                        account_ref,
+                        model: resolved_model.clone(),
+                        working_directory: working_directory.clone(),
+                        request_metadata: AgentRequestMetadata::new(run_id, &node_id)
+                            .map_err(|error| safe_agent_error(&error).to_owned())?,
+                    };
+                    let git_before = working_directory.as_deref().map(git_status_snapshot);
+                    let model_label = resolved_model
+                        .as_deref()
+                        .map(|value| format!(" · `{value}`"))
+                        .unwrap_or_default();
 
-                let on_activity = |activity: &AgentActivity| {
-                    let _ = emit(
+                    emit(
                         app,
                         RunEvent {
                             run_id: run_id.into(),
                             workflow_id: workflow_id.into(),
-                            kind: "agent_activity".into(),
+                            kind: "step_log".into(),
                             node_id: Some(node_id.clone()),
                             node_type: Some(node_type.clone()),
                             node_label: Some(label.clone()),
                             status: Some("running".into()),
-                            message: activity.label.clone(),
+                            message: format!(
+                                "Running {} via {}{model_label}{}",
+                                provider.label(),
+                                match harness {
+                                    AgentHarness::Cli => "CLI",
+                                    AgentHarness::Alfred => "Alfred",
+                                },
+                                skill_label
+                                    .as_deref()
+                                    .map(|value| format!(" · {value}"))
+                                    .unwrap_or_default()
+                            ),
                             output: None,
-                            stats: None,
-                            activity: Some(activity.clone()),
+                            stats: step_agent_metadata.as_ref().map(safe_metadata_value),
+                            activity: None,
                             auth_required: None,
                             at: Utc::now().to_rfc3339(),
                         },
-                    );
-                };
+                    )
+                    .map_err(|error| error.to_string())?;
 
-                match adapter.run(
-                    request,
-                    AgentRunHooks {
-                        control: Some(control),
-                        on_activity: Some(&on_activity),
-                    },
-                ) {
-                    Ok(response) => {
-                        last_output = response.output.clone();
-                        last_files_changed.clear();
-                        let mut metadata = response.metadata;
-                        if let (Some(before), Some(dir)) =
-                            (&git_before, working_directory.as_deref())
-                        {
-                            let after = git_status_snapshot(dir);
-                            let files = diff_git_status(dir, before, &after);
-                            if !files.is_empty() {
-                                last_files_changed = files.clone();
-                                if let Value::Object(map) = &mut metadata {
-                                    map.insert("filesChanged".into(), Value::Array(files));
+                    let on_activity = |activity: &AgentActivity| {
+                        let safe_activity = safe_activity_for_run_event(activity, harness);
+                        let _ = emit(
+                            app,
+                            RunEvent {
+                                run_id: run_id.into(),
+                                workflow_id: workflow_id.into(),
+                                kind: "agent_activity".into(),
+                                node_id: Some(node_id.clone()),
+                                node_type: Some(node_type.clone()),
+                                node_label: Some(label.clone()),
+                                status: Some("running".into()),
+                                message: safe_activity.label.clone(),
+                                output: None,
+                                stats: step_agent_metadata.as_ref().map(safe_metadata_value),
+                                activity: Some(safe_activity),
+                                auth_required: None,
+                                at: Utc::now().to_rfc3339(),
+                            },
+                        );
+                    };
+
+                    // The Alfred harness resolves through the managed native
+                    // router; the CLI path is untouched and never falls back.
+                    let native_router = app.try_state::<crate::agents::native::NativeExecutionRouter>();
+                    match execute_target(
+                        &target,
+                        request,
+                        AgentRunHooks {
+                            control: Some(control),
+                            on_activity: Some(&on_activity),
+                        },
+                        native_router
+                            .as_ref()
+                            .map(|router| router.inner() as &dyn crate::agents::AgentNativeRuntime),
+                    ) {
+                        Ok(response) => {
+                            last_output = response.output.clone();
+                            last_files_changed.clear();
+                            let mut metadata = SafeAgentRunMetadata::from_untrusted(
+                                provider,
+                                harness,
+                                resolved_model.as_deref(),
+                                &response.metadata,
+                            );
+                            if let (Some(before), Some(dir)) =
+                                (&git_before, working_directory.as_deref())
+                            {
+                                let after = git_status_snapshot(dir);
+                                let files = diff_git_status(dir, before, &after);
+                                if !files.is_empty() {
+                                    for file in &files {
+                                        if let (Some(path), Some(status)) = (
+                                            file.get("path").and_then(Value::as_str),
+                                            file.get("status").and_then(Value::as_str),
+                                        ) {
+                                            metadata.add_file_changed(path, status);
+                                        }
+                                    }
+                                    last_files_changed = files;
                                 }
                             }
+                            let metadata_value = safe_metadata_value(&metadata);
+                            step_agent_metadata = Some(metadata);
+                            Ok((
+                                response.output,
+                                Some(provider.as_str().to_string()),
+                                skill_label,
+                                Some(metadata_value),
+                            ))
                         }
-                        Ok((
-                            response.output,
-                            Some(provider.as_str().to_string()),
-                            skill_label,
-                            Some(metadata),
-                        ))
+                        Err(AgentError::Cancelled) => Err("__cancelled__".into()),
+                        Err(error) => {
+                            if harness == AgentHarness::Cli {
+                                step_auth_required = auth_required(provider, &error.to_string());
+                            }
+                            if step_auth_required.is_some() {
+                                Err("agent_authentication_required".into())
+                            } else {
+                                Err(safe_agent_error(&error).into())
+                            }
+                        }
                     }
-                    Err(AgentError::Cancelled) => Err("__cancelled__".into()),
-                    Err(e) => {
-                        let message = e.to_string();
-                        step_auth_required = auth_required(provider, &message);
-                        Err(message)
-                    }
-                }
+                })()
             }
             "customAgent" => {
                 let command = data
@@ -1598,15 +1702,20 @@ pub fn execute_run(
             }
             Err(err) if err == "__cancelled__" => {
                 let input = serde_json::json!({ "prompt": context_prompt });
+                let metadata = step_agent_metadata.as_ref().map(safe_metadata_value);
+                let output = metadata
+                    .as_ref()
+                    .map(|stats| serde_json::json!({ "stats": stats }))
+                    .unwrap_or_else(|| serde_json::json!({}));
                 insert_step(
                     db,
                     run_id,
                     &node_id,
-                    None,
-                    None,
+                    step_agent_provider.as_deref(),
+                    step_agent_skill.as_deref(),
                     "failed",
                     &input,
-                    &serde_json::json!({}),
+                    &output,
                     Some("Cancelled by user"),
                 )?;
                 set_run_status(db, run_id, "cancelled", Some("Cancelled by user"))?;
@@ -1622,7 +1731,7 @@ pub fn execute_run(
                         status: Some("cancelled".into()),
                         message: "Automation cancelled".into(),
                         output: None,
-                        stats: None,
+                        stats: metadata,
                         activity: None,
                         auth_required: None,
                         at: Utc::now().to_rfc3339(),
@@ -1632,15 +1741,20 @@ pub fn execute_run(
             }
             Err(err) => {
                 let input = serde_json::json!({ "prompt": context_prompt });
+                let metadata = step_agent_metadata.as_ref().map(safe_metadata_value);
+                let output = metadata
+                    .as_ref()
+                    .map(|stats| serde_json::json!({ "stats": stats }))
+                    .unwrap_or_else(|| serde_json::json!({}));
                 insert_step(
                     db,
                     run_id,
                     &node_id,
-                    None,
-                    None,
+                    step_agent_provider.as_deref(),
+                    step_agent_skill.as_deref(),
                     "failed",
                     &input,
-                    &serde_json::json!({}),
+                    &output,
                     Some(&err),
                 )?;
                 set_run_status(db, run_id, "failed", Some(&err))?;
@@ -1656,7 +1770,7 @@ pub fn execute_run(
                         status: Some("failed".into()),
                         message: err.clone(),
                         output: None,
-                        stats: None,
+                        stats: metadata.clone(),
                         activity: None,
                         auth_required: step_auth_required.take(),
                         at: Utc::now().to_rfc3339(),
@@ -1674,7 +1788,7 @@ pub fn execute_run(
                         status: Some("failed".into()),
                         message: format!("Automation failed: {err}"),
                         output: None,
-                        stats: None,
+                        stats: metadata,
                         activity: None,
                         auth_required: None,
                         at: Utc::now().to_rfc3339(),
@@ -1806,6 +1920,118 @@ mod tests {
         assert_eq!(script_extension("cmd.exe"), ".cmd");
         // An unknown interpreter still gets a dispatchable file.
         assert_eq!(script_extension("some-runner"), ".sh");
+    }
+
+    #[test]
+    fn agent_metadata_allowlist_drops_secret_keys_and_secret_values() {
+        let metadata = serde_json::json!({
+            "inputTokens": 12,
+            "usage": {
+                "outputTokens": 8,
+                "accessToken": "secret",
+                "credentials": { "apiKey": "secret" },
+                "innocent": "sk-adversarial-secret"
+            },
+            "unknown": "safe-looking but not allowlisted"
+        });
+        let safe = SafeAgentRunMetadata::from_untrusted(
+            AgentProvider::Codex,
+            AgentHarness::Cli,
+            Some("gpt-5.6-luna"),
+            &metadata,
+        );
+        let serialized = serde_json::to_string(&safe).unwrap();
+        assert!(serialized.contains(r#""inputTokens":12"#));
+        assert!(serialized.contains(r#""outputTokens":8"#));
+        assert!(!serialized.contains("secret"));
+        assert!(!serialized.contains("accessToken"));
+        assert!(!serialized.contains("credentials"));
+        assert!(!serialized.contains("unknown"));
+    }
+
+    #[test]
+    fn agent_errors_are_centralized_bounded_codes() {
+        let adversarial = AgentError::Message(format!(
+            "provider failed with sk-secret-value {}",
+            "x".repeat(100_000)
+        ));
+        assert_eq!(safe_agent_error(&adversarial), "agent_execution_failed");
+        assert_eq!(
+            safe_agent_error(&AgentError::NativeRuntimeUnavailable),
+            crate::agents::NATIVE_RUNTIME_UNAVAILABLE
+        );
+        assert!(safe_agent_error(&adversarial).len() < 64);
+    }
+
+    #[test]
+    fn agent_activity_run_event_boundary_drops_provider_text() {
+        let activity = AgentActivity {
+            id: "credential=plain-sensitive-value".into(),
+            kind: AgentActivityKind::Command,
+            state: AgentActivityState::Completed,
+            label: format!(
+                "reasoning Bearer bearer-sensitive-value {}",
+                "x".repeat(100_000)
+            ),
+            detail: Some(
+                "Cookie=session-sensitive-value API_KEY=key-sensitive-value private reasoning"
+                    .into(),
+            ),
+        };
+        let activity = safe_activity_for_run_event(&activity, AgentHarness::Cli);
+        let event = RunEvent {
+            run_id: "run".into(),
+            workflow_id: "workflow".into(),
+            kind: "agent_activity".into(),
+            node_id: None,
+            node_type: Some("agent".into()),
+            node_label: None,
+            status: Some("running".into()),
+            message: activity.label.clone(),
+            output: None,
+            stats: None,
+            activity: Some(activity),
+            auth_required: None,
+            at: "2026-08-25T00:00:00Z".into(),
+        };
+        let serialized = serde_json::to_string(&event).unwrap();
+
+        assert!(serialized.contains(r#""message":"Command completed · CLI""#));
+        assert!(!serialized.contains("detail"));
+        for secret in [
+            "plain-sensitive-value",
+            "bearer-sensitive-value",
+            "session-sensitive-value",
+            "key-sensitive-value",
+            "private reasoning",
+        ] {
+            assert!(!serialized.contains(secret));
+        }
+        assert!(serialized.len() < 1_024);
+    }
+
+    #[test]
+    fn every_agent_terminal_outcome_keeps_provider_and_harness_metadata() {
+        for outcome in ["completed", "failed", "cancelled", "native_unavailable"] {
+            let harness = if outcome == "native_unavailable" {
+                AgentHarness::Alfred
+            } else {
+                AgentHarness::Cli
+            };
+            let metadata = SafeAgentRunMetadata::identity(
+                AgentProvider::Pi,
+                harness,
+                (harness == AgentHarness::Cli).then_some("default"),
+            );
+            let event_stats = safe_metadata_value(&metadata);
+            let history_output = serde_json::json!({ "stats": event_stats });
+            assert_eq!(history_output["stats"]["provider"], "pi", "{outcome}");
+            assert_eq!(
+                history_output["stats"]["harness"],
+                harness.as_str(),
+                "{outcome}"
+            );
+        }
     }
 
     #[test]

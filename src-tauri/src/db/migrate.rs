@@ -106,6 +106,31 @@ pub fn apply_migrations(conn: &Connection) -> Result<(), DbError> {
         "TEXT NOT NULL DEFAULT '{}'",
     )?;
     conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS agent_accounts (
+           id TEXT PRIMARY KEY NOT NULL,
+           provider_id TEXT NOT NULL,
+           harness TEXT NOT NULL,
+           identity_key TEXT NOT NULL,
+           display_name TEXT,
+           external_account_id TEXT,
+           external_workspace_id TEXT,
+           auth_method TEXT NOT NULL,
+           custody_mode TEXT NOT NULL,
+           scopes_json TEXT NOT NULL DEFAULT '[]',
+           status TEXT NOT NULL DEFAULT 'error' CHECK (status IN ('connected', 'expired', 'error', 'revoked', 'disconnect_pending')),
+           expires_at TEXT,
+           last_checked_at TEXT,
+           last_error_code TEXT,
+           credential_ref TEXT NOT NULL UNIQUE,
+           created_at TEXT NOT NULL,
+           updated_at TEXT NOT NULL
+         );
+         CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_accounts_identity
+           ON agent_accounts(provider_id, harness, identity_key);
+         CREATE INDEX IF NOT EXISTS idx_agent_accounts_provider_id
+           ON agent_accounts(provider_id);",
+    )?;
+    conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS app_trigger_state (
            trigger_id TEXT PRIMARY KEY NOT NULL REFERENCES triggers(id) ON DELETE CASCADE,
            cursor TEXT,
@@ -434,6 +459,33 @@ mod tests {
             let name = name.to_ascii_lowercase();
             name.contains("token") || name.contains("secret") || name.contains("authorization_code")
         }));
+    }
+
+    #[test]
+    fn initializes_secret_free_agent_accounts_on_empty_and_existing_databases() {
+        for drop_new_table in [false, true] {
+            let conn = Connection::open_in_memory().expect("open database");
+            conn.execute_batch(include_str!("schema.sql"))
+                .expect("initialize schema");
+            if drop_new_table {
+                conn.execute_batch("DROP TABLE agent_accounts;")
+                    .expect("create legacy fixture");
+            }
+            apply_migrations(&conn).expect("apply migrations");
+
+            let names = columns(&conn, "agent_accounts");
+            assert!(names.contains(&"identity_key".to_owned()));
+            assert!(names.contains(&"credential_ref".to_owned()));
+            assert!(names.contains(&"custody_mode".to_owned()));
+            assert!(!names.iter().any(|name| {
+                let name = name.to_ascii_lowercase();
+                name.contains("token")
+                    || name.contains("secret")
+                    || name.contains("authorization_code")
+                    || name.contains("verifier")
+                    || name.contains("nonce")
+            }));
+        }
     }
 
     #[test]

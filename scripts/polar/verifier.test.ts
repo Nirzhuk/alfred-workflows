@@ -1,22 +1,21 @@
 import { describe, expect, test } from "bun:test";
 import {
+  loadSandboxManifest,
   parseSandboxManifest,
+  SandboxManifestError,
   type SandboxManifest,
 } from "./manifest";
 import type { SandboxTestKeys } from "./secrets";
-import { isOneYearExpiry, verifyPolarSandbox } from "./verifier";
+import {
+  expiryConfigMismatches,
+  verifyPolarSandbox,
+} from "./verifier";
 
 const TEST_KEYS: SandboxTestKeys = {
-  individual: "individual-private-value",
-  teams: "teams-private-value",
+  supporter: "supporter-private-value",
 };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-
-/** A plausible live expiry: issued a while ago, still inside its one year. */
-function inWindowExpiry(): string {
-  return new Date(Date.now() + 200 * DAY_MS).toISOString();
-}
 
 function manifestFixture(): SandboxManifest {
   return parseSandboxManifest({
@@ -24,19 +23,15 @@ function manifestFixture(): SandboxManifest {
     environment: "sandbox",
     organizationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
     benefits: {
-      individual: {
+      supporter: {
         id: "11111111-1111-4111-8111-111111111111",
-        label: "Alfred Sandbox License",
-      },
-      teams: {
-        id: "22222222-2222-4222-8222-222222222222",
-        label: "Alfred Sandbox Teams",
+        label: "Alfred Supporter",
       },
     },
     checkoutLinks: {
-      individual: {
+      supporter: {
         url: "https://sandbox-api.polar.sh/v1/checkout-links/polar_cl_license/redirect",
-        label: "Alfred Sandbox License Checkout",
+        label: "Alfred Supporter Checkout",
       },
     },
     customerPortal: {
@@ -56,7 +51,7 @@ type CapturedRequest = {
 function createMockPolar(
   options: {
     failFirstValidation?: boolean;
-    /** Overrides the one-year expiry every Alfred key is issued with. */
+    /** Overrides the null expiry every perpetual supporter key is issued with. */
     expiresAt?: string | null;
   } = {},
 ) {
@@ -65,18 +60,18 @@ function createMockPolar(
   let nextId = 1;
   let failedValidation = false;
 
-  const benefitForKey = (key: string) =>
-    key === TEST_KEYS.individual
-      ? "11111111-1111-4111-8111-111111111111"
-      : "22222222-2222-4222-8222-222222222222";
+  const benefitForKey = (_key: string) =>
+    "11111111-1111-4111-8111-111111111111";
 
   const licenseForKey = (key: string) => ({
     organization_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
     benefit_id: benefitForKey(key),
     status: "granted",
     limit_activations: 3,
+    // Perpetual model: Polar issues keys with expires_at null. An override
+    // simulates a benefit misconfigured with an expiration.
     expires_at:
-      options.expiresAt === undefined ? inWindowExpiry() : options.expiresAt,
+      options.expiresAt === undefined ? null : options.expiresAt,
   });
 
   const fetcher = (async (input: string | URL | Request, init?: RequestInit) => {
@@ -135,7 +130,7 @@ function createMockPolar(
 }
 
 describe("Polar sandbox verifier", () => {
-  test("checks both benefit classes and the three-activation contract without authorization", async () => {
+  test("runs the full three-activation contract once for the supporter class", async () => {
     const mock = createMockPolar();
     const output: string[] = [];
 
@@ -148,9 +143,13 @@ describe("Polar sandbox verifier", () => {
     });
 
     expect(result.passed).toBe(true);
-    expect(output).toHaveLength(20);
-    expect(output.every((line) => line.startsWith("PASS "))).toBe(true);
-    expect(mock.requests).toHaveLength(26);
+    // One class x ten cases: activate/validate 1-3, fourth rejected,
+    // deactivate, replacement, cleanup.
+    expect(output).toHaveLength(10);
+    expect(output.every((line) => line.startsWith("PASS supporter."))).toBe(
+      true,
+    );
+    expect(mock.requests).toHaveLength(13);
     expect(
       mock.requests.every((request) => !request.headers.has("authorization")),
     ).toBe(true);
@@ -165,14 +164,50 @@ describe("Polar sandbox verifier", () => {
             "/v1/customer-portal/license-keys/deactivate",
       ),
     ).toBe(true);
-    expect([...mock.active.values()].every((ids) => ids.size === 0)).toBe(true);
   });
 
-  test("fails a key issued with no expiry, for either class", async () => {
-    // The retired rule asserted the opposite: a lifetime key had to have NO
-    // expiry. Under the two-product model a key without one cannot carry an
-    // update deadline, so the Polar product is misconfigured.
-    const mock = createMockPolar({ expiresAt: null });
+  test("fails fast pre-network when the checkout link is absent", async () => {
+    const shipped = await loadSandboxManifest();
+    const manifest = parseSandboxManifest({
+      ...shipped,
+      checkoutLinks: {
+        supporter: {
+          ...shipped.checkoutLinks.supporter,
+          url: null,
+        },
+      },
+    });
+
+    const mock = createMockPolar();
+    const failures: Array<{ caseName: string; detail?: readonly string[] }> =
+      [];
+
+    const result = await verifyPolarSandbox({
+      manifest,
+      keys: TEST_KEYS,
+      fetcher: mock.fetcher,
+      report: (passed, caseName, detail) => {
+        if (!passed) failures.push({ caseName, detail });
+      },
+    });
+
+    expect(result.passed).toBe(false);
+    expect(failures).toHaveLength(1);
+    expect(failures[0].caseName).toBe("manifest.checkout.supporter");
+    expect(failures[0].detail?.join(" ")).toContain(
+      "collect the checkout link from the Polar dashboard",
+    );
+    expect(mock.requests).toHaveLength(0);
+    expect(result.caseNames).toEqual(["manifest.checkout.supporter"]);
+  });
+
+  test("fails a key issued WITH an expiry", async () => {
+    // The retired one-year rule asserted the opposite. Under the perpetual
+    // supporter model a key must read expires_at: null; any expiry means the
+    // Polar benefit is misconfigured with a license-key expiration.
+    const mock = createMockPolar({
+      expiresAt: new Date(Date.now() + 200 * DAY_MS).toISOString(),
+    });
     const output: string[] = [];
 
     const result = await verifyPolarSandbox({
@@ -184,19 +219,100 @@ describe("Polar sandbox verifier", () => {
     });
 
     expect(result.passed).toBe(false);
-    expect(output).toContain("FAIL individual.activate-1");
-    expect(output).toContain("FAIL teams.activate-1");
+    expect(output).toContain("FAIL supporter.activate-1");
   });
 
-  test("fails an expiry that is not roughly one year out", async () => {
-    const perpetual = createMockPolar({
+  test("passes when no expiry is recorded", () => {
+    expect(expiryConfigMismatches(manifestFixture())).toEqual([]);
+  });
+
+  test("fails fast on ANY recorded expiry", async () => {
+    // Supporter licences are perpetual: a recorded ttl or timeframe on the
+    // benefit is a configuration error, and no live key can compensate, so
+    // the verifier refuses before touching Polar.
+    for (const expiry of [
+      { ttl: 1, timeframe: "year" as const },
+      { ttl: 1, timeframe: "month" as const },
+      { ttl: null, timeframe: "year" as const },
+      { ttl: 2, timeframe: null },
+    ]) {
+      const fixture = manifestFixture();
+      const recorded = parseSandboxManifest({
+        ...fixture,
+        benefits: {
+          ...fixture.benefits,
+          supporter: { ...fixture.benefits.supporter, expiry },
+        },
+      });
+      const mock = createMockPolar();
+      const details: string[] = [];
+
+      const result = await verifyPolarSandbox({
+        manifest: recorded,
+        keys: TEST_KEYS,
+        fetcher: mock.fetcher,
+        report: (passed, caseName, detail) => {
+          if (!passed && detail) details.push(...detail);
+        },
+      });
+
+      expect(result.passed).toBe(false);
+      expect(mock.requests).toHaveLength(0);
+      expect(details.join("\n")).toContain(
+        "supporter licences are perpetual",
+      );
+    }
+  });
+
+  test("rejects any recorded expiry, naming the field", () => {
+    // A recorded month-long window parses (it is structurally valid) but the
+    // verifier refuses it: supporter licences are perpetual, so ANY recorded
+    // expiry is a misconfiguration against the model.
+    const fixture = manifestFixture();
+    const monthTimeframe = parseSandboxManifest({
+      ...fixture,
+      benefits: {
+        ...fixture.benefits,
+        supporter: {
+          ...fixture.benefits.supporter,
+          expiry: { ttl: 1, timeframe: "month" },
+        },
+      },
+    });
+    expect(expiryConfigMismatches(monthTimeframe).join("\n")).toContain(
+      'benefits.supporter.expiry.timeframe is "month"',
+    );
+
+    // A ttl below 1 never reaches the verifier: the manifest parser rejects
+    // it up front, with a reason naming benefits.supporter.expiry.ttl.
+    const zeroTtl = {
+      ...manifestFixture(),
+      benefits: {
+        ...manifestFixture().benefits,
+        supporter: {
+          ...manifestFixture().benefits.supporter,
+          expiry: { ttl: 0, timeframe: "year" },
+        },
+      },
+    };
+    let reason = "";
+    try {
+      parseSandboxManifest(zeroTtl);
+    } catch (error) {
+      reason = (error as SandboxManifestError).reason;
+    }
+    expect(reason).toContain("benefits.supporter.expiry.ttl");
+  });
+
+  test("fails a key with any expires_at, near or far", async () => {
+    const soonExpiring = createMockPolar({
+      expiresAt: new Date(Date.now() + DAY_MS).toISOString(),
+    });
+    const farFuture = createMockPolar({
       expiresAt: new Date(Date.now() + 3650 * DAY_MS).toISOString(),
     });
-    const alreadyLapsed = createMockPolar({
-      expiresAt: new Date(Date.now() - DAY_MS).toISOString(),
-    });
 
-    for (const mock of [perpetual, alreadyLapsed]) {
+    for (const mock of [soonExpiring, farFuture]) {
       const result = await verifyPolarSandbox({
         manifest: manifestFixture(),
         keys: TEST_KEYS,
@@ -238,46 +354,10 @@ describe("Polar sandbox verifier", () => {
       report: () => undefined,
     });
 
-    const individualDeactivations = mock.requests.filter(
-      (request) =>
-        request.path.endsWith("/deactivate") &&
-        request.body.key === TEST_KEYS.individual,
+    const deactivations = mock.requests.filter(
+      (request) => request.path.endsWith("/deactivate"),
     );
-    expect(individualDeactivations).toHaveLength(1);
+    expect(deactivations).toHaveLength(1);
     expect([...mock.active.values()].every((ids) => ids.size === 0)).toBe(true);
-  });
-});
-
-describe("one-year expiry rule", () => {
-  const now = new Date("2026-08-20T00:00:00Z");
-
-  test("requires an expiry that exists, is a date, and is still ahead", () => {
-    expect(isOneYearExpiry(null, now)).toBe(false);
-    expect(isOneYearExpiry("not-a-date", now)).toBe(false);
-    expect(isOneYearExpiry("2026-08-19T23:59:59Z", now)).toBe(false);
-    // Exactly now is already lapsed, not in window.
-    expect(isOneYearExpiry("2026-08-20T00:00:00Z", now)).toBe(false);
-  });
-
-  test("accepts one year out, and anything short of it", () => {
-    expect(isOneYearExpiry("2027-08-20T00:00:00Z", now)).toBe(true);
-    // A key issued months ago expires sooner than a year from today; the read
-    // carries no issue date, so a shorter remaining window is still correct.
-    expect(isOneYearExpiry("2026-09-20T00:00:00Z", now)).toBe(true);
-    // One week of slack above a year absorbs clock skew and Polar's rounding.
-    expect(isOneYearExpiry("2027-08-27T00:00:00Z", now)).toBe(true);
-  });
-
-  test("rejects a window materially longer than a year", () => {
-    expect(isOneYearExpiry("2027-08-28T00:00:01Z", now)).toBe(false);
-    expect(isOneYearExpiry("2036-08-20T00:00:00Z", now)).toBe(false);
-  });
-
-  test("handles a leap day without drifting a year", () => {
-    const leapDay = new Date("2028-02-29T00:00:00Z");
-    expect(isOneYearExpiry("2029-02-28T00:00:00Z", leapDay)).toBe(true);
-    // JS rolls 2029-02-29 to 2029-03-01, which is the cap plus slack.
-    expect(isOneYearExpiry("2029-03-01T00:00:00Z", leapDay)).toBe(true);
-    expect(isOneYearExpiry("2029-04-01T00:00:00Z", leapDay)).toBe(false);
   });
 });

@@ -12,6 +12,20 @@ export type AgentProviderId =
   | "pi"
   | "omp";
 
+export const AGENT_PROVIDER_IDS: AgentProviderId[] = [
+  "claude_code",
+  "cursor",
+  "codex",
+  "opencode",
+  "github_copilot",
+  "gemini",
+  "grok",
+  "pi",
+  "omp",
+];
+
+export type AgentHarness = "cli" | "alfred";
+
 export type SkillSource = "project" | "user";
 
 export type Skill = {
@@ -92,6 +106,10 @@ export type PromptNodeData = {
 export type AgentNodeData = {
   label: string;
   provider: AgentProviderId;
+  /** Missing on old graphs; read as `cli` and emitted by all new writes. */
+  harness?: AgentHarness;
+  /** Opaque native-account id. Never a credential or token. */
+  accountRef?: string | null;
   /** CLI model id / alias, e.g. `sonnet`, `gpt-5`, `opencode/big-pickle` */
   model?: string | null;
   /** Skills to invoke, e.g. `["tdd","review"]` → `/tdd /review …` */
@@ -99,6 +117,29 @@ export type AgentNodeData = {
   /** @deprecated Prefer `skillNames`. Still read when loading older graphs. */
   skillName?: string | null;
 };
+
+export function defaultAgentNodeData(
+  provider: AgentProviderId,
+  model: string | null = null,
+): AgentNodeData {
+  return {
+    label: "Agent",
+    provider,
+    harness: "cli",
+    model,
+    skillNames: [],
+  };
+}
+
+export function parseAgentHarness(value: unknown): AgentHarness {
+  if (value === undefined) return "cli";
+  if (value === "cli" || value === "alfred") return value;
+  throw new Error("invalid_agent_harness");
+}
+
+export function agentHarness(data: AgentNodeData): AgentHarness {
+  return parseAgentHarness(data.harness);
+}
 
 /**
  * Bring-your-own agent CLI. Runs `command` with the workflow prompt —
@@ -445,6 +486,25 @@ export type WorkflowFolder = {
 export type AgentProvider = {
   id: AgentProviderId;
   label: string;
+  defaultModel?: string;
+  harnesses?: AgentHarnessCapability[];
+};
+
+export type AgentAccountReference = {
+  id: string;
+  label: string;
+};
+
+export type AgentHarnessCapability = {
+  harness: AgentHarness;
+  available: boolean;
+  requiresAccount: boolean;
+  supportsOAuth: boolean;
+  supportsApiKey: boolean;
+  supportsUsage: boolean;
+  connected: boolean;
+  accounts: AgentAccountReference[];
+  error?: string | null;
 };
 
 export type RunSummary = {

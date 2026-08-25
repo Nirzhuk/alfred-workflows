@@ -1,4 +1,4 @@
-import type { AgentProviderId } from "./types";
+import type { AgentHarness, AgentProviderId } from "./types";
 
 export type ModelOption = {
   id: string;
@@ -49,18 +49,36 @@ export function modelIdForFastToggle(
 
 export type ProviderModels = {
   provider: AgentProviderId;
+  harness: AgentHarness;
   defaultModel: string;
   models: ModelOption[];
   allowCustom: boolean;
   source?: "discovered" | "fallback" | string;
   available?: boolean;
   error?: string | null;
+  requiresAccount: boolean;
+  supportsOAuth: boolean;
+  supportsApiKey: boolean;
+  supportsUsage: boolean;
+  accountConnected: boolean;
+  nativeRuntimeAvailable: boolean;
+};
+
+const CLI_MODEL_CAPABILITIES = {
+  harness: "cli" as const,
+  requiresAccount: false,
+  supportsOAuth: false,
+  supportsApiKey: false,
+  supportsUsage: false,
+  accountConnected: false,
+  nativeRuntimeAvailable: false,
 };
 
 /** Fallback catalog if the backend isn't available yet. */
 export const FALLBACK_PROVIDER_MODELS: ProviderModels[] = [
   {
     provider: "claude_code",
+    ...CLI_MODEL_CAPABILITIES,
     defaultModel: "sonnet",
     allowCustom: true,
     source: "fallback",
@@ -74,6 +92,7 @@ export const FALLBACK_PROVIDER_MODELS: ProviderModels[] = [
   },
   {
     provider: "cursor",
+    ...CLI_MODEL_CAPABILITIES,
     defaultModel: "grok-4.5",
     allowCustom: true,
     source: "fallback",
@@ -93,6 +112,7 @@ export const FALLBACK_PROVIDER_MODELS: ProviderModels[] = [
   },
   {
     provider: "codex",
+    ...CLI_MODEL_CAPABILITIES,
     defaultModel: "gpt-5.6-luna",
     allowCustom: true,
     source: "fallback",
@@ -105,6 +125,7 @@ export const FALLBACK_PROVIDER_MODELS: ProviderModels[] = [
   },
   {
     provider: "opencode",
+    ...CLI_MODEL_CAPABILITIES,
     defaultModel: "opencode/big-pickle",
     allowCustom: true,
     source: "fallback",
@@ -119,6 +140,7 @@ export const FALLBACK_PROVIDER_MODELS: ProviderModels[] = [
   },
   {
     provider: "github_copilot",
+    ...CLI_MODEL_CAPABILITIES,
     defaultModel: "claude-sonnet-4.5",
     allowCustom: true,
     source: "fallback",
@@ -141,6 +163,7 @@ export const FALLBACK_PROVIDER_MODELS: ProviderModels[] = [
   },
   {
     provider: "gemini",
+    ...CLI_MODEL_CAPABILITIES,
     defaultModel: "auto",
     allowCustom: true,
     source: "fallback",
@@ -172,6 +195,7 @@ export const FALLBACK_PROVIDER_MODELS: ProviderModels[] = [
   },
   {
     provider: "grok",
+    ...CLI_MODEL_CAPABILITIES,
     defaultModel: "grok-build",
     allowCustom: true,
     source: "fallback",
@@ -184,6 +208,7 @@ export const FALLBACK_PROVIDER_MODELS: ProviderModels[] = [
   },
   {
     provider: "pi",
+    ...CLI_MODEL_CAPABILITIES,
     defaultModel: "default",
     allowCustom: true,
     source: "fallback",
@@ -205,6 +230,7 @@ export const FALLBACK_PROVIDER_MODELS: ProviderModels[] = [
   },
   {
     provider: "omp",
+    ...CLI_MODEL_CAPABILITIES,
     defaultModel: "default",
     allowCustom: true,
     source: "fallback",
@@ -226,13 +252,37 @@ export const FALLBACK_PROVIDER_MODELS: ProviderModels[] = [
   },
 ];
 
+export const NATIVE_UNAVAILABLE_PROVIDER_MODELS: ProviderModels[] =
+  FALLBACK_PROVIDER_MODELS.map((catalog) => ({
+    provider: catalog.provider,
+    harness: "alfred",
+    defaultModel: "",
+    models: [],
+    allowCustom: false,
+    source: "unavailable",
+    available: false,
+    error: "native_runtime_unavailable",
+    requiresAccount: true,
+    supportsOAuth: false,
+    supportsApiKey: false,
+    supportsUsage: false,
+    accountConnected: false,
+    nativeRuntimeAvailable: false,
+  }));
+
 export function modelsForProvider(
   catalogs: ProviderModels[],
   provider: AgentProviderId,
+  harness: AgentHarness = "cli",
 ): ProviderModels {
   return (
-    catalogs.find((c) => c.provider === provider) ??
-    FALLBACK_PROVIDER_MODELS.find((c) => c.provider === provider) ??
+    catalogs.find(
+      (catalog) =>
+        catalog.provider === provider && (catalog.harness ?? "cli") === harness,
+    ) ??
+    (harness === "cli"
+      ? FALLBACK_PROVIDER_MODELS.find((c) => c.provider === provider)
+      : NATIVE_UNAVAILABLE_PROVIDER_MODELS.find((c) => c.provider === provider)) ??
     FALLBACK_PROVIDER_MODELS[0]
   );
 }
@@ -240,6 +290,25 @@ export function modelsForProvider(
 export function defaultModelFor(
   catalogs: ProviderModels[],
   provider: AgentProviderId,
+  harness: AgentHarness = "cli",
 ): string {
-  return modelsForProvider(catalogs, provider).defaultModel;
+  return modelsForProvider(catalogs, provider, harness).defaultModel;
+}
+
+export function selectionForAgentTarget(
+  catalogs: ProviderModels[],
+  provider: AgentProviderId,
+  harness: AgentHarness,
+  currentModel: string | null | undefined,
+): { harness: AgentHarness; model: string | null; accountRef: null } {
+  const catalog = modelsForProvider(catalogs, provider, harness);
+  const normalizedModel = currentModel?.trim() || null;
+  const compatible = normalizedModel
+    ? Boolean(modelOptionForValue(catalog, normalizedModel))
+    : false;
+  return {
+    harness,
+    model: compatible ? normalizedModel : catalog.defaultModel || null,
+    accountRef: null,
+  };
 }

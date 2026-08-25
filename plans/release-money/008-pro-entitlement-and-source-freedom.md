@@ -111,6 +111,25 @@ to gate. Guidance for whoever decides:
 
 Record the approved list in this plan before writing code.
 
+### Approved and recorded: 2026-08-25
+
+The owner approved the product model and the capability list on
+2026-08-25. Recorded intent: Alfred stays open source with free compilation
+**and free public binaries**; an optional **one-time supporter licence** is
+sold, and its perks are `schedules` and `triggers` (cron scheduling,
+file-watch triggers, loopback webhooks). Perks are permanent and licence
+keys carry **no expiry**, so the update-window machinery from Plan 007 stays
+idle: a key can never lapse out of window. Manual workflow runs remain free
+in every build, and nobody is ever required to pay.
+
+The approved pro capability list is exactly:
+
+- `schedules` — cron-scheduled automatic workflow runs;
+- `triggers` — file-watch and loopback webhook triggers.
+
+Nothing else gates. Adding a third name later is a new product decision
+with a migration story (see Maintenance notes).
+
 ## Scope
 
 **In scope**:
@@ -133,6 +152,10 @@ Record the approved list in this plan before writing code.
 
 ### Step 1: Write down the reversal and the approved capability list
 
+**Status (2026-08-25): DONE.** The supersession is completed in
+`plans/release-money/README.md` (legacy-migration row), and the approved
+capability list is recorded above.
+
 Update `plans/release-money/README.md` so the rejected-feature-gating entry is
 explicitly superseded by this plan, with the reason. Record the approved pro
 capability list here. Do not proceed without it.
@@ -140,6 +163,10 @@ capability list here. Do not proceed without it.
 **Verify**: a reader can see what changed, when, and why.
 
 ### Step 2: Build the entitlement resolver
+
+**Status (2026-08-25): shipped.** The resolver and its exhaustive matrix
+landed per the roadmap's 008 row; this plan does not restate that
+verification.
 
 One pure, fully unit-tested function from (build kind, licence state, window)
 to a capability decision. Test the matrix exhaustively, including: source build
@@ -154,6 +181,10 @@ licence never loses a capability on the build it was bought for**.
 
 ### Step 3: Add the one locked-capability treatment
 
+**Status (2026-08-25): shipped as part of the skeleton.** The shared
+`LockedCapability` component landed; the out-of-window notice copy is DRAFT
+and unwired.
+
 Build the single shared UI for a locked capability. Accessible name, keyboard
 reachable, both themes, honest copy, and a route to purchase that reuses the
 existing Polar public-links allow-list rather than a new navigation path.
@@ -162,6 +193,10 @@ existing Polar public-links allow-list rather than a new navigation path.
 only, per `.claude/rules/design-system.md`.
 
 ### Step 4: Apply it to the approved capabilities only
+
+**Status (2026-08-25): IN PROGRESS.** Call-site wiring for `schedules` and
+`triggers` is underway in a separate same-day change; no verification of it
+is recorded here yet.
 
 Wire the resolver at the approved call sites. Every locked path must degrade
 without data loss, and saved workflows using a locked capability must still
@@ -172,17 +207,23 @@ distribution build with no licence and asserts nothing is dropped.
 
 ### Step 5: Make the offer honest in docs
 
-State in `README.md` and `docs/open-source.md` that building from source gives
-every feature at no cost, that payment buys signed builds, downloads, one year
-of updates, and support, and that pro features are permanent once purchased.
+**Status (2026-08-25): updated for the supporter model.** `README.md`,
+`docs/open-source.md`, and `docs/install.md` now state the supporter offer,
+and `verify:release-hygiene` passes on those doc changes.
+
+State in `README.md` and `docs/open-source.md` that official binaries and
+source builds are both free, that building from source includes every
+feature at no cost, that the optional one-time supporter licence buys the
+`schedules` and `triggers` perks permanently with keys carrying no expiry,
+and that nobody is ever required to pay.
 
 **Verify**: `bun run verify:release-hygiene` all-PASS; no doc claims payment
 is required to use Alfred.
 
 ## Done criteria
 
-- [ ] The rejected-gating decision is explicitly superseded in writing.
-- [ ] The approved pro capability list is recorded before any gating code.
+- [x] The rejected-gating decision is explicitly superseded in writing.
+- [x] The approved pro capability list is recorded before any gating code.
 - [ ] One entitlement resolver exists; no component re-derives entitlement.
 - [ ] Source builds are unlocked and never nag, proven by test.
 - [ ] An expired licence keeps every capability on its own build, proven by test.

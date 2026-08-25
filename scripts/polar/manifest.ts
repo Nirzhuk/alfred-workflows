@@ -8,31 +8,65 @@ import {
 export const POLAR_SANDBOX_API_BASE = "https://sandbox-api.polar.sh";
 
 /**
- * The two products of the approved model (Plan 007): Alfred License, sold to
- * one named user, and Alfred Teams, sold one-time per claimed seat. The
- * retired `desktopAnnual | desktopLifetime | companySeat` shape is rejected
- * rather than mapped, so a manifest written for the old four-product Polar
+ * The single product of the settled supporter model (2026-08): Alfred
+ * Supporter, a one-time purchase whose licence keys never expire. The retired
+ * shapes — the two-product `individual | teams` model and the older
+ * four-product `desktopAnnual | desktopLifetime | companySeat` one — are
+ * rejected rather than mapped, so a manifest written for either old Polar
  * configuration cannot be bound by accident.
  */
-export const BENEFIT_CLASSES = ["individual", "teams"] as const;
+export const BENEFIT_CLASSES = ["supporter"] as const;
+
+/**
+ * The license-key expiration Polar applies per benefit
+ * (`BenefitLicenseKeyExpirationProperties`: `{"ttl": N, "timeframe":
+ * "year" | "month" | "day"}`). Supporter licences are PERPETUAL (model
+ * settled 2026-08, superseding Plan 007's one-year rule for this product), so
+ * a correct Polar configuration records NO expiration at all.
+ *
+ * Parsing is structural only: it validates the shape of an explicitly
+ * recorded expiry so a typo cannot slip through silently. Whether a recorded
+ * value is allowed at all is the verifier's decision — any non-null ttl or
+ * timeframe fails verification with "supporter licences are perpetual".
+ */
+export type BenefitExpiry = {
+  readonly ttl: number | null;
+  readonly timeframe: "year" | "month" | "day" | null;
+};
+
+export const EXPIRY_TIMEFRAMES = ["year", "month", "day"] as const;
 
 export type BenefitClass = (typeof BENEFIT_CLASSES)[number];
 
 export type PublicResource = {
   readonly id: string;
   readonly label: string;
-};
-
-export type PublicLink = {
-  readonly url: string;
-  readonly label: string;
+  readonly expiry: BenefitExpiry;
 };
 
 /**
- * A public link Alfred has no confirmed URL shape for yet. `url: null` records
- * "not available", which is a valid manifest state — the verifier only needs
- * the organization, the two benefit IDs, and the checkout link.
+ * Benefit classes of the retired models — the two-product `individual` /
+ * `teams` shape superseded by the supporter licence, plus the even older
+ * four-product names. Their reappearance in a manifest is a configuration
+ * error against the wrong plan, not an unknown field, so they get their own
+ * rejection reason.
  */
+export const LEGACY_BENEFIT_CLASSES = [
+  "individual",
+  "teams",
+  "desktopAnnual",
+  "desktopLifetime",
+  "companySeat",
+] as const;
+
+
+/**
+ * A public link Alfred has no confirmed URL for yet. `url: null` records
+ * "not collected yet", which is a valid manifest state — the verifier only
+ * needs the organization and the supporter benefit ID before it can start,
+ * and fails fast on a still-null checkout link instead of parsing nothing.
+ */
+
 export type OptionalPublicLink = {
   readonly url: string | null;
   readonly label: string;
@@ -44,11 +78,11 @@ export type SandboxManifest = {
   readonly organizationId: string;
   readonly benefits: Readonly<Record<BenefitClass, PublicResource>>;
   /**
-   * Alfred License only. Teams is sold on the marketing website, so Alfred has
-   * no Teams checkout entry point and nothing here to record for one.
+   * Alfred Supporter only. `url: null` records "not collected yet" until the
+   * operator creates the checkout link in the Polar dashboard.
    */
   readonly checkoutLinks: {
-    readonly individual: PublicLink;
+    readonly supporter: OptionalPublicLink;
   };
   readonly customerPortal: OptionalPublicLink;
 };
@@ -90,7 +124,7 @@ function rejectUnknownKeys(
   const unknown = Object.keys(value).find((key) => !allowed.includes(key));
   if (unknown !== undefined) {
     throw new SandboxManifestError(
-      `${field}.${unknown} is not part of the two-product model (expected only ${allowed.join(", ")})`,
+      `${field}.${unknown} is not part of the supporter model (expected only ${allowed.join(", ")})`,
     );
   }
 }
@@ -136,7 +170,6 @@ function requiredPublicUrl(
   } catch {
     throw new SandboxManifestError(`${field} is not a URL`);
   }
-
   if (!matchesPolarLinkRule(url, rules)) {
     throw new SandboxManifestError(
       `${field} must be exactly ${polarLinkShapes("sandbox", kind)}`,
@@ -144,36 +177,76 @@ function requiredPublicUrl(
   }
   return url.href;
 }
+/**
+ * `null` (or an absent member) records "no expiration configured", which is
+ * the required state under the perpetual-supporter model. A recorded ttl is
+ * a positive integer; a recorded timeframe is one of Polar's enum values —
+ * both parse fine here and then fail verification.
+ */
+function parseBenefitExpiry(field: string, value: unknown): BenefitExpiry {
+  if (value === null || value === undefined) {
+    return { ttl: null, timeframe: null };
+  }
+  requiredRecord(field, value);
+  rejectUnknownKeys(field, value, ["ttl", "timeframe"]);
+
+  let ttl: number | null = null;
+  if (value.ttl !== null && value.ttl !== undefined) {
+    if (
+      typeof value.ttl !== "number" ||
+      !Number.isInteger(value.ttl) ||
+      value.ttl < 1
+    ) {
+      throw new SandboxManifestError(
+        `${field}.ttl must be null (not yet recorded) or an integer >= 1`,
+      );
+    }
+    ttl = value.ttl;
+  }
+
+  let timeframe: BenefitExpiry["timeframe"] = null;
+  if (value.timeframe !== null && value.timeframe !== undefined) {
+    if (
+      typeof value.timeframe !== "string" ||
+      !(EXPIRY_TIMEFRAMES as readonly string[]).includes(value.timeframe)
+    ) {
+      throw new SandboxManifestError(
+        `${field}.timeframe must be null (not yet recorded) or one of ${EXPIRY_TIMEFRAMES.join(", ")}`,
+      );
+    }
+    timeframe = value.timeframe as BenefitExpiry["timeframe"];
+  }
+
+  return { ttl, timeframe };
+}
 
 function parseResource(field: string, value: unknown): PublicResource {
   requiredRecord(field, value);
   return {
     id: requiredUuid(`${field}.id`, value.id),
     label: requiredLabel(`${field}.label`, value.label),
-  };
-}
-
-function parseCheckoutLink(field: string, value: unknown): PublicLink {
-  requiredRecord(field, value);
-  return {
-    url: requiredPublicUrl(`${field}.url`, value.url, "checkout"),
-    label: requiredLabel(`${field}.label`, value.label),
+    expiry: parseBenefitExpiry(`${field}.expiry`, value.expiry),
   };
 }
 
 /**
- * The portal stays optional so a manifest can be filled in incrementally:
- * `null` records "not collected yet" rather than blocking every other value.
- * A recorded value is held to the sandbox portal rule like any other link.
+ * An optional public link: `null` records "not collected yet" so a manifest
+ * can be filled in incrementally rather than blocking every other value. A
+ * recorded value is held to the sandbox rule for its kind like any other
+ * link; a still-null checkout link fails the verifier later, pre-network.
  */
-function parsePortalLink(field: string, value: unknown): OptionalPublicLink {
+function parseOptionalLink(
+  field: string,
+  value: unknown,
+  kind: PolarLinkKind,
+): OptionalPublicLink {
   requiredRecord(field, value);
   const label = requiredLabel(`${field}.label`, value.label);
   if (value.url === null || value.url === undefined) {
     return { url: null, label };
   }
   return {
-    url: requiredPublicUrl(`${field}.url`, value.url, "portal"),
+    url: requiredPublicUrl(`${field}.url`, value.url, kind),
     label,
   };
 }
@@ -189,27 +262,38 @@ export function parseSandboxManifest(value: unknown): SandboxManifest {
 
   requiredRecord("benefits", value.benefits);
   requiredRecord("checkoutLinks", value.checkoutLinks);
+  // A retired class name is a configuration error against the wrong plan, not
+  // a mere unknown key, so it is named as such before the generic check runs.
+  const legacyClass = Object.keys(value.benefits).find((key) =>
+    (LEGACY_BENEFIT_CLASSES as readonly string[]).includes(key),
+  );
+  if (legacyClass !== undefined) {
+    throw new SandboxManifestError(
+      `benefits.${legacyClass} is a retired benefit class (${LEGACY_BENEFIT_CLASSES.join(", ")}) — the supporter model has exactly one benefit (${BENEFIT_CLASSES.join(", ")})`,
+    );
+  }
   rejectUnknownKeys("benefits", value.benefits, BENEFIT_CLASSES);
-  rejectUnknownKeys("checkoutLinks", value.checkoutLinks, ["individual"]);
+  rejectUnknownKeys("checkoutLinks", value.checkoutLinks, BENEFIT_CLASSES);
 
   const manifest: SandboxManifest = {
     version: 1,
     environment: "sandbox",
     organizationId: requiredUuid("organizationId", value.organizationId),
     benefits: {
-      individual: parseResource(
-        "benefits.individual",
-        value.benefits.individual,
-      ),
-      teams: parseResource("benefits.teams", value.benefits.teams),
+      supporter: parseResource("benefits.supporter", value.benefits.supporter),
     },
     checkoutLinks: {
-      individual: parseCheckoutLink(
-        "checkoutLinks.individual",
-        value.checkoutLinks.individual,
+      supporter: parseOptionalLink(
+        "checkoutLinks.supporter",
+        value.checkoutLinks.supporter,
+        "checkout",
       ),
     },
-    customerPortal: parsePortalLink("customerPortal", value.customerPortal),
+    customerPortal: parseOptionalLink(
+      "customerPortal",
+      value.customerPortal,
+      "portal",
+    ),
   };
 
   const identifiers = [
@@ -218,13 +302,13 @@ export function parseSandboxManifest(value: unknown): SandboxManifest {
   ];
   if (new Set(identifiers).size !== identifiers.length) {
     throw new SandboxManifestError(
-      "organizationId and the two benefit IDs must all differ",
+      "organizationId and the benefit ID must differ",
     );
   }
 
   const labels = [
     ...BENEFIT_CLASSES.map((kind) => manifest.benefits[kind].label),
-    manifest.checkoutLinks.individual.label,
+    manifest.checkoutLinks.supporter.label,
     manifest.customerPortal.label,
   ];
   if (new Set(labels).size !== labels.length) {

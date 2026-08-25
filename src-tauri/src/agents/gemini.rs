@@ -240,6 +240,13 @@ fn parse_stream_output(raw: &str) -> (Option<String>, Option<Value>, Option<Stri
 mod tests {
     use super::*;
 
+    /// Activity ids are hashed at the boundary, so a provider id never
+    /// reaches a run event verbatim.
+    fn is_opaque(id: &str) -> bool {
+        id.strip_prefix("agent_activity_")
+            .is_some_and(|suffix| suffix.len() == 24 && suffix.bytes().all(|b| b.is_ascii_hexdigit()))
+    }
+
     #[test]
     fn parses_gemini_stream_events() {
         let raw = [
@@ -263,8 +270,35 @@ mod tests {
             .lines()
             .flat_map(activities_from_event)
             .collect::<Vec<_>>();
+        assert_eq!(activities[0].kind, AgentActivityKind::Status);
+        assert_eq!(activities[0].state, AgentActivityState::Completed);
         assert_eq!(activities[0].label, "Gemini session started");
-        assert_eq!(activities[1].id, "tool-1");
-        assert_eq!(activities[3].detail.as_deref(), Some("Done"));
+
+        assert_eq!(activities[1].kind, AgentActivityKind::Tool);
+        assert_eq!(activities[1].state, AgentActivityState::Started);
+        assert_eq!(activities[1].label, "Using tool");
+
+        assert_eq!(activities[2].kind, AgentActivityKind::Tool);
+        assert_eq!(activities[2].state, AgentActivityState::Completed);
+        assert_eq!(activities[2].label, "Tool completed");
+
+        assert_eq!(activities[3].kind, AgentActivityKind::Assistant);
+        assert_eq!(activities[3].label, "Agent response");
+
+        // The tool call still correlates start to completion opaquely.
+        assert_eq!(activities[1].id, activities[2].id);
+        assert!(activities.iter().all(|activity| is_opaque(&activity.id)));
+        for raw_id in ["tool-1", "s1"] {
+            assert!(
+                activities.iter().all(|activity| activity.id != raw_id),
+                "provider id {raw_id} reached a run event"
+            );
+        }
+
+        assert!(activities.iter().all(|activity| activity.detail.is_none()));
+        let rendered = format!("{activities:?}");
+        for leaked in ["Done", "tool-1", "read_file", "gemini-3-pro-preview"] {
+            assert!(!rendered.contains(leaked), "leaked {leaked} in {rendered}");
+        }
     }
 }

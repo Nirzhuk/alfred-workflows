@@ -283,6 +283,13 @@ fn parse_stream_output(raw: &str) -> StreamOutput {
 mod tests {
     use super::*;
 
+    /// Activity ids are hashed at the boundary, so a provider id never
+    /// reaches a run event verbatim.
+    fn is_opaque(id: &str) -> bool {
+        id.strip_prefix("agent_activity_")
+            .is_some_and(|suffix| suffix.len() == 24 && suffix.bytes().all(|b| b.is_ascii_hexdigit()))
+    }
+
     const STREAM: &str = concat!(
         r#"{"type":"session","version":3,"id":"s1","cwd":"/repo"}"#,
         "\n",
@@ -320,19 +327,58 @@ mod tests {
             .map(|a| a.label.as_str())
             .collect::<Vec<_>>();
 
+        // Every label is a closed activity category. `pi`/`omp` build their
+        // session label from the provider name, which is not in the allow-list,
+        // so it correctly degrades to the generic status category instead of
+        // echoing provider-supplied text.
         assert_eq!(
             labels,
             vec![
-                "pi session started",
-                "read",
+                "Status updated",
+                "Using tool",
                 "Tool completed",
                 "Agent response",
                 "Agent response",
                 "Work completed",
             ]
         );
-        assert_eq!(activities[3].detail.as_deref(), Some("Reading"));
-        assert_eq!(activities[4].detail.as_deref(), Some("Done"));
+
+        // The full lifecycle still streams: session, tool start/end, two
+        // assistant responses, and completion.
+        let kinds = activities
+            .iter()
+            .map(|activity| activity.kind.clone())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            kinds,
+            vec![
+                AgentActivityKind::Status,
+                AgentActivityKind::Tool,
+                AgentActivityKind::Tool,
+                AgentActivityKind::Assistant,
+                AgentActivityKind::Assistant,
+                AgentActivityKind::Status,
+            ]
+        );
+        assert_eq!(activities[1].state, AgentActivityState::Started);
+        assert_eq!(activities[2].state, AgentActivityState::Completed);
+
+        // The tool call still correlates start to completion opaquely.
+        assert_eq!(activities[1].id, activities[2].id);
+        assert_ne!(activities[1].id, activities[0].id);
+        assert!(activities.iter().all(|activity| is_opaque(&activity.id)));
+        for raw_id in ["s1", "t1"] {
+            assert!(
+                activities.iter().all(|activity| activity.id != raw_id),
+                "provider id {raw_id} reached a run event"
+            );
+        }
+
+        assert!(activities.iter().all(|activity| activity.detail.is_none()));
+        let rendered = format!("{activities:?}");
+        for leaked in ["Reading", "Done", "hidden", "/repo", "read"] {
+            assert!(!rendered.contains(leaked), "leaked {leaked} in {rendered}");
+        }
     }
 
     #[test]
@@ -342,9 +388,16 @@ mod tests {
         assert_eq!(parsed.text, None);
         assert_eq!(parsed.error.as_deref(), Some("Rate limited"));
 
+        // The parsed error still reaches the caller above; the activity keeps
+        // the error kind but no longer carries the provider's message.
         let activities = activities_from_event("omp", raw);
+        assert_eq!(activities.len(), 1);
         assert_eq!(activities[0].kind, AgentActivityKind::Error);
-        assert_eq!(activities[0].detail.as_deref(), Some("Rate limited"));
+        assert_eq!(activities[0].state, AgentActivityState::Completed);
+        assert_eq!(activities[0].label, "Agent error");
+        assert_eq!(activities[0].detail, None);
+        assert!(is_opaque(&activities[0].id));
+        assert!(!format!("{activities:?}").contains("Rate limited"));
     }
 
     #[test]

@@ -16,7 +16,115 @@
 - **Depends on**: Plans 030–032
 - **Category**: native runtime / provider router
 - **Planned at**: 2026-08-24
-- **Implementation**: TODO
+- **Implementation**: BLOCKED — safe provider policy/protocol fixtures exist;
+  production registration is withheld on the package, account-entry, and
+  Alfred-owned tool bridge gates below.
+
+## Frozen runtime decision and evidence (2026-08-25)
+
+- **Supported surface**: OpenCode's documented local HTTP server and generated
+  JS/TS SDK are suitable integration surfaces. The server documents OpenAPI,
+  basic authentication, `/auth/:id`, provider/model discovery, session create,
+  prompt, abort, permission reply, and SSE events. The SDK documents
+  `createOpencode`, `createOpencodeClient`, explicit `{ providerID, modelID }`
+  routing, session APIs, and event subscription.
+  ([server](https://opencode.ai/docs/server/),
+  [SDK](https://opencode.ai/docs/sdk/))
+- **Frozen version**: upstream release and SDK `1.18.23`, published 2026-08-25.
+  The upstream release publishes command-runtime assets for macOS arm64/x64,
+  Linux arm64/x64 (including musl variants), and Windows arm64/x64.
+  ([release](https://github.com/anomalyco/opencode/releases/tag/v1.18.23),
+  [SDK package](https://github.com/anomalyco/opencode/blob/v1.18.23/packages/sdk/js/package.json))
+- **License/redistribution**: the OpenCode repository and SDK declare MIT. MIT
+  permits redistribution when the copyright and permission notice accompany
+  copies. This answers the source-license question only; Alfred still needs an
+  owned artifact manifest, checksum verification, code-signing/notarization,
+  platform smoke evidence, notice inclusion, and updater policy before a
+  binary may enter a package.
+  ([license](https://github.com/anomalyco/opencode/blob/v1.18.23/LICENSE))
+- **Lifecycle**: the published SDK's server helper launches the `opencode`
+  executable from `PATH`, inherits the parent environment, and injects inline
+  config. That helper is not an acceptable Alfred runtime by itself. The safe
+  launch contract in `providers/opencode/launch.rs` instead requires an
+  absolute bundled executable, loopback-only server with basic auth, an empty
+  inherited environment, dedicated XDG config/data/cache/state/temp paths,
+  disabled project config, runtime tool denial, and no `PATH` or user `HOME`
+  fallback. It remains data-only until the package gate passes.
+  ([SDK launcher source](https://github.com/anomalyco/opencode/blob/v1.18.23/packages/sdk/js/src/server.ts),
+  [config precedence](https://opencode.ai/docs/config/))
+- **Auth and billing ownership**: OpenCode is a router, not the billing owner by
+  default. `OpenCodeAccountBinding` records the real OpenCode upstream provider
+  id, provider-approved auth kind, and human-readable billing owner. Every
+  model is stored as `<upstream-provider>/<model-id>` and a mismatch is a hard
+  `account_mismatch`; no catalog default can switch the route. OpenCode Zen is
+  represented explicitly as the `opencode` upstream billed by OpenCode Zen;
+  OpenRouter, Anthropic, OpenAI, local providers, and others retain their own
+  identities and billing. OpenCode's provider docs distinguish these auth
+  paths and warn that one provider connection does not grant others.
+  ([providers](https://opencode.ai/docs/providers/))
+- **Credential ownership**: the documented SDK `auth.set` call writes a
+  provider-specific API/OAuth credential through `/auth/:id`; source stores it
+  under OpenCode's data path. Alfred's launch contract redirects that entire
+  path to its dedicated runtime home and never reads the user's OpenCode
+  auth/config/database/history. It does not rely on the source-only
+  `OPENCODE_AUTH_CONTENT` shortcut as a stable public auth contract. Plan 031
+  also has no approved non-React secret-entry seam for provider API keys. Test
+  fixtures consume only a test-resolved `NativeCredential`; live account setup
+  is **BLOCKED** as `opencode_native_secret_entry_unavailable`.
+  ([documented SDK auth](https://opencode.ai/docs/sdk/#auth),
+  [auth storage source](https://github.com/anomalyco/opencode/blob/v1.18.23/packages/opencode/src/auth/index.ts))
+- **Models and usage**: the documented config provider endpoint returns the
+  upstream provider catalog and defaults; prompts require explicit provider
+  and model ids. OpenCode message parts report per-turn token counts and cost,
+  but these are runtime observations/estimates, not authoritative subscription
+  quota. Plan 036 therefore does not claim quota or subscription ownership.
+- **Events, sessions, and cancellation**: documented SSE events, session
+  identity, session idle/error, exact-session resume, and session abort are
+  supportable. The provider decoder accepts only bounded named variants,
+  rejects reasoning, cross-session, malformed, and oversized events, and
+  ignores unknown methods instead of exposing server passthrough. Live
+  cancellation still requires the packaged process/transport gate to pass.
+- **Tools/approval**: 1.18.23 documents allow/reject permission responses, but
+  its generated `Permission` contract types tool metadata as unknown and the
+  official server offers no endpoint for injecting an Alfred-owned tool result.
+  Approving an OpenCode permission would therefore execute inside OpenCode,
+  bypassing Plan 032's tool executor. Permission approval/denial is decoded in
+  fixtures but live tools remain **BLOCKED** as
+  `opencode_native_tool_bridge_unavailable`; no CLI-output recreation or
+  undocumented plugin bridge is used.
+  ([generated event types](https://github.com/anomalyco/opencode/blob/v1.18.23/packages/sdk/js/src/gen/types.gen.ts))
+
+### Exact native release blockers
+
+1. `opencode_native_package_unverified`: no Alfred-owned pinned artifact
+   manifest/checksums, signing/notarization evidence, notice bundle, supported
+   platform smoke matrix, or updater ownership exists for 1.18.23.
+2. `opencode_native_secret_entry_unavailable`: the frozen native account
+   contract has no approved non-React upstream secret-entry seam; secrets may
+   not cross React/Tauri DTOs.
+3. `opencode_native_tool_bridge_unavailable`: the official permission/tool
+   contract cannot route typed tool arguments and results through Alfred's
+   executor boundary.
+
+OpenCode remains absent from production native-runtime registration. This is a
+package/capability gate, not a request for a user-installed CLI. Existing
+`provider=opencode,harness=cli` behavior was not edited.
+
+### Provider fixture evidence
+
+`src-tauri/src/agents/native/providers/opencode/` covers version/license/platform
+freeze, dedicated runtime-home launch shape, upstream auth/billing/model route,
+startup and protocol failure, account unavailable, malformed/oversized and
+reasoning events, permission approval/denial observation, cancellation/timeout,
+rate limit, exact-session resume binding, route mismatch, redaction, and ignored
+arbitrary server methods. A focused test command was attempted; compilation was
+initially blocked by concurrently incomplete sibling provider modules, then
+passed after those files settled: `11 passed; 0 failed; 575 filtered out` for
+`cargo test --locked --manifest-path src-tauri/Cargo.toml
+agents::native::providers::opencode --no-fail-fast`. No broad build or
+prohibited suite was run. The native settings disclosure separately shows
+version, upstream/billing ownership, the three capability gaps, and continued
+CLI-harness separation without accepting or rendering a credential.
 
 ## Goal
 
@@ -160,9 +268,10 @@ labels, then disconnect and verify cleanup.
 
 ## Done criteria
 
-- [ ] A supported OpenCode native runtime is selected and versioned.
-- [ ] Upstream provider and billing ownership are explicit.
-- [ ] No global OpenCode credential/database scraping exists.
-- [ ] Native events/tools/cancellation pass Plan 032.
-- [ ] Existing OpenCode CLI mode remains unchanged.
-- [ ] Unsupported upstream/auth combinations are blocked honestly.
+- [x] A supported OpenCode native runtime surface is selected and versioned.
+- [x] Upstream provider and billing ownership are explicit.
+- [x] No global OpenCode credential/database scraping exists.
+- [ ] Native events/tools/cancellation pass Plan 032 (tool-result bridge and
+      packaged live cancellation remain blocked).
+- [x] Existing OpenCode CLI mode remains unchanged.
+- [x] Unsupported upstream/auth combinations are blocked honestly.

@@ -14,9 +14,18 @@ import {
   modelIdForFastToggle,
   modelOptionForValue,
   modelsForProvider,
+  selectionForAgentTarget,
   supportsFastToggle,
   type ProviderModels,
 } from "../../models";
+import {
+  capabilityFor,
+  capabilityPermitsExecution,
+  capabilityReason,
+  capabilityStatusLabel,
+  nativeProviderRetargetDisabled,
+  type AgentCapabilityManifest,
+} from "../../agent-capabilities";
 import { useWorkflowStore } from "../../store";
 import {
   mergeAttachments,
@@ -26,6 +35,8 @@ import {
 import { SelectControl } from "../../../../components/select-control";
 import {
   agentSkillNames,
+  agentHarness,
+  AGENT_PROVIDER_IDS,
   DEFAULT_SCRIPT_MESSAGE,
   defaultInputScript,
   isAppActionNodeData,
@@ -45,6 +56,7 @@ import {
   isWriteFileNodeData,
   titleForNodeType,
   type AgentProviderId,
+  type AgentHarness,
   type InputAttachment,
   type InputScript,
   type OutputMemory,
@@ -79,6 +91,9 @@ export function NodeSettingsModal({ nodeId, onClose }: Props) {
   const nodes = useWorkflowStore((s) => s.nodes);
   const skills = useWorkflowStore((s) => s.skills);
   const providerModels = useWorkflowStore((s) => s.providerModels);
+  const agentCapabilityManifest = useWorkflowStore(
+    (s) => s.agentCapabilityManifest,
+  );
   const memories = useWorkflowStore((s) => s.memories);
   const activeWorkflowId = useWorkflowStore((s) => s.activeWorkflowId);
   const updateNodeData = useWorkflowStore((s) => s.updateNodeData);
@@ -172,12 +187,15 @@ export function NodeSettingsModal({ nodeId, onClose }: Props) {
 
         {isAgentNodeData(node.data) ? (
           <AgentSettings
-            key={`${node.id}:${node.data.provider}`}
+            key={`${node.id}:${node.data.provider}:${agentHarness(node.data)}`}
             provider={node.data.provider}
+            harness={agentHarness(node.data)}
+            accountRef={node.data.accountRef}
             model={node.data.model}
             skillNames={agentSkillNames(node.data)}
             skills={skills}
             providerModels={providerModels}
+            capabilityManifest={agentCapabilityManifest}
             onUpdate={(patch) => updateNodeData(node.id, patch)}
             onRefreshModels={() => void loadProviderModels()}
           />
@@ -657,11 +675,17 @@ function MemorySettings({
 
 type AgentSettingsProps = {
   provider: AgentProviderId;
+  harness: AgentHarness;
+  accountRef: string | null | undefined;
   model: string | null | undefined;
   skillNames: string[];
   skills: Skill[];
   providerModels: ProviderModels[];
+  capabilityManifest: AgentCapabilityManifest | null;
   onUpdate: (patch: {
+    provider?: AgentProviderId;
+    harness?: AgentHarness;
+    accountRef?: string | null;
     model?: string | null;
     skillNames?: string[];
     skillName?: null;
@@ -671,14 +695,27 @@ type AgentSettingsProps = {
 
 function AgentSettings({
   provider,
+  harness,
+  accountRef,
   model,
   skillNames,
   skills,
   providerModels,
+  capabilityManifest,
   onUpdate,
   onRefreshModels,
 }: AgentSettingsProps) {
-  const catalog = modelsForProvider(providerModels, provider);
+  const catalog = modelsForProvider(providerModels, provider, harness);
+  const nativeCapability = capabilityFor(
+    capabilityManifest,
+    provider,
+    "alfred",
+  );
+  const nativeAllowed = capabilityPermitsExecution(
+    capabilityManifest,
+    provider,
+    "alfred",
+  );
   const selectedModel = model || catalog.defaultModel;
   const selectedOption = modelOptionForValue(catalog, selectedModel);
   const savedModelIsCustom = catalog.allowCustom && !selectedOption;
@@ -702,8 +739,62 @@ function AgentSettings({
       <div className="agent-model-controls">
         <div className="field agent-provider-field">
           <span>Provider</span>
-          <strong className="agent-provider-value">{agentLabel(provider)}</strong>
+          <SelectControl
+            aria-label="Select provider"
+            value={provider}
+            onChange={(event) => {
+              const nextProvider = event.currentTarget.value as AgentProviderId;
+              onUpdate({
+                provider: nextProvider,
+                ...selectionForAgentTarget(
+                  providerModels,
+                  nextProvider,
+                  harness,
+                  selectedModel,
+                ),
+              });
+            }}
+          >
+            {AGENT_PROVIDER_IDS.map((id) => (
+              <option
+                key={id}
+                value={id}
+                disabled={nativeProviderRetargetDisabled(
+                  capabilityManifest,
+                  provider,
+                  id,
+                  harness,
+                )}
+              >
+                {agentLabel(id)}
+              </option>
+            ))}
+          </SelectControl>
         </div>
+
+        <label className="field agent-harness-field">
+          <span>Harness</span>
+          <SelectControl
+            aria-label="Select harness"
+            value={harness}
+            onChange={(event) => {
+              const nextHarness = event.currentTarget.value as AgentHarness;
+              onUpdate(
+                selectionForAgentTarget(
+                  providerModels,
+                  provider,
+                  nextHarness,
+                  selectedModel,
+                ),
+              );
+            }}
+          >
+            <option value="cli">Provider CLI</option>
+            <option value="alfred" disabled={!nativeAllowed && harness !== "alfred"}>
+              Alfred — {capabilityStatusLabel(nativeCapability)}
+            </option>
+          </SelectControl>
+        </label>
 
         <div className="field model-select-field">
           <span>Model</span>
@@ -716,11 +807,12 @@ function AgentSettings({
               <DropdownMenuTrigger
                 className="model-select-trigger"
                 aria-label="Select model"
+                disabled={catalog.models.length === 0 && !catalog.allowCustom}
               >
                 <span className="model-select-value">
                   {showCustomModel
                     ? customModelDraft.trim() || "Custom…"
-                    : selectedOption?.label || selectedModel}
+                    : selectedOption?.label || selectedModel || "Unavailable"}
                 </span>
                 <ChevronDownIcon />
               </DropdownMenuTrigger>
@@ -811,14 +903,36 @@ function AgentSettings({
           type="button"
           className="ghost agent-model-refresh"
           title="Refresh models from the agent / Cursor IDE"
+          disabled={harness !== "cli"}
           onClick={onRefreshModels}
         >
           Refresh
         </button>
       </div>
 
+      {harness === "alfred" ? (
+        <div className="agent-native-status" role="status">
+          <strong>
+            Alfred harness {capabilityStatusLabel(nativeCapability)}
+          </strong>
+          <span>
+            {capabilityReason(nativeCapability)}. Alfred-managed credentials are
+            separate from Provider CLI credentials, and execution never falls
+            back automatically.
+          </span>
+          {nativeCapability?.runtimeVersion ? (
+            <span>Runtime target: {nativeCapability.runtimeVersion}</span>
+          ) : null}
+          {accountRef ? (
+            <span>Saved account reference is not treated as connected.</span>
+          ) : null}
+        </div>
+      ) : null}
+
       <p className="hint">
-        {catalog.source === "discovered"
+        {harness === "alfred"
+          ? "Provider CLI credentials are separate and are never imported."
+          : catalog.source === "discovered"
           ? `Loaded ${catalog.models.length} models${
               provider === "cursor" ? " from Cursor" : " from agent"
           }`
@@ -829,7 +943,7 @@ function AgentSettings({
               : "Using fallback model list"}
       </p>
 
-      {catalog.allowCustom && showCustomModel ? (
+      {harness === "cli" && catalog.allowCustom && showCustomModel ? (
         <div className="custom-model-fields">
           <label className="field">
             <span>Custom model ID</span>

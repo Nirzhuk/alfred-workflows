@@ -10,9 +10,11 @@ import {
 } from "@xyflow/react";
 import * as api from "./api";
 import { FALLBACK_PROVIDER_MODELS, type ProviderModels } from "./models";
+import type { AgentCapabilityManifest } from "./agent-capabilities";
 import {
   emptyGraph,
   agentSkillNames,
+  parseAgentHarness,
   isAgentNodeData,
   isOutputNodeData,
   isPromptNodeData,
@@ -200,7 +202,7 @@ function withOpenTab(ids: string[], id: string): string[] {
 }
 
 /** Migrate legacy agent skills + Output disposition fields on load. */
-function normalizeNodes(nodes: WorkflowNode[]): WorkflowNode[] {
+export function normalizeNodes(nodes: WorkflowNode[]): WorkflowNode[] {
   return nodes.map((node) => {
     if (node.type === "chooseOutput" || isOutputNodeData(node.data)) {
       return {
@@ -212,11 +214,21 @@ function normalizeNodes(nodes: WorkflowNode[]): WorkflowNode[] {
       };
     }
     if (!isAgentNodeData(node.data)) return node;
-    const skillNames = agentSkillNames(node.data);
+    const raw = node.data as AgentNodeData & Record<string, unknown>;
+    const skillNames = agentSkillNames(raw);
     const next: AgentNodeData = {
-      ...node.data,
+      label: raw.label,
+      provider: raw.provider,
+      harness: parseAgentHarness(raw.harness),
+      accountRef:
+        typeof raw.accountRef === "string" && raw.accountRef.trim()
+          ? raw.accountRef.trim()
+          : undefined,
+      model:
+        typeof raw.model === "string" || raw.model === null
+          ? raw.model
+          : undefined,
       skillNames,
-      skillName: undefined,
     };
     return { ...node, data: next };
   });
@@ -232,6 +244,7 @@ type WorkflowStore = {
   edges: WorkflowEdge[];
   skills: Skill[];
   providerModels: ProviderModels[];
+  agentCapabilityManifest: AgentCapabilityManifest | null;
   schedule: Schedule | null;
   /** Saved schedules for labels across the entire workflow sidebar. */
   workflowSchedules: ScheduleListItem[];
@@ -388,6 +401,7 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
   edges: [],
   skills: [],
   providerModels: FALLBACK_PROVIDER_MODELS,
+  agentCapabilityManifest: null,
   schedule: null,
   workflowSchedules: [],
   triggers: [],
@@ -481,11 +495,14 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
   loadProviderModels: async () => {
     set({ loading: true, error: null });
     try {
-      const providerModels = await api.listAgentModels();
+      const [providerModels, agentCapabilityManifest] = await Promise.all([
+        api.listAllAgentModels(),
+        api.getAgentCapabilityManifest().catch(() => null),
+      ]);
       if (providerModels.length > 0) {
-        set({ providerModels, loading: false });
+        set({ providerModels, agentCapabilityManifest, loading: false });
       } else {
-        set({ loading: false });
+        set({ agentCapabilityManifest, loading: false });
       }
     } catch (e) {
       set({ loading: false, error: String(e) });
@@ -1005,7 +1022,7 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
     try {
       const workflow = await api.updateWorkflow({
         id: activeWorkflowId,
-        graph: { nodes, edges },
+        graph: { nodes: normalizeNodes(nodes), edges },
       });
       set((state) => ({
         workflows: state.workflows.map((w) =>

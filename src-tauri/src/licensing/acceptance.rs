@@ -125,7 +125,14 @@ fn validation_body(status: &str, benefit: &str, expires_at: Option<&str>) -> Val
 
 /// Seeds a snapshot that was last validated successfully at `validated_at()`,
 /// so day offsets in the assertions map directly onto the 7/30-day policy.
-fn seed_validated(db: &Db, store: &dyn LicenseCredentialStore, state: LicenseStatus) {
+/// `expires_at` plants Polar's own update deadline in the stored row, the
+/// value a later 404 is arbitrated against.
+fn seed_validated(
+    db: &Db,
+    store: &dyn LicenseCredentialStore,
+    state: LicenseStatus,
+    expires_at: Option<DateTime<Utc>>,
+) {
     store
         .put(
             "credential",
@@ -139,7 +146,7 @@ fn seed_validated(db: &Db, store: &dyn LicenseCredentialStore, state: LicenseSta
         benefit_id: Some(BENEFIT.into()),
         activation_label: Some("Acceptance Device".into()),
         current_device: true,
-        expires_at: None,
+        expires_at: expires_at.map(|time| time.to_rfc3339()),
         last_success_at: Some(validated_at().to_rfc3339()),
         refresh_due_at: Some(refresh_due().to_rfc3339()),
         offline_deadline: Some(offline_deadline().to_rfc3339()),
@@ -326,7 +333,7 @@ async fn an_unknown_benefit_key_receives_no_offline_grace() {
     )]);
     let store = Arc::new(InMemoryLicenseCredentialStore::default());
     let db = Db::open_in_memory().expect("database");
-    seed_validated(&db, store.as_ref(), LicenseStatus::Active);
+    seed_validated(&db, store.as_ref(), LicenseStatus::Active, None);
     let service = build_service(config, store.clone(), day(7));
 
     let status = service.refresh(&db).await.expect("refresh");
@@ -360,7 +367,7 @@ async fn a_confirmed_restrictive_response_overrides_remaining_grace_immediately(
         let (config, thread) = spawn_server(vec![(200, body.to_string())]);
         let store = Arc::new(InMemoryLicenseCredentialStore::default());
         let db = Db::open_in_memory().expect("database");
-        seed_validated(&db, store.as_ref(), LicenseStatus::OfflineGrace);
+        seed_validated(&db, store.as_ref(), LicenseStatus::OfflineGrace, None);
         // Day 8 of a 30-day window: 22 days of grace are still unspent.
         let service = build_service(config, store, day(8));
 
@@ -391,7 +398,7 @@ async fn a_closed_update_window_keeps_entitlement_while_revoked_and_disabled_end
     let (config, thread) = spawn_server(vec![(200, closed.to_string())]);
     let store = Arc::new(InMemoryLicenseCredentialStore::default());
     let db = Db::open_in_memory().expect("database");
-    seed_validated(&db, store.as_ref(), LicenseStatus::OfflineGrace);
+    seed_validated(&db, store.as_ref(), LicenseStatus::OfflineGrace, None);
     let service = build_service(config, store, day(8));
 
     let status = service.refresh(&db).await.expect("refresh");
@@ -440,12 +447,188 @@ fn the_update_window_is_decided_by_the_build_release_date_alone() {
     assert!(is_in_update_window(None, deadline));
 }
 
+// === Matrix D, update-window rows W1/W2/W5–W8 ===============================
+
+/// W1 — a build released inside the key's update window is entitled: a
+/// `granted` answer with a live deadline keeps pro features on.
+#[tokio::test]
+async fn w1_an_in_window_build_is_active_and_entitled() {
+    // A deadline a year out from the injected clock: day(7) is inside it.
+    let (config, thread) = spawn_server(vec![(
+        200,
+        validation_body(
+            "granted",
+            BENEFIT,
+            Some(day(365).to_rfc3339()).as_deref(),
+        )
+        .to_string(),
+    )]);
+    let store = Arc::new(InMemoryLicenseCredentialStore::default());
+    let db = Db::open_in_memory().expect("database");
+    seed_validated(&db, store.as_ref(), LicenseStatus::Active, None);
+    let service = build_service(config, store, day(7));
+
+    let status = service.refresh(&db).await.expect("refresh");
+    assert_eq!(status.state, LicenseStatus::Active);
+    assert!(status.state.is_entitled(), "an in-window grant is entitled");
+    assert!(status.in_update_window);
+    thread.join().expect("server");
+}
+
+/// W2 — exactly at the deadline is IN window: the rule is `<=`, never `<`.
+/// The pure window rule proves it for the release date; at service level the
+/// same instant on Polar's own clock (`now >= expires_at`) reads as
+/// expired-but-entitled with the window still open, and never as revoked.
+#[tokio::test]
+async fn w2_exactly_at_the_deadline_is_in_window_and_never_ends_entitlement() {
+    // Release day == deadline day is inside the window.
+    assert!(is_in_update_window(
+        Some("2026-08-01"),
+        Some("2026-08-01T12:00:00Z"),
+    ));
+
+    let (config, thread) = spawn_server(vec![(
+        200,
+        validation_body("granted", BENEFIT, Some(validated_at().to_rfc3339()).as_deref())
+            .to_string(),
+    )]);
+    let store = Arc::new(InMemoryLicenseCredentialStore::default());
+    let db = Db::open_in_memory().expect("database");
+    seed_validated(&db, store.as_ref(), LicenseStatus::Active, None);
+    // The injected clock sits exactly on the key's deadline.
+    let service = build_service(config, store, validated_at());
+
+    let status = service.refresh(&db).await.expect("refresh");
+    assert_eq!(
+        status.state,
+        LicenseStatus::Expired,
+        "Polar's own rule is now >= expires_at, so equality lapses the key"
+    );
+    assert!(status.state.is_entitled(), "equality never ends entitlement");
+    assert!(
+        status.in_update_window,
+        "a build of the deadline day is still inside the window"
+    );
+    assert_eq!(
+        status.error_code.as_deref(),
+        Some(super::service::UPDATE_WINDOW_CLOSED)
+    );
+    thread.join().expect("server");
+}
+
+/// W5 — Polar answers 404 once a key lapses and never returns a 200 again.
+/// Arbitrated against the locally persisted deadline that has since passed,
+/// the license reads `Expired` — entitlement intact, permanently — and not
+/// revoked. The body is deliberately prose-free: the decision must not
+/// depend on Polar's English `detail` strings.
+#[tokio::test]
+async fn w5_a_404_against_a_past_stored_deadline_keeps_entitlement_as_expired() {
+    let (config, thread) = spawn_server(vec![(404, "{}".into())]);
+    let store = Arc::new(InMemoryLicenseCredentialStore::default());
+    let db = Db::open_in_memory().expect("database");
+    // The stored deadline passed one day after the last successful validation;
+    // the app only talks to Polar again on day 7, when the key has lapsed.
+    seed_validated(&db, store.as_ref(), LicenseStatus::Active, Some(day(1)));
+    let service = build_service(config, store, day(7));
+
+    let status = service.refresh(&db).await.expect("refresh");
+    assert_eq!(status.state, LicenseStatus::Expired);
+    assert!(
+        status.state.is_entitled(),
+        "an expiry date is not a loss of purchase"
+    );
+    assert_eq!(status.product, LicenseProduct::Individual);
+    assert_eq!(
+        status.error_code.as_deref(),
+        Some(super::service::UPDATE_WINDOW_CLOSED)
+    );
+    thread.join().expect("server");
+
+    // It stays expired-and-entitled on later cached reads.
+    let cached = build_service(
+        loopback_config(1),
+        Arc::new(InMemoryLicenseCredentialStore::default()),
+        day(8),
+    )
+    .get_status(&db)
+    .expect("cached status");
+    assert_eq!(cached.state, LicenseStatus::Expired);
+    assert!(cached.state.is_entitled());
+}
+
+/// The other side of the W5 arbitration: a 404 while the persisted deadline
+/// is still in the future cannot be an expiry, so it stays a revocation.
+#[tokio::test]
+async fn a_404_before_the_stored_deadline_still_revokes() {
+    let (config, thread) = spawn_server(vec![(404, "{}".into())]);
+    let store = Arc::new(InMemoryLicenseCredentialStore::default());
+    let db = Db::open_in_memory().expect("database");
+    seed_validated(&db, store.as_ref(), LicenseStatus::Active, Some(day(365)));
+    let service = build_service(config, store, day(7));
+
+    let status = service.refresh(&db).await.expect("refresh");
+    assert_eq!(status.state, LicenseStatus::Revoked);
+    assert_eq!(status.error_code.as_deref(), Some("invalid_license"));
+    assert!(!status.state.is_entitled());
+    thread.join().expect("server");
+}
+
+/// W6/W7 — a confirmed `revoked` or `disabled` answer ends entitlement
+/// immediately, whatever the stored deadline says. These are real verdicts
+/// on a 200 body, so no arbitration may soften them.
+#[tokio::test]
+async fn w6_w7_confirmed_revoked_and_disabled_end_entitlement_even_with_a_future_deadline() {
+    for (body, expected_state, expected_code) in [
+        (
+            validation_body("revoked", BENEFIT, Some(day(365).to_rfc3339()).as_deref()),
+            LicenseStatus::Revoked,
+            "license_revoked",
+        ),
+        (
+            validation_body("disabled", BENEFIT, Some(day(365).to_rfc3339()).as_deref()),
+            LicenseStatus::Disabled,
+            "license_disabled",
+        ),
+    ] {
+        let (config, thread) = spawn_server(vec![(200, body.to_string())]);
+        let store = Arc::new(InMemoryLicenseCredentialStore::default());
+        let db = Db::open_in_memory().expect("database");
+        seed_validated(&db, store.as_ref(), LicenseStatus::Active, None);
+        let service = build_service(config, store, day(7));
+
+        let status = service.refresh(&db).await.expect("refresh");
+        assert_eq!(status.state, expected_state);
+        assert_eq!(status.error_code.as_deref(), Some(expected_code));
+        assert!(
+            !status.state.is_entitled(),
+            "{expected_code} must end entitlement immediately"
+        );
+        thread.join().expect("server");
+    }
+}
+
+/// W8 — an unset `ALFRED_RELEASE_DATE` is a source build: no window
+/// comparison ever runs, so even a long-lapsed deadline locks nothing.
+#[test]
+fn w8_an_unset_release_date_never_locks_anything() {
+    assert!(is_in_update_window(None, Some("2020-01-01T00:00:00Z")));
+    assert!(is_in_update_window(None, None));
+
+    // This checkout carries no baked release date, so the stored-contract
+    // path must report the window open however far back the deadline sits.
+    if super::update_window::BUILD_RELEASE_DATE.is_none() {
+        let mut dto = LicenseStatusDto::unlicensed();
+        dto.set_update_deadline(Some("2020-01-01T00:00:00Z".into()));
+        assert!(dto.in_update_window);
+    }
+}
+
 #[tokio::test]
 async fn a_confirmed_invalid_license_revokes_without_consuming_grace() {
     let (config, thread) = spawn_server(vec![(404, "{}".into())]);
     let store = Arc::new(InMemoryLicenseCredentialStore::default());
     let db = Db::open_in_memory().expect("database");
-    seed_validated(&db, store.as_ref(), LicenseStatus::Active);
+    seed_validated(&db, store.as_ref(), LicenseStatus::Active, None);
     let service = build_service(config, store, day(7));
 
     let status = service.refresh(&db).await.expect("refresh");
@@ -468,7 +651,7 @@ async fn network_failure_alone_never_renders_as_revoked() {
     for (response, expected_code) in outages {
         let store = Arc::new(InMemoryLicenseCredentialStore::default());
         let db = Db::open_in_memory().expect("database");
-        seed_validated(&db, store.as_ref(), LicenseStatus::Active);
+        seed_validated(&db, store.as_ref(), LicenseStatus::Active, None);
         let (config, thread) = match response {
             Some(response) => {
                 let (config, thread) = spawn_server(vec![response]);
@@ -498,7 +681,7 @@ async fn network_failure_alone_never_renders_as_revoked() {
 async fn an_outage_past_day_thirty_needs_online_rather_than_revoked() {
     let store = Arc::new(InMemoryLicenseCredentialStore::default());
     let db = Db::open_in_memory().expect("database");
-    seed_validated(&db, store.as_ref(), LicenseStatus::OfflineGrace);
+    seed_validated(&db, store.as_ref(), LicenseStatus::OfflineGrace, None);
     let service = build_service(unreachable_config(), store, day(31));
 
     let status = service.refresh(&db).await.expect("refresh");
@@ -606,7 +789,7 @@ fn every_restrictive_license_state_leaves_local_data_usable() {
         let db = Db::open_in_memory().expect("database");
         let workflow_id = seed_local_data(&db);
         let store = Arc::new(InMemoryLicenseCredentialStore::default());
-        seed_validated(&db, store.as_ref(), state);
+        seed_validated(&db, store.as_ref(), state, None);
         let service = build_service(loopback_config(1), store, day(31));
 
         let status = service.get_status(&db).expect("status");
@@ -620,7 +803,7 @@ async fn a_refresh_past_grace_never_touches_local_data() {
     let db = Db::open_in_memory().expect("database");
     let workflow_id = seed_local_data(&db);
     let store = Arc::new(InMemoryLicenseCredentialStore::default());
-    seed_validated(&db, store.as_ref(), LicenseStatus::OfflineGrace);
+    seed_validated(&db, store.as_ref(), LicenseStatus::OfflineGrace, None);
     let service = build_service(unreachable_config(), store, day(31));
 
     assert_eq!(
@@ -695,7 +878,7 @@ async fn a_successful_validation_rearms_the_documented_seven_and_thirty_day_poli
     )]);
     let store = Arc::new(InMemoryLicenseCredentialStore::default());
     let db = Db::open_in_memory().expect("database");
-    seed_validated(&db, store.as_ref(), LicenseStatus::OfflineGrace);
+    seed_validated(&db, store.as_ref(), LicenseStatus::OfflineGrace, None);
     let now = day(8);
     let service = build_service(config, store, now);
 

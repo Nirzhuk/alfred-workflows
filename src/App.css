@@ -2801,6 +2801,41 @@ html[data-platform="macos"] .app-titlebar {
   transition: background var(--duration-fast) var(--ease-standard);
 }
 
+.native-agent-intro {
+  margin: 0 0 var(--space-4);
+}
+
+.native-agent-provider-mark {
+  display: inline-grid;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+  color: var(--ink);
+  font-weight: var(--font-weight-semibold);
+}
+
+.native-agent-gate {
+  max-width: 620px;
+  margin-top: var(--space-1);
+}
+
+.native-agent-attempt-actions {
+  align-items: center;
+}
+
+.native-agent-user-code {
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+  color: var(--ink);
+  letter-spacing: 0.08em;
+}
+
 .integration-provider-row:hover {
   background: var(--surface-hover);
 }
@@ -2941,7 +2976,8 @@ html[data-platform="macos"] .app-titlebar {
 
 .integration-status.is-expired,
 .integration-status.is-error,
-.integration-status.is-revoked {
+.integration-status.is-revoked,
+.integration-status.is-disconnect_pending {
   color: var(--danger);
 }
 
@@ -5981,14 +6017,31 @@ button.primary.danger-solid:hover:not(:disabled) {
 
 .agent-model-controls {
   display: grid;
-  grid-template-columns: minmax(110px, 0.65fr) minmax(0, 1.35fr) auto;
+  grid-template-columns: minmax(120px, 0.8fr) minmax(110px, 0.65fr) minmax(0, 1.35fr) auto;
   align-items: end;
   gap: var(--space-2);
 }
 
 .agent-provider-field,
+.agent-harness-field,
 .model-select-field {
   min-width: 0;
+}
+
+.agent-native-status {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2-5);
+  border: 1px solid var(--warning-border, var(--line));
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.agent-native-status strong {
+  color: var(--ink);
 }
 
 .agent-provider-value {

@@ -15,3 +15,18 @@ test("includes License and Billing as a first-class settings destination", () =>
   expect(markup).toContain("Account");
   expect(markup).toContain('aria-current="page"');
 });
+
+test("keeps Native Agents separate from Connected apps", () => {
+  const markup = renderToStaticMarkup(
+    <SettingsSidebar
+      activeSection="native-agents"
+      onChange={() => {}}
+      onBack={() => {}}
+    />,
+  );
+
+  expect(markup).toContain("Native Agents");
+  expect(markup).toContain("Connected apps");
+  expect(markup.match(/settings-sidebar-item/g)?.length).toBeGreaterThan(2);
+  expect(markup).toContain('aria-current="page"');
+});

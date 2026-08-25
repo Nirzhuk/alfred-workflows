@@ -4,6 +4,7 @@ export type SettingsSectionId =
   | "shortcuts"
   | "notifications"
   | "license-billing"
+  | "native-agents"
   | "connected-apps"
   | "data";
 
@@ -13,6 +14,7 @@ export const SETTINGS_SECTION_LABELS: Record<SettingsSectionId, string> = {
   shortcuts: "Keyboard shortcuts",
   notifications: "Notifications",
   "license-billing": "License & Billing",
+  "native-agents": "Native Agents",
   "connected-apps": "Connected apps",
   data: "Data & storage",
 };

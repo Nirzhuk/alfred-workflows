@@ -13,7 +13,64 @@
 - **Depends on**: Plans 030–039 and any provider plan marked shipped
 - **Category**: release / compatibility / operations
 - **Planned at**: 2026-08-24
-- **Implementation**: TODO
+- **Implementation**: DONE — Provider CLI remains available and zero
+  Alfred-native providers are enabled
+
+## 2026-08-25 implementation evidence
+
+- `src-tauri/src/agents/capability_manifest.rs` is the versioned manifest and
+  fail-closed runner gate. It records provider, harness, runtime target,
+  platform/build/auth, billing/model/usage sources, tools/approvals/resume/
+  cancellation, package evidence, status, and an exact stable reason. Missing
+  entries and failed gates are disabled.
+- `get_agent_capability_manifest` exposes that same source to the editor;
+  `src/features/workflow/agent-capabilities.ts` consumes the backend's final
+  execution decision without reconstructing package trust. Blocked native
+  choices remain visible for already-saved nodes, but cannot be selected for
+  new execution. There is no global native flag.
+- The runner calls the manifest gate before model/account/runtime resolution.
+  Native failure does not construct a CLI adapter and no fallback path was
+  added. Provider-specific blocking does not affect CLI or another provider.
+- `src-tauri/src/agents/runtime_package.rs` implements bounded, path-safe
+  resource lookup and checksum/licence/notice/signing/rollback inspection. The
+  manifest honestly reports that no native sidecar/SDK artifact is included in
+  this release; cloud/direct-HTTPS adapters report packaging not applicable.
+- `get_agent_harness_diagnostics` exposes only bounded provider/harness/status,
+  runtime target/state, shortened opaque account identity, auth method, account
+  state, and stable error codes. Tests prove private identity, credential,
+  scope, prompt/payload, and path-shaped fields do not enter the DTO.
+- Old/imported/duplicated/template graph fixtures remain CLI, new nodes persist
+  explicit CLI selection, explicit Alfred selections remain visible without
+  rewriting, and run terminal outcomes retain provider+harness metadata.
+- `docs/agent-harnesses.md` and `docs/native-harness-support.md` document
+  separate credentials/billing, account recovery, safe escalation, runtime
+  rollback, and explicit user-selected CLI fallback.
+
+### Release result
+
+| Alfred-native provider | Status | Exact remaining blocker |
+| --- | --- | --- |
+| Codex | blocked | `codex_cross_platform_signing_and_packaged_smoke_missing` |
+| Claude | blocked | `claude_api_key_account_intake_and_live_smoke_missing`; subscription OAuth separately lacks Anthropic approval |
+| Cursor | blocked | `cursor_account_repository_consent_and_e2e_gates_missing` |
+| OpenCode | blocked | `opencode_package_account_and_tool_bridge_unverified` |
+| GitHub Copilot | blocked | `copilot_sdk_package_license_and_packaged_smoke_missing` |
+| Gemini | blocked | `gemini_api_key_account_intake_and_live_smoke_missing`; desktop OAuth packaging remains separate |
+| Grok | blocked | `grok_api_key_account_intake_and_live_smoke_missing` |
+| Pi / OMP | disabled | `native_provider_not_implemented` |
+
+Enabled Alfred-native providers: **none**. Enabled Provider CLI harnesses:
+Claude Code, Cursor, Codex, OpenCode, GitHub Copilot, Gemini, Grok, Pi, and OMP.
+
+Focused verification (broad suites/builds intentionally left to the release
+coordinator):
+
+```text
+cargo test --locked --manifest-path src-tauri/Cargo.toml --lib capability_manifest::tests
+cargo test --locked --manifest-path src-tauri/Cargo.toml --lib runtime_package::tests
+bun test tests/store.test.ts tests/native-harness-release-matrix.test.ts
+git diff --check -- <Plan 040 files>
+```
 
 ## Goal
 
@@ -195,9 +252,12 @@ For each enabled provider+harness+platform, run:
 
 ## Done criteria
 
-- [ ] Capability manifest drives runner and UI consistently.
-- [ ] Existing CLI workflows remain stable through upgrade.
-- [ ] Native enablement is staged per provider/platform.
-- [ ] Packaged runtimes are signed, versioned, and recoverable.
-- [ ] Diagnostics and support docs are safe and actionable.
-- [ ] Cross-provider release matrix passes for every enabled native provider.
+- [x] Capability manifest drives runner and UI consistently.
+- [x] Existing CLI workflows remain stable through upgrade.
+- [x] Native enablement is staged per provider/platform; every native entry is
+      currently blocked or disabled.
+- [x] No packaged runtime is claimed or shipped; version/checksum/licence/
+      signing/rollback gates fail closed until real artifacts exist.
+- [x] Diagnostics and support docs are safe and actionable.
+- [x] Fixture release matrix passes for the zero-provider native rollout and
+      every available CLI provider.

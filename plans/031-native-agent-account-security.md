@@ -19,7 +19,7 @@
 - **Depends on**: Plan 030
 - **Category**: agent authentication / security
 - **Planned at**: 2026-08-24
-- **Implementation**: TODO
+- **Implementation**: DONE
 
 ## Goal
 
@@ -238,11 +238,11 @@ redacted. Run the full repository gate before marking done.
 
 ## Done criteria
 
-- [ ] Native accounts have separate redacted metadata and secret storage.
-- [ ] No CLI credential import or scraping exists.
-- [ ] Authorization attempts are memory-only and cancellable.
-- [ ] Refresh/revoke/disconnect states are explicit.
-- [ ] Settings exposes safe native account lifecycle.
-- [ ] Provider plans can register auth and refresh handlers without editing the
+- [x] Native accounts have separate redacted metadata and secret storage.
+- [x] No CLI credential import or scraping exists.
+- [x] Authorization attempts are memory-only and cancellable.
+- [x] Refresh/revoke/disconnect states are explicit.
+- [x] Settings exposes safe native account lifecycle.
+- [x] Provider plans can register auth and refresh handlers without editing the
       workflow runner.
-- [ ] Focused and full verification gates pass.
+- [x] Focused and full verification gates pass.

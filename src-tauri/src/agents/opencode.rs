@@ -254,6 +254,13 @@ fn parse_run_events(output: &str) -> (String, Option<Value>) {
 mod tests {
     use super::*;
 
+    /// Activity ids are hashed at the boundary, so a provider id never
+    /// reaches a run event verbatim.
+    fn is_opaque(id: &str) -> bool {
+        id.strip_prefix("agent_activity_")
+            .is_some_and(|suffix| suffix.len() == 24 && suffix.bytes().all(|b| b.is_ascii_hexdigit()))
+    }
+
     #[test]
     fn parses_text_and_aggregates_build_steps() {
         let output = [
@@ -290,14 +297,38 @@ mod tests {
             .flat_map(|event| activities_from_event(event))
             .collect::<Vec<_>>();
 
+        // Lifecycle and ordering are unchanged; the unknown event is ignored.
+        assert_eq!(activities.len(), 4);
+        assert_eq!(activities[0].kind, AgentActivityKind::Status);
+        assert_eq!(activities[0].state, AgentActivityState::Completed);
         assert_eq!(activities[0].label, "OpenCode session started");
-        assert_eq!(activities[1].id, "call-1");
+
+        assert_eq!(activities[1].kind, AgentActivityKind::Tool);
         assert_eq!(activities[1].state, AgentActivityState::Started);
-        assert_eq!(activities[2].id, "call-1");
+        assert_eq!(activities[1].label, "Using tool");
+
+        assert_eq!(activities[2].kind, AgentActivityKind::Tool);
         assert_eq!(activities[2].state, AgentActivityState::Completed);
-        assert_eq!(activities[2].detail.as_deref(), Some("ok"));
-        assert_eq!(activities[3].detail.as_deref(), Some("Done"));
-        assert!(!format!("{activities:?}").contains("secret"));
-        assert!(!format!("{activities:?}").contains("ignored"));
+        assert_eq!(activities[2].label, "Tool completed");
+
+        assert_eq!(activities[3].kind, AgentActivityKind::Assistant);
+        assert_eq!(activities[3].label, "Agent response");
+
+        // The tool call still correlates start to completion opaquely.
+        assert_eq!(activities[1].id, activities[2].id);
+        assert_ne!(activities[1].id, activities[3].id);
+        assert!(activities.iter().all(|activity| is_opaque(&activity.id)));
+        for raw_id in ["call-1", "part-1", "step-1", "text-1"] {
+            assert!(
+                activities.iter().all(|activity| activity.id != raw_id),
+                "provider id {raw_id} reached a run event"
+            );
+        }
+
+        assert!(activities.iter().all(|activity| activity.detail.is_none()));
+        let rendered = format!("{activities:?}");
+        for leaked in ["secret", "ignored", "Done", "bash", "call-1"] {
+            assert!(!rendered.contains(leaked), "leaked {leaked} in {rendered}");
+        }
     }
 }

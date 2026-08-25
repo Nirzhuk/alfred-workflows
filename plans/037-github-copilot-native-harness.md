@@ -9,7 +9,7 @@
 >
 > - [Copilot CLI authentication](https://docs.github.com/en/copilot/how-tos/copilot-cli/set-up-copilot-cli/authenticate-copilot-cli)
 > - [Copilot SDK](https://github.com/github/copilot-sdk)
-> - [Copilot SDK authentication](https://docs.github.com/en/copilot/how-tos/copilot-sdk/authenticate-copilot-sdk/authenticate-copilot-sdk)
+> - [Copilot SDK authentication](https://docs.github.com/en/copilot/how-tos/copilot-sdk/auth/authenticate)
 
 ## Status
 
@@ -19,7 +19,74 @@
 - **Depends on**: Plans 030–032
 - **Category**: native provider / OAuth
 - **Planned at**: 2026-08-24
-- **Implementation**: TODO
+- **Implementation**: **BLOCKED — shared SDK/runtime packaging gate**
+
+## Step 1 evidence (re-read 2026-08-25) — SDK viable, packaging blocked
+
+Sources: [`github/copilot-sdk`](https://github.com/github/copilot-sdk) and its
+[`rust/README.md`](https://github.com/github/copilot-sdk/blob/main/rust/README.md);
+official [SDK authentication](https://docs.github.com/en/copilot/how-tos/copilot-sdk/auth/authenticate)
+and [GitHub OAuth setup](https://docs.github.com/en/copilot/how-tos/copilot-sdk/setup/github-oauth);
+the [`github/copilot-cli` license](https://github.com/github/copilot-cli/blob/main/LICENSE.md);
+and the crates.io package metadata inspected with `cargo info`.
+
+| Question | Finding |
+| --- | --- |
+| Rust integration path | First-party crate `github-copilot-sdk` (MIT), published on crates.io. Stable `1.0.11`; preview `1.0.12-preview.0` (2026-08-20). Six official SDKs: Node, Python, Go, .NET, Rust, Java. |
+| Does the SDK require a user-installed CLI? | **No, for Rust.** The default `bundled-cli` feature "embeds the verified child-process runtime in your compiled crate" and lazily extracts it to a per-user cache. Resolution order is explicit path → `COPILOT_CLI_PATH` → bundled archive; the README states "There is no PATH scanning." (The repo's "not bundled by default" note for Go/Java/Rust describes the *unbundled* build, which this plan does not use.) |
+| Transport | JSON-RPC to the Copilot CLI in `--server` mode; the SDK "manages the CLI process lifecycle automatically". |
+| Runtime pin/update | Stable SDK `1.0.11` requires Rust `1.94.0`; its published `cli-version.txt` pins CLI `1.0.79` with per-platform SHA-256 values. The current toolchain is Rust `1.96.0`. Updates ride an Alfred dependency bump, not a silent background download. |
+| Redistribution | Copilot CLI is proprietary but its license grants redistribution only when unmodified, part of a materially larger application, non-standalone, independently licensed, and shipped with the CLI license plus notices. The legal terms are clear; Alfred's installers do **not yet have an evidenced Copilot-license payload**, so the package gate is not passed. |
+| Token custody | The SDK has no login/device-flow API. Alfred may use documented GitHub OAuth and pass the resulting `gho_`/`ghu_` token through Rust `ClientOptions::with_github_token(...).with_use_logged_in_user(false)`. The provider must not use the CLI keychain/config or ambient token fallback. `github_pat_` is also accepted; classic `ghp_` is rejected. Token storage/refresh/expiry remain Alfred's responsibility. |
+| Tool policy | SDK defaults expose first-party CLI tools similar to `--allow-all`. Rust `ClientMode::Empty` disables ambient CLI behavior; `available_tools` supports source-qualified `custom:*` filtering. The provider seam requires Empty mode and only `custom:alfred_*`. |
+| Local vs cloud | CLI server and JSON-RPC transport are local. Alfred custom tool execution stays behind `NativeTurnHost`; model inference remains cloud unless BYOK targets a local provider. |
+
+The SDK/runtime design does not require a user-installed CLI. However, native
+mode is not ready merely because redistribution is permitted: the actual
+dependency, embedded runtime, license/notice payload, and packaged smoke are
+still absent from the shared build.
+
+### Exact BLOCKED reason
+
+`github-copilot-sdk = "=1.0.11"` is not linked in shared `src-tauri/Cargo.toml`,
+and Alfred packaging has no verified step that includes the proprietary
+Copilot CLI license/notices in every installer. Linking it would download and
+embed CLI `1.0.79` during the shared build and requires the broad build/package
+validation explicitly prohibited for this dispatch. Therefore
+`transport::UnlinkedSdkTransport` reports an unavailable (not managed) runtime
+and fails closed with `provider_unavailable`; no direct Copilot HTTP call is
+fabricated. A live OAuth-app/seat/SSO smoke is also still required before the
+account/entitlement states can be declared production-ready.
+
+### Reachable artifacts completed in this slice
+
+- Documented GitHub device start/poll state machine: success, pending,
+  slow-down, denial, expiry, malformed token, identity mismatch, and logout
+  zeroization.
+- Bounded current SDK event names (`session.start`, `assistant.turn_start`,
+  `assistant.message_delta`, `tool.execution_*`, `permission.completed`,
+  `assistant.turn_end`, `session.idle`) plus reasoning suppression, malformed
+  identifiers, oversized text refusal, rate-limit/account classification,
+  approval allow/deny, and cancellation.
+- Strict transport policy requiring `ClientMode::Empty`, explicit token
+  custody with stored-login fallback disabled, and only `custom:alfred_*`
+  tools. The existing CLI adapter is unchanged.
+
+Targeted evidence: `cargo test --locked --manifest-path src-tauri/Cargo.toml
+--lib github_copilot --no-fail-fast` passes all 42 provider fixtures. Broad
+formatters, builds, and suites were intentionally not run.
+
+### Provider-local secret boundary
+
+`events::scrub` explicitly covers `gho_`, `ghu_`, and `github_pat_` in addition
+to the shared redactor. More importantly, `runtime::run_alfred_tool` now rejects
+secret material in every raw SDK field that could affect execution — invocation
+ID, name, path, cwd, input, and arguments — before constructing an
+`AlfredToolRequest` or calling `host.invoke_tool`. Provider fixtures exercise
+each field, including structured secret-key markers. The remaining release
+prerequisites are unchanged: link pinned SDK `1.0.11`/CLI `1.0.79`, ship the
+required notices, run packaged platform smokes, and complete a live
+OAuth/seat/SSO smoke.
 
 ## Goal
 
@@ -155,9 +222,9 @@ separate regression smoke.
 
 ## Done criteria
 
-- [ ] Official Copilot SDK/API surface is selected and versioned.
+- [x] Official Copilot SDK/API surface is selected and versioned (`github-copilot-sdk =1.0.11`, CLI `1.0.79`).
 - [ ] Native mode does not require manual CLI installation.
-- [ ] OAuth, entitlement, SSO, and billing states are distinct.
+- [x] OAuth, entitlement, SSO, and billing states are distinct in the provider state/fixtures.
 - [ ] Runtime events/tools/cancellation pass Plan 032.
-- [ ] CLI mode remains unchanged.
+- [x] CLI mode remains unchanged.
 - [ ] Packaged runtime and license/update gates pass.

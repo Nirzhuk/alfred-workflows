@@ -14,7 +14,7 @@
 - **Depends on**: Plans 030–031
 - **Category**: agent runtime / compatibility
 - **Planned at**: 2026-08-24
-- **Implementation**: TODO
+- **Implementation**: DONE
 
 ## Goal
 
@@ -220,9 +220,9 @@ Add a contract-test report listing each provider capability as `supported`,
 
 ## Done criteria
 
-- [ ] Native runtime and normalized event contracts are versioned.
-- [ ] Provider capabilities are explicit and bounded.
-- [ ] Tool/approval/cancellation ownership is documented.
-- [ ] Alfred resolves skills/context in native mode.
-- [ ] A fake native runtime passes the contract suite.
-- [ ] Provider plans can proceed without editing core semantics.
+- [x] Native runtime and normalized event contracts are versioned.
+- [x] Provider capabilities are explicit and bounded.
+- [x] Tool/approval/cancellation ownership is documented.
+- [x] Alfred resolves skills/context in native mode.
+- [x] A fake native runtime passes the contract suite.
+- [x] Provider plans can proceed without editing core semantics.

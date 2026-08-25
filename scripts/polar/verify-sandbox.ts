@@ -20,21 +20,21 @@ function printResult(
 
 const MANIFEST_HELP = [
   "  Fill every null in scripts/polar/sandbox-manifest.json with the PUBLIC",
-  "  sandbox values: the organization ID, the Alfred License and Alfred Teams",
-  "  benefit IDs, and the Alfred License sandbox checkout link shaped",
+  "  sandbox values: the organization ID, the Alfred Supporter benefit ID,",
+  "  and the Alfred Supporter sandbox checkout link shaped",
   "  https://sandbox-api.polar.sh/v1/checkout-links/polar_cl_.../redirect.",
-  "  customerPortal.url is https://sandbox.polar.sh/<org-slug>/portal, or null",
-  "  if it has not been collected yet. Both benefit IDs are required and must",
-  "  come from the CURRENT Polar products: the previously bound IDs are stale.",
-  "  Teams is sold on the marketing website, so there is no Teams checkout.",
-  "  See docs/polar-operator-handoff.md.",
+  "  customerPortal.url is https://sandbox.polar.sh/<org-slug>/portal.",
+  "  The supporter licence is PERPETUAL: do NOT set a license-key expiration",
+  "  on the benefit in Polar, and record no benefits.supporter.expiry here —",
+  "  any recorded expiration fails verification with a perpetual-licence",
+  "  reason. See docs/polar-operator-handoff.md.",
 ];
 
 const SECRETS_HELP = [
-  "  Supply both sandbox TEST license keys one of two ways:",
+  "  Supply the sandbox TEST license key one of two ways:",
   `    1. a secret runner exporting ${Object.values(SECRET_ENV_VARS).join(", ")}`,
   `    2. the git-ignored file scripts/polar/${SECRET_FILE_NAME}, a JSON`,
-  '       object with "individual" and "teams".',
+  '       object with "supporter" (the retired "individual" name is accepted).',
   "  Never pass a key as a command-line argument, and never commit one.",
 ];
 

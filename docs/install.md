@@ -11,12 +11,16 @@ There are two ways to get it, both free:
 | **[Official builds](https://github.com/Nirzhuk/alfred-workflows/releases/latest)** | **Free** | Most people — maintainer-built, CI-tested installers for macOS, Windows, and Linux |
 | [Build from source](building-from-source.md) | **Free** | People comfortable installing Bun, Rust, and Tauri's platform prerequisites |
 
-Both routes have **every feature**. There is no paid tier, no subscription,
-and no feature lock. Official macOS builds are Developer ID signed, notarized,
-and stapled; the Windows installer is an unsigned beta. Alfred runs no
-billing, account, or download backend of its own, and it never sends your
-workflows or workflow data anywhere. See the
-[open-source and distribution policy](open-source.md).
+Neither route requires payment, and nobody is ever required to pay for
+Alfred. A self-built Alfred has **every feature**, including cron schedules
+and file/webhook triggers, enabled by design. Official builds are identical
+except that those two automation perks unlock with an optional one-time
+supporter licence — permanent, with no expiry — while manual workflow runs
+and everything else stay free. Official macOS builds are Developer ID
+signed, notarized, and stapled; the Windows installer is an unsigned beta.
+Alfred runs no billing, account, or download backend of its own, and it
+never sends your workflows or workflow data anywhere. See
+[Supporting Alfred](open-source.md#supporting-alfred).
 
 ## Requirements
 
@@ -49,6 +53,11 @@ looks for these binaries on your `PATH` (and common install locations):
 Each CLI must already be logged in the same way you use it in a terminal.
 Alfred does not collect provider passwords or API keys; it reuses the
 credentials those CLIs already store on your machine.
+
+Agent steps default to the first-class **Provider CLI** harness. The separate
+**Alfred** harness is additive and currently reports native execution as
+unavailable; it never falls back to a CLI or imports CLI credentials. See
+[Agent harnesses](agent-harnesses.md) for the compatibility and account rules.
 
 If a run fails with “CLI not found”, open a terminal, confirm the command
 above works, then fully quit and reopen Alfred so it picks up an updated
@@ -146,6 +155,8 @@ binary support.
 | --- | --- |
 | “agent CLI not found” | Install the selected CLI, verify it in Terminal/PowerShell, restart Alfred |
 | Agent runs but returns auth errors | Log in with that CLI’s own login command; Alfred does not re-auth for you |
+| Alfred harness is blocked or unavailable | Keep using Provider CLI, or explicitly switch that node back to Provider CLI after confirming the account/billing difference; there is no automatic fallback |
+| Native account is expired or stuck disconnecting | This zero-native release cannot refresh or reconnect it; use Settings → Native agent accounts to disconnect, or revoke/rotate at the provider before removing local recovery metadata |
 | Schedule never fires | Keep Alfred running (tray is enough); confirm the schedule is enabled |
 | Webhook not reachable from another device | By design — binds to `127.0.0.1` only |
 | macOS won’t open the app | Prefer a notarized build, or allow it under Privacy & Security |
@@ -156,3 +167,4 @@ binary support.
 - [Open-source policy](open-source.md) — the distribution policy
 - [Releasing](releasing.md) — how official binaries are built and published
 - [README](../README.md) — product overview and developer setup
+- [Native harness support](native-harness-support.md) — safe diagnostics, account recovery, and explicit fallback
