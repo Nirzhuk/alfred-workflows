@@ -94,7 +94,7 @@ workflow graph and can be reversed from the node, its context menu, or settings.
 
 ## 5. Main surfaces (UI)
 
-- **Sidebar** — Schedules / Settings nav; workflow list (+ create, reorder, context menu)
+- **Sidebar** — History / Schedules / Settings nav; workflow list (+ create, reorder, context menu)
 - **Canvas** — React Flow editor, add-step panel, toolbar (cwd, run/save, etc.)
 - **Activity panel** — This run / Result / Library / Live log
 - **Schedules page** — All cron schedules across workflows
@@ -127,6 +127,77 @@ Primary entities (see `src-tauri/src/db/schema.sql`):
 - `triggers` — file / webhook configs
 - `memories` / `memory_links` — library + cross-workflow links
 - `app_connections` — non-secret provider/account/scopes/health metadata; credentials are never stored in SQLite
+
+### Local history search
+
+Alfred provides searchable run history across persisted run steps and saved
+memories. Search stays on the machine and uses SQLite FTS5 only—there is no
+embedding model, remote search service, or network request. The FTS tables are a
+derived index that can be rebuilt from canonical `runs`, `run_steps`, and
+`memories` rows. Creating, updating, or deleting canonical data updates or
+removes the corresponding search documents transactionally.
+
+Run history can contain prompts, agent/tool results, errors, and saved memory
+text. Treat it as private local data with the same sensitivity as the workflows
+that produced it.
+
+### Scoped atomic memory
+
+Each memory is one compact claim or note. Its semantic type—`preference`,
+`fact`, `decision`, `constraint`, `lesson`, `episode`, `checkpoint`, `note`,
+`output`, or `artifact`—is separate from its rendering/content kind (`text`,
+`note`, or `artifact`). Memory has three visibility scopes:
+
+- **User memory** uses the fixed local identity `local-user` and is visible to
+  every workflow on this installation.
+- **Workspace memory** is visible to workflows whose configured absolute
+  working-directory path has the same purely lexical normalization. Alfred
+  removes `.` and collapses safe `..` components; it does not query the
+  filesystem, resolve symlinks, probe mounts, or contact network paths.
+- **Workflow memory** is visible to its owning workflow and to workflows with
+  an explicit legacy memory link.
+
+Lifecycle is explicit: `active`, `superseded`, or `retracted`. Inactive or
+expired records remain inspectable for correction history but never enter a
+prompt. Explicit deletion physically removes the canonical local row; deleting
+a workflow removes its workflow memory while preserving user/workspace memory
+that originated there.
+
+Pinned active memory forms bounded core context. The complete block is at most
+6,000 UTF-8 bytes: 1,500 for user, 2,000 for workspace, and 2,500 for
+workflow/linked memory, with unused capacity flowing forward and no item above
+1,500 bytes. Overflow remains in the library and the prompt reports only an
+omitted count. Durable memory is reference data, not authorization: it cannot
+override the current request, workflow instructions, permissions, or safety
+boundaries, and instructions embedded in memory text are ignored.
+
+### Automatic recall
+
+New workflows default **Automatic recall** on; existing workflows migrated
+from earlier Alfred versions remain off until the user opts in from the
+Memories inspector. The same switch disables recall again without changing the
+workflow graph or deleting memory.
+
+Immediately before every Agent or Custom agent step, Alfred searches against
+that step's current accumulated prompt. Candidate visibility reuses the scoped,
+active, unexpired memory rules above. Ranking is deterministic: local exact
+FTS5 result position, scope, salience, confidence, and last-confirmed recency;
+when exact search has no matches, recent in-scope memory is the fallback.
+Pinned core memory and memories already loaded by a Memory node are excluded
+from recall so prompt text is not duplicated. Utility nodes never receive
+automatic memory.
+
+Recalled context is capped at 8 items and 6,000 UTF-8 bytes, with at most 1,200
+bytes per item and 8,000 newest bytes of the current prompt used for its query.
+Every included id, reason, rank, score, and rendered byte count is recorded in
+`run_memory_uses` and shown in History; the audit row never copies a memory body
+or search query. A retrieval or FTS5 failure is non-fatal and the agent proceeds
+without recalled context while preserving pinned core behavior.
+
+V1 has no embeddings, remote retrieval API, network call, or model download.
+Retrieved text is explicitly untrusted reference data: it cannot override
+current instructions, authorize actions, expand connected-app scope, or grant
+tool access.
 
 ---
 

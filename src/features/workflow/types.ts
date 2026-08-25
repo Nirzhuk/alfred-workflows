@@ -430,6 +430,8 @@ export type Workflow = {
   workingDirectory?: string;
   /** Sidebar organization folder. Null/empty means Unfiled. */
   folderId?: string | null;
+  /** Host-side local memory retrieval before agent and custom-agent steps. */
+  memoryRetrievalEnabled?: boolean;
   graph: WorkflowGraph;
   createdAt: string;
   updatedAt: string;
@@ -453,6 +455,71 @@ export type RunSummary = {
   trigger: string;
   status: string;
   createdAt: string;
+};
+
+export type RunHistoryItem = {
+  id: string;
+  workflowId: string;
+  workflowName: string;
+  trigger: string;
+  status: string;
+  error: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  createdAt: string;
+  stepCount: number;
+  finalOutputPreview: string;
+};
+
+export type RunHistoryStep = {
+  id: string;
+  nodeId: string;
+  agentProvider: string | null;
+  skillName: string | null;
+  status: string;
+  input: unknown;
+  output: unknown;
+  error: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  createdAt: string;
+};
+
+export type RunHistoryDetail = {
+  run: RunHistoryItem;
+  steps: RunHistoryStep[];
+  memoryUses: RunHistoryMemoryUse[];
+};
+
+export type RunHistoryMemoryUse = {
+  nodeId: string;
+  memoryId: string;
+  memoryTitle: string;
+  scopeType: MemoryScopeType;
+  memoryType: MemoryType;
+  rank: number;
+  score: number;
+  reason: "lexical" | "recent" | "pinned";
+  renderedBytes: number;
+  createdAt: string;
+};
+
+export type HistorySearchInput = {
+  query: string;
+  workflowId?: string | null;
+  limit?: number;
+};
+
+export type HistorySearchHit = {
+  kind: "run_step" | "memory";
+  sourceId: string;
+  runId: string | null;
+  workflowId: string | null;
+  workflowName: string;
+  title: string;
+  snippet: string;
+  timestamp: string;
+  rank: number;
 };
 
 export type ActiveRunInfo = {
@@ -568,22 +635,45 @@ export type RunLogLine = {
 };
 
 export type MemoryKind = "text" | "note" | "artifact";
-export type MemorySource = "run" | "manual" | "import";
+export type MemorySource = "run" | "manual" | "import" | "review";
+export type MemoryScopeType = "user" | "workspace" | "workflow";
+export type MemoryType =
+  | "preference"
+  | "fact"
+  | "decision"
+  | "constraint"
+  | "lesson"
+  | "episode"
+  | "checkpoint"
+  | "note"
+  | "output"
+  | "artifact";
+export type MemoryStatus = "active" | "superseded" | "retracted";
 
 /** Durable workflow memory — SQLite-backed, optionally pinned into agent prompts. */
-export type MemoryOrigin = "owned" | "linked" | "linkable";
+export type MemoryOrigin = "owned" | "linked" | "linkable" | "inherited";
 
 export type OutputMemory = {
   id: string;
-  workflowId: string;
+  workflowId: string | null;
   runId?: string | null;
   nodeId?: string | null;
   kind: MemoryKind;
+  scopeType: MemoryScopeType;
+  scopeKey: string;
+  scopeLabel: string;
+  memoryType: MemoryType;
   source: MemorySource;
   title: string;
   body: string;
   artifactPath?: string | null;
   pinned: boolean;
+  confidence: number;
+  salience: number;
+  status: MemoryStatus;
+  supersedesId?: string | null;
+  lastConfirmedAt?: string | null;
+  expiresAt?: string | null;
   createdAt: string;
   updatedAt: string;
   /** `"owned"` for local memories; `"linked"` when imported from another workflow. */

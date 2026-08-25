@@ -13,6 +13,8 @@ import {
 } from "../../../settings/components/settings-sidebar";
 import { SchedulesPage } from "../schedules-page";
 import { SidebarFolderContext } from "../sidebar-folder-context";
+import { HistoryPage } from "../history-page";
+import { historyNavigation } from "../history-page/history-format";
 import { SidebarBottomBar } from "../sidebar-bottom-bar";
 import { SidebarNav, type SidebarView } from "../sidebar-nav";
 import { AgentUsageBar } from "../agent-usage-bar";
@@ -220,6 +222,7 @@ export function WorkflowCanvas() {
   } | null>(null);
   const [memoriesOpen, setMemoriesOpen] = useState(false);
   const [memoriesFocusId, setMemoriesFocusId] = useState<string | null>(null);
+  const [historyRunId, setHistoryRunId] = useState<string | null>(null);
   const [runPanelMounted, setRunPanelMounted] = useState(runPanelOpen);
   const [view, setView] = useState<SidebarView>("canvas");
   const [settingsSection, setSettingsSection] =
@@ -235,6 +238,14 @@ export function WorkflowCanvas() {
       return false;
     }
   });
+
+  const navigateHistory = (
+    action: Parameters<typeof historyNavigation>[0],
+  ) => {
+    const next = historyNavigation(action);
+    setHistoryRunId(next.runId);
+    setView(next.view);
+  };
 
   const setSidebarOpen = (open: boolean) => {
     const collapsed = !open;
@@ -544,7 +555,13 @@ export function WorkflowCanvas() {
                   activityEnabled={canOpenActivity}
                   memoriesOpen={memoriesOpen}
                   memoriesEnabled={Boolean(activeWorkflowId)}
-                  onChange={setView}
+                  onChange={(nextView) => {
+                    if (nextView === "history") {
+                      navigateHistory({ type: "open-history" });
+                    } else {
+                      setView(nextView);
+                    }
+                  }}
                   onNewWorkflow={() => {
                     setView("canvas");
                     void createWorkflow();
@@ -625,6 +642,13 @@ export function WorkflowCanvas() {
 
         {view === "settings" ? (
           <SettingsPage activeSection={settingsSection} />
+        ) : view === "history" ? (
+          <HistoryPage
+            activeWorkflowId={activeWorkflowId}
+            initialRunId={historyRunId}
+            onSelectedRunIdChange={setHistoryRunId}
+            onClose={() => navigateHistory({ type: "close-history" })}
+          />
         ) : view === "schedules" ? (
           <SchedulesPage
             key={schedulesTick}
@@ -779,6 +803,11 @@ export function WorkflowCanvas() {
       <MemoriesInspector
         open={memoriesOpen}
         initialMemoryId={memoriesFocusId}
+        onOpenRunHistory={(runId) => {
+          setMemoriesOpen(false);
+          setMemoriesFocusId(null);
+          navigateHistory({ type: "open-run", runId });
+        }}
         onClose={() => {
           setMemoriesOpen(false);
           setMemoriesFocusId(null);

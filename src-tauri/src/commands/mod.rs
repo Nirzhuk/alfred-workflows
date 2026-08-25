@@ -2,9 +2,9 @@ pub mod integrations;
 
 use crate::agents;
 use crate::db::{
-    CreateMemoryInput, CreateWorkflowInput, Db, Memory, MemoryWithOrigin, Schedule,
-    ScheduleListItem, Trigger, UpdateMemoryInput, UpdateWorkflowInput, UpsertTriggerInput,
-    Workflow, WorkflowFolder,
+    CreateMemoryInput, CreateWorkflowInput, Db, HistorySearchHit, HistorySearchInput, Memory,
+    MemoryWithOrigin, RunHistoryDetail, RunHistoryItem, Schedule, ScheduleListItem, Trigger,
+    UpdateMemoryInput, UpdateWorkflowInput, UpsertTriggerInput, Workflow, WorkflowFolder,
 };
 use crate::integrations::events::{
     AppTriggerConfig, NormalizedAppEvent, NORMALIZED_APP_EVENT_SCHEMA_VERSION,
@@ -185,6 +185,38 @@ pub fn list_active_runs() -> Vec<agents::active::ActiveRun> {
 }
 
 #[tauri::command]
+pub fn list_run_history(
+    db: State<'_, Db>,
+    workflow_id: Option<String>,
+    limit: Option<usize>,
+    offset: Option<usize>,
+) -> Result<Vec<RunHistoryItem>, String> {
+    db.list_run_history(
+        workflow_id.as_deref(),
+        limit.unwrap_or(25),
+        offset.unwrap_or(0),
+    )
+    .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn get_run_history(
+    db: State<'_, Db>,
+    run_id: String,
+) -> Result<Option<RunHistoryDetail>, String> {
+    db.get_run_history(&run_id)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn search_history(
+    db: State<'_, Db>,
+    input: HistorySearchInput,
+) -> Result<Vec<HistorySearchHit>, String> {
+    db.search_history(input).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 pub fn list_schedules(db: State<'_, Db>) -> Result<Vec<ScheduleListItem>, String> {
     db.list_all_schedules().map_err(|e| e.to_string())
 }
@@ -330,8 +362,10 @@ pub fn test_workflow_trigger(
 pub fn list_memories(
     db: State<'_, Db>,
     workflow_id: String,
+    include_history: Option<bool>,
 ) -> Result<Vec<MemoryWithOrigin>, String> {
-    db.list_memories_with_links(&workflow_id)
+    let context = db.memory_context(&workflow_id).map_err(|e| e.to_string())?;
+    db.list_memories_for_context(&context, include_history.unwrap_or(false))
         .map_err(|e| e.to_string())
 }
 
@@ -375,8 +409,13 @@ pub fn update_memory(db: State<'_, Db>, input: UpdateMemoryInput) -> Result<Memo
 }
 
 #[tauri::command]
-pub fn delete_memory(db: State<'_, Db>, id: String) -> Result<(), String> {
-    db.delete_memory(&id).map_err(|e| e.to_string())
+pub fn delete_memory(
+    db: State<'_, Db>,
+    id: String,
+    context_workflow_id: Option<String>,
+) -> Result<(), String> {
+    db.delete_memory_for_context(&id, context_workflow_id.as_deref())
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

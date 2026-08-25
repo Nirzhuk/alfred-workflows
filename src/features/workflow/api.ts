@@ -6,9 +6,16 @@ import type {
   AgentUsageSnapshot,
   ActiveRunInfo,
   AppTriggerStatus,
+  HistorySearchHit,
+  HistorySearchInput,
   MemoryKind,
+  MemoryScopeType,
   MemorySource,
+  MemoryStatus,
+  MemoryType,
   OutputMemory,
+  RunHistoryDetail,
+  RunHistoryItem,
   RunSummary,
   Schedule,
   ScheduleListItem,
@@ -43,6 +50,7 @@ export async function updateWorkflow(input: {
   name?: string;
   description?: string;
   workingDirectory?: string;
+  memoryRetrievalEnabled?: boolean;
   graph?: WorkflowGraph;
 }): Promise<Workflow> {
   return invoke("update_workflow", { input });
@@ -122,6 +130,36 @@ export async function listActiveRuns(): Promise<ActiveRunInfo[]> {
   return invoke("list_active_runs");
 }
 
+export async function listRunHistory(input: {
+  workflowId?: string | null;
+  limit?: number;
+  offset?: number;
+} = {}): Promise<RunHistoryItem[]> {
+  return invoke("list_run_history", {
+    workflowId: input.workflowId ?? null,
+    limit: input.limit ?? 25,
+    offset: input.offset ?? 0,
+  });
+}
+
+export async function getRunHistory(
+  runId: string,
+): Promise<RunHistoryDetail | null> {
+  return invoke("get_run_history", { runId });
+}
+
+export async function searchHistory(
+  input: HistorySearchInput,
+): Promise<HistorySearchHit[]> {
+  return invoke("search_history", {
+    input: {
+      query: input.query,
+      workflowId: input.workflowId ?? null,
+      limit: input.limit ?? 25,
+    },
+  });
+}
+
 export async function listSchedules(): Promise<ScheduleListItem[]> {
   return invoke("list_schedules");
 }
@@ -196,8 +234,11 @@ export async function webhookBaseUrl(): Promise<string | null> {
   return invoke("webhook_base_url");
 }
 
-export async function listMemories(workflowId: string): Promise<OutputMemory[]> {
-  return invoke("list_memories", { workflowId });
+export async function listMemories(
+  workflowId: string,
+  includeHistory = false,
+): Promise<OutputMemory[]> {
+  return invoke("list_memories", { workflowId, includeHistory });
 }
 
 /** Memories from other workflows that can still be linked in. */
@@ -228,8 +269,16 @@ export async function createMemory(input: {
   runId?: string | null;
   nodeId?: string | null;
   kind?: MemoryKind;
+  scopeType?: MemoryScopeType;
+  memoryType?: MemoryType;
   source?: MemorySource;
   pinned?: boolean;
+  confidence?: number;
+  salience?: number;
+  status?: MemoryStatus;
+  supersedesId?: string | null;
+  lastConfirmedAt?: string | null;
+  expiresAt?: string | null;
   id?: string;
 }): Promise<OutputMemory> {
   return invoke("create_memory", { input });
@@ -237,16 +286,28 @@ export async function createMemory(input: {
 
 export async function updateMemory(input: {
   id: string;
+  contextWorkflowId?: string;
   title?: string;
   body?: string;
   pinned?: boolean;
   kind?: MemoryKind;
+  scopeType?: MemoryScopeType;
+  memoryType?: MemoryType;
+  confidence?: number;
+  salience?: number;
+  status?: MemoryStatus;
+  supersedesId?: string | null;
+  lastConfirmedAt?: string | null;
+  expiresAt?: string | null;
 }): Promise<OutputMemory> {
   return invoke("update_memory", { input });
 }
 
-export async function deleteMemory(id: string): Promise<void> {
-  return invoke("delete_memory", { id });
+export async function deleteMemory(
+  id: string,
+  contextWorkflowId?: string,
+): Promise<void> {
+  return invoke("delete_memory", { id, contextWorkflowId });
 }
 
 export async function clearMemories(workflowId: string): Promise<number> {
