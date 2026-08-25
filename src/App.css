@@ -2406,7 +2406,7 @@ html[data-platform="macos"] .app-titlebar {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  background: var(--panel-solid);
+  background: var(--bg);
   overflow: hidden;
 }
 
@@ -2459,7 +2459,7 @@ html[data-platform="macos"] .app-titlebar {
   width: 100%;
   max-width: 900px;
   padding-bottom: var(--space-4);
-  background: var(--panel-solid);
+  background: var(--bg);
 }
 
 .history-search {
@@ -2473,7 +2473,7 @@ html[data-platform="macos"] .app-titlebar {
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
-  background: var(--surface-soft);
+  background: var(--surface);
   color: var(--ink);
   font-size: var(--text-md);
 }
@@ -2489,7 +2489,7 @@ html[data-platform="macos"] .app-titlebar {
   padding: var(--space-0-5);
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
-  background: var(--surface-soft);
+  background: var(--surface-inset);
 }
 
 .history-scope button {
@@ -2516,7 +2516,7 @@ html[data-platform="macos"] .app-titlebar {
   padding: var(--space-4);
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
-  background: var(--surface-soft);
+  background: var(--surface-card);
   color: var(--muted);
   font-size: var(--text-md);
 }
@@ -2573,7 +2573,7 @@ html[data-platform="macos"] .app-titlebar {
   padding: var(--space-3) var(--space-4);
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
-  background: var(--surface-soft);
+  background: var(--surface-card);
   color: var(--ink);
   text-align: left;
 }
@@ -2671,7 +2671,7 @@ button.history-card:hover:not(:disabled) {
   padding: var(--space-4);
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
-  background: var(--surface-soft);
+  background: var(--surface-card);
 }
 
 .history-step-heading span:first-child,
@@ -8668,17 +8668,17 @@ button.primary.danger-solid:hover:not(:disabled) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 24px;
-  padding: 14px 20px;
+  gap: var(--space-6);
+  padding: var(--space-3) var(--space-5);
   border-bottom: 1px solid var(--line);
-  background: var(--surface-strong);
+  background: var(--surface-card);
 }
 
 .memory-recall-control p,
 .memory-recall-control span {
-  margin: 4px 0 0;
+  margin: var(--space-1) 0 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--text-sm);
   line-height: 1.45;
 }
 
@@ -8687,21 +8687,21 @@ button.primary.danger-solid:hover:not(:disabled) {
 }
 
 .history-memory-context {
-  margin: 18px 0;
-  padding: 16px;
+  margin: var(--space-4) 0;
+  padding: var(--space-4);
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
-  background: var(--surface-strong);
+  background: var(--surface-card);
 }
 
 .history-memory-groups,
 .history-memory-group ul {
   display: grid;
-  gap: 10px;
+  gap: var(--space-2-5);
 }
 
 .history-memory-group h4 {
-  margin: 12px 0 8px;
+  margin: var(--space-3) 0 var(--space-2);
 }
 
 .history-memory-group ul {
@@ -8713,9 +8713,9 @@ button.primary.danger-solid:hover:not(:disabled) {
 .history-memory-group li {
   display: grid;
   grid-template-columns: minmax(160px, auto) auto 1fr;
-  gap: 10px;
+  gap: var(--space-2-5);
   align-items: baseline;
-  padding: 10px 12px;
+  padding: var(--space-2-5) var(--space-3);
   border-radius: var(--radius-md);
   background: var(--surface);
 }
@@ -8733,13 +8733,13 @@ button.primary.danger-solid:hover:not(:disabled) {
 
 .history-memory-reason {
   color: var(--ink);
-  font-size: 12px;
+  font-size: var(--text-sm);
   font-weight: var(--font-weight-semibold);
 }
 
 .history-memory-meta {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--text-xs);
   overflow-wrap: anywhere;
 }
 
@@ -9149,7 +9149,7 @@ button.primary.danger-solid:hover:not(:disabled) {
 
 .memories-detail-meta {
   margin: 0;
-  font-size: 0.76rem;
+  font-size: var(--text-xs);
 }
 
 .memories-detail-meta p {
@@ -9164,7 +9164,7 @@ button.primary.danger-solid:hover:not(:disabled) {
   padding: var(--space-2-5);
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
-  background: var(--surface-faint);
+  background: var(--surface-inset);
   color: var(--muted);
   font-size: var(--text-xs);
   line-height: 1.45;

@@ -896,6 +896,9 @@ mod tests {
         assert!(names.contains(&"credential_ref".to_owned()));
         assert!(!names.contains(&"license_key".to_owned()));
         assert!(!names.contains(&"activation_id".to_owned()));
+    }
+
+    #[test]
     fn migrates_legacy_memories_without_losing_canonical_or_search_data() {
         let conn = legacy_memory_fixture();
 

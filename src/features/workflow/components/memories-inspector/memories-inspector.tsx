@@ -136,6 +136,7 @@ export function MemoriesInspector({
   const [lastConfirmedAt, setLastConfirmedAt] = useState("");
   const [expiresAt, setExpiresAt] = useState("");
   const [editing, setEditing] = useState(false);
+  const [dirty, setDirty] = useState(false);
   const [linkingId, setLinkingId] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [showHeaderMenu, setShowHeaderMenu] = useState(false);
@@ -593,9 +594,7 @@ export function MemoriesInspector({
         <div>
           <strong>Automatic recall</strong>
           <p>
-            Relevant local memories may be added to agent prompts for this
-            workflow. Uses local exact FTS5 search + recency, not an embedding
-            service.
+            Relevant local memories may be added to agent prompts for this workflow. Uses local exact FTS5 search + recency, not an embedding service.
           </p>
           <span>
             Fixed limit: 8 items / 6,000 bytes per agent or custom-agent step.
