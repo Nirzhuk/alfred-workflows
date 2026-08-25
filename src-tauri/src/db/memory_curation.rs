@@ -562,6 +562,43 @@ impl super::Db {
         })
     }
 
+    /// Recent review jobs for a workflow, newest first. Powers the Suggestions
+    /// queue's failed-review rows and History run detail; carries only stable
+    /// metadata and error codes.
+    pub fn list_memory_reviews(
+        &self,
+        workflow_id: &str,
+        limit: i64,
+    ) -> Result<Vec<MemoryReviewJob>, DbError> {
+        self.with_conn(|conn| {
+            let mut statement = conn.prepare(
+                "SELECT run_id, workflow_id, status, provider, model, error_code,
+                        candidate_count, started_at, finished_at, created_at
+                 FROM memory_reviews WHERE workflow_id = ?1
+                 ORDER BY created_at DESC, run_id DESC LIMIT ?2",
+            )?;
+            let rows = statement
+                .query_map(params![workflow_id, limit], map_review_job)?
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(rows)
+        })
+    }
+
+    /// Physically delete decided (approved/rejected/blocked) candidates for a
+    /// workflow from the data settings. Pending suggestions and canonical
+    /// memory are untouched; rejection metadata is retained until this
+    /// explicit user action.
+    pub fn clear_decided_memory_candidates(&self, workflow_id: &str) -> Result<usize, DbError> {
+        self.with_conn(|conn| {
+            let changed = conn.execute(
+                "DELETE FROM memory_candidates
+                 WHERE workflow_id = ?1 AND status != 'pending'",
+                params![workflow_id],
+            )?;
+            Ok(changed)
+        })
+    }
+
     /// Manually retry a failed review. Requires valid configured settings and
     /// preserves the one-job-per-run invariant (the run_id primary key). The
     /// caller then spawns the background runner, whose atomic claim guarantees
@@ -1899,6 +1936,52 @@ mod tests {
         });
         assert!(frozen.is_err(), "decided candidates must be final");
     }
+
+    #[test]
+    fn lists_review_jobs_and_clears_only_decided_candidates() {
+        let db = db();
+        let workflow_id = workflow(&db);
+        seed_run_and_job(&db, "run-1", &workflow_id);
+        db.with_conn(|conn| {
+            Ok(conn.execute(
+                "UPDATE memory_reviews SET status = 'failed', error_code = 'timeout',
+                        finished_at = ?1 WHERE run_id = 'run-1'",
+                params![now()],
+            )?)
+        })
+        .expect("fail review job");
+
+        let jobs = db
+            .list_memory_reviews(&workflow_id, 25)
+            .expect("list review jobs");
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(jobs[0].status, ReviewJobStatus::Failed);
+        assert_eq!(jobs[0].error_code.as_deref(), Some("timeout"));
+        assert!(db.list_memory_reviews("missing", 25).unwrap().is_empty());
+
+        let visible = HashSet::new();
+        let candidate = seed_candidate(
+            &db,
+            &workflow_id,
+            "run-1",
+            CandidateOperation::Create,
+            None,
+            MemoryScopeType::User,
+            MemoryType::Preference,
+            "Editor",
+            "Uses Neovim daily",
+            &visible,
+        );
+        db.reject_memory_candidate(&candidate.id)
+            .expect("reject candidate");
+
+        let cleared = db
+            .clear_decided_memory_candidates(&workflow_id)
+            .expect("clear decided candidates");
+        assert_eq!(cleared, 1);
+        assert!(db.get_memory_candidate(&candidate.id).unwrap().is_none());
+    }
+
 
     #[test]
     fn approve_create_writes_canonical_review_memory() {

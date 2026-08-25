@@ -1,7 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as api from "../../api";
+import { memoryReviewFailureCopy } from "../../../settings/memory-review";
+import {
+  reviewStatusLabel,
+} from "../memories-inspector/suggestions-model";
 import type {
   HistorySearchHit,
+  MemoryReviewJob,
   RunHistoryDetail,
   RunHistoryItem,
 } from "../../types";
@@ -10,11 +15,12 @@ import {
   formatHistoryWhen,
   historyHitLabel,
   historyMode,
-  memoryUseReasonLabel,
-  openHistoryMemory,
   historyWorkflowId,
   isCurrentHistoryGeneration,
   literalHistorySnippet,
+  memoryUseReasonLabel,
+  openHistoryMemory,
+  openHistorySuggestions,
   type HistoryScope,
 } from "./history-format";
 
@@ -46,6 +52,7 @@ export function HistoryPage({
   const [detail, setDetail] = useState<RunHistoryDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [reviewJob, setReviewJob] = useState<MemoryReviewJob | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const [error, setError] = useState(false);
@@ -177,6 +184,7 @@ export function HistoryPage({
       detailGeneration.current += 1;
       setLoadingDetail(false);
       setDetail(null);
+      setReviewJob(null);
       return;
     }
     const generation = ++detailGeneration.current;
@@ -199,6 +207,15 @@ export function HistoryPage({
         if (!cancelled && generation === detailGeneration.current) {
           setLoadingDetail(false);
         }
+      });
+    // Review metadata is a separate read-only query; absence is normal.
+    void api
+      .getMemoryReviewJob(selectedRunId)
+      .then((job) => {
+        if (!cancelled) setReviewJob(job ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setReviewJob(null);
       });
     return () => {
       cancelled = true;
@@ -273,6 +290,7 @@ export function HistoryPage({
         {detail ? (
           <RunDetail
             detail={detail}
+            reviewJob={reviewJob}
             onBack={() => {
               setSelectedRunId(null);
               onSelectedRunIdChange?.(null);
@@ -450,9 +468,11 @@ function SearchHitContent({ hit }: { hit: HistorySearchHit }) {
 
 function RunDetail({
   detail,
+  reviewJob,
   onBack,
 }: {
   detail: RunHistoryDetail;
+  reviewJob: MemoryReviewJob | null;
   onBack: () => void;
 }) {
   const memoryUses = detail.memoryUses ?? [];
@@ -473,6 +493,39 @@ function RunDetail({
       </header>
       {detail.run.error ? (
         <pre className="history-error-text">{detail.run.error}</pre>
+      ) : null}
+      {reviewJob ? (
+        <section className="history-memory-context" aria-labelledby="history-review-title">
+          <div className="history-section-heading">
+            <h3 id="history-review-title">Memory review</h3>
+            <span className={`history-status is-${reviewJob.status}`}>
+              {reviewStatusLabel(reviewJob.status)}
+            </span>
+          </div>
+          <p className="history-review-meta">
+            Reviewer: {reviewJob.provider}
+            {reviewJob.model ? ` · ${reviewJob.model}` : ""} ·{" "}
+            {reviewJob.candidateCount} suggestion
+            {reviewJob.candidateCount === 1 ? "" : "s"} proposed
+            {reviewJob.finishedAt
+              ? ` · finished ${formatHistoryWhen(reviewJob.finishedAt)}`
+              : ""}
+          </p>
+          {reviewJob.status === "failed" && reviewJob.errorCode ? (
+            <p className="muted" role="alert">
+              {memoryReviewFailureCopy(reviewJob.errorCode)}
+            </p>
+          ) : null}
+          {reviewJob.candidateCount > 0 || reviewJob.status === "failed" ? (
+            <button
+              type="button"
+              className="ghost history-memory-link"
+              onClick={() => openHistorySuggestions(detail.run.id)}
+            >
+              Open suggestions from this run in Memories
+            </button>
+          ) : null}
+        </section>
       ) : null}
       <section className="history-memory-context" aria-labelledby="history-memory-title">
         <div className="history-section-heading">

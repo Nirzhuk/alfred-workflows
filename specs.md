@@ -199,6 +199,33 @@ Retrieved text is explicitly untrusted reference data: it cannot override
 current instructions, authorize actions, expand connected-app scope, or grant
 tool access.
 
+### Reviewable post-run memory suggestions
+
+Memory review is a **candidate-only** pipeline, off by default globally and per
+workflow. Enabling it requires choosing one supported agent provider in the
+Memory review settings and explicitly acknowledging the cost: after each
+eligible completed run (never failed or cancelled runs), Alfred may make at
+most **one additional model invocation** with that CLI. The reviewer receives a
+bounded digest of persisted run text — at most 32 KiB, built from canonical run
+steps with control characters stripped — plus up to 12 relevant existing
+memories for context. The digest stays inside the same local CLI boundary the
+user already chose; no other data leaves the machine.
+
+The reviewer returns strict JSON proposing `create`, `supersede`, or `retract`
+candidates (at most five). Every candidate is deterministically validated for
+size, scope, target visibility, duplicate hashes, secret-like material,
+invisible characters, and instruction-like language before storage; malformed
+responses are rejected whole without a "repair" call. Candidates never change
+canonical memory by themselves: approval is transactional and revalidated, and
+a stale candidate becomes `blocked` instead of being adapted. Users can edit
+title/body/scope/type while pending, approve, reject, or retry a failed review
+once manually. Reviews never modify skills and never write directly to memory;
+failures persist only stable codes (`auth_required`, `provider_unavailable`,
+`timeout`, `invalid_response`, `internal`) and never affect run status or
+output. Review can be disabled globally or per workflow at any time, and
+decided suggestion history can be physically deleted through Data settings.
+
+
 ---
 
 ## 8. Repo layout

@@ -501,6 +501,49 @@ pub fn retry_memory_review(
     Ok(job)
 }
 
+#[tauri::command]
+pub fn get_memory_review_job(
+    db: State<'_, Db>,
+    run_id: String,
+) -> Result<Option<MemoryReviewJob>, String> {
+    db.get_memory_review_job(&run_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn list_memory_reviews(
+    db: State<'_, Db>,
+    workflow_id: String,
+) -> Result<Vec<MemoryReviewJob>, String> {
+    db.list_memory_reviews(&workflow_id, 25)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_workflow_memory_review(
+    db: State<'_, Db>,
+    workflow_id: String,
+) -> Result<Option<WorkflowMemoryReview>, String> {
+    db.get_workflow_memory_review(&workflow_id)
+        .map_err(|e| e.to_string())
+}
+
+/// Data-settings action: physically delete decided candidates. Pending
+/// suggestions stay; canonical memory is never touched here.
+#[tauri::command]
+pub fn clear_decided_memory_candidates(
+    app: AppHandle,
+    db: State<'_, Db>,
+    workflow_id: String,
+) -> Result<usize, String> {
+    let cleared = db
+        .clear_decided_memory_candidates(&workflow_id)
+        .map_err(|e| e.to_string())?;
+    if cleared > 0 {
+        emit_candidates_changed(&app, &db, &workflow_id);
+    }
+    Ok(cleared)
+}
+
 /// Post-commit notification for the Suggestions queue. Carries only the
 /// workflow id and pending count — never candidate text or provider output.
 fn emit_candidates_changed(app: &AppHandle, db: &State<'_, Db>, workflow_id: &str) {

@@ -372,3 +372,28 @@ export async function rejectMemoryCandidate(id: string): Promise<MemoryCandidate
 export async function retryMemoryReview(runId: string): Promise<MemoryReviewJob> {
   return invoke("retry_memory_review", { runId });
 }
+
+export async function getMemoryReviewJob(
+  runId: string,
+): Promise<MemoryReviewJob | null> {
+  return invoke("get_memory_review_job", { runId });
+}
+
+export async function listMemoryReviews(
+  workflowId: string,
+): Promise<MemoryReviewJob[]> {
+  return invoke("list_memory_reviews", { workflowId });
+}
+
+export async function getWorkflowMemoryReview(
+  workflowId: string,
+): Promise<WorkflowMemoryReview | null> {
+  return invoke("get_workflow_memory_review", { workflowId });
+}
+
+/** Data settings: physically delete decided candidates for a workflow. */
+export async function clearDecidedMemoryCandidates(
+  workflowId: string,
+): Promise<number> {
+  return invoke("clear_decided_memory_candidates", { workflowId });
+}

@@ -1,4 +1,5 @@
 import { confirm as confirmDialog } from "@tauri-apps/plugin-dialog";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import {
   useEffect,
   useMemo,
@@ -8,6 +9,11 @@ import {
   type ReactNode,
 } from "react";
 import { Icon } from "../../../../components/icon";
+import {
+  memoryReviewFailureCopy,
+  useMemoryReviewStore,
+  workflowSuggestionGate,
+} from "../../../settings/memory-review";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -23,12 +29,32 @@ import {
 import { useWorkflowStore } from "../../store";
 import { workspaceScopeAvailable } from "../../memories";
 import type {
+  MemoryCandidate,
   MemoryKind,
+  MemoryReviewJob,
   MemoryScopeType,
   MemoryStatus,
   MemoryType,
   OutputMemory,
 } from "../../types";
+import {
+  CANDIDATE_OPERATION_LABELS,
+  CANDIDATE_STATUS_LABELS,
+  SUGGESTION_SCOPE_TYPES,
+  applyCandidateUpdate,
+  blockedCandidateCopy,
+  candidateApprovalRequiresConfirmation,
+  candidateConfidencePercent,
+  candidateEditPayload,
+  candidateIsEditable,
+  countPendingSuggestions,
+  failedReviewJobs,
+  hasCandidateEdits,
+  shouldRefreshSuggestions,
+  sortSuggestions,
+  reviewStatusLabel,
+  type CandidateEditDraft,
+} from "./suggestions-model";
 import {
   filterAndSortMemories,
   memorySearchSnippet,
@@ -92,9 +118,14 @@ function fitHtmlPreview(frame: HTMLIFrameElement | null) {
   frame.style.height = `${Math.max(300, height)}px`;
 }
 
+export type MemoriesInspectorMode = "memories" | "suggestions";
+
 type Props = {
   open: boolean;
   initialMemoryId?: string | null;
+  initialMode?: MemoriesInspectorMode;
+  /** Open the Suggestions queue focused on this run's review. */
+  focusRunId?: string | null;
   onOpenRunHistory: (runId: string) => void;
   onClose: () => void;
 };
@@ -102,6 +133,8 @@ type Props = {
 export function MemoriesInspector({
   open,
   initialMemoryId,
+  initialMode = "memories",
+  focusRunId = null,
   onOpenRunHistory,
   onClose,
 }: Props) {
@@ -151,6 +184,25 @@ export function MemoriesInspector({
   const [viewSource, setViewSource] = useState(false);
   const [htmlExpanded, setHtmlExpanded] = useState(false);
   const [recallSaving, setRecallSaving] = useState(false);
+  const [mode, setMode] = useState<MemoriesInspectorMode>("memories");
+  const [candidates, setCandidates] = useState<MemoryCandidate[]>([]);
+  const [reviewJobs, setReviewJobs] = useState<MemoryReviewJob[]>([]);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+  const [suggestionsError, setSuggestionsError] = useState(false);
+  const [selectedCandidateId, setSelectedCandidateId] = useState<
+    string | null
+  >(null);
+  const [candidateEditing, setCandidateEditing] = useState(false);
+  const [candidateDraft, setCandidateDraft] = useState<CandidateEditDraft>({
+    title: "",
+    body: "",
+    scopeType: "workflow",
+    memoryType: "note",
+  });
+  const [candidateBusy, setCandidateBusy] = useState<string | null>(null);
+  const [workflowReviewEnabled, setWorkflowReviewEnabled] = useState(false);
+  const [workflowReviewSaving, setWorkflowReviewSaving] = useState(false);
+  const [announcement, setAnnouncement] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
   const detailRef = useRef<HTMLElement>(null);
   const linkerSearchRef = useRef<HTMLInputElement>(null);
@@ -162,6 +214,21 @@ export function MemoriesInspector({
   const hasWorkingDirectory = workspaceScopeAvailable(
     activeWorkflow?.workingDirectory,
   );
+
+  const reviewSettings = useMemoryReviewStore((s) => s.settings);
+  const loadReviewSettings = useMemoryReviewStore((s) => s.load);
+  const reviewGateReason = workflowSuggestionGate(reviewSettings);
+  const pendingCount = countPendingSuggestions(candidates);
+  const sortedCandidates = useMemo(
+    () => sortSuggestions(candidates),
+    [candidates],
+  );
+  const failedJobs = useMemo(
+    () => failedReviewJobs(reviewJobs),
+    [reviewJobs],
+  );
+  const selectedCandidate =
+    candidates.find(({ id }) => id === selectedCandidateId) ?? null;
 
   useEffect(() => {
     if (!htmlPreview || viewSource || editing) return;
@@ -230,7 +297,237 @@ export function MemoriesInspector({
     setViewSource(false);
     setHtmlExpanded(false);
     setDetailOpen(Boolean(initialMemoryId));
-  }, [open, initialMemoryId, activeWorkflowId]);
+    setMode(initialMode);
+    setSelectedCandidateId(null);
+    setCandidateEditing(false);
+    setSuggestionsError(false);
+  }, [open, initialMemoryId, activeWorkflowId, initialMode]);
+
+  useEffect(() => {
+    if (!open) return;
+    void loadReviewSettings();
+  }, [open, loadReviewSettings]);
+
+  // Per-workflow review flag lives in SQLite; fetch it for this workflow.
+  useEffect(() => {
+    if (!open || !activeWorkflowId) {
+      setWorkflowReviewEnabled(false);
+      return;
+    }
+    let cancelled = false;
+    setWorkflowReviewSaving(true);
+    void api
+      .getWorkflowMemoryReview(activeWorkflowId)
+      .then((row) => {
+        if (!cancelled) setWorkflowReviewEnabled(row?.enabled ?? false);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setWorkflowReviewSaving(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, activeWorkflowId]);
+
+  const loadSuggestions = async (
+    workflowId: string,
+  ): Promise<{ candidates: MemoryCandidate[]; jobs: MemoryReviewJob[] } | null> => {
+    try {
+      const [nextCandidates, nextJobs] = await Promise.all([
+        api.listMemoryCandidates({ workflowId }),
+        api.listMemoryReviews(workflowId),
+      ]);
+      return { candidates: nextCandidates, jobs: nextJobs };
+    } catch {
+      return null;
+    }
+  };
+
+  // Keep keyboard focus on the same suggestion across background refreshes.
+  const refreshPreservingFocus = async (workflowId: string) => {
+    const activeElement =
+      document.activeElement as HTMLElement | null;
+    const focusKey = activeElement
+      ?.closest("[data-suggestion-id]")
+      ?.getAttribute("data-suggestion-id");
+    const result = await loadSuggestions(workflowId);
+    if (!result) {
+      setSuggestionsError(true);
+      return;
+    }
+    setSuggestionsError(false);
+    setCandidates(result.candidates);
+    setReviewJobs(result.jobs);
+    if (focusKey) {
+      requestAnimationFrame(() => {
+        const restored = document.querySelector<HTMLElement>(
+          `[data-suggestion-id="${focusKey}"]`,
+        );
+        restored?.focus();
+      });
+    }
+  };
+
+  useEffect(() => {
+    if (!open || mode !== "suggestions" || !activeWorkflowId) return;
+    let cancelled = false;
+    setSuggestionsLoading(true);
+    void loadSuggestions(activeWorkflowId).then((result) => {
+      if (cancelled) return;
+      if (result) {
+        setSuggestionsError(false);
+        setCandidates(result.candidates);
+        setReviewJobs(result.jobs);
+        if (focusRunId && !selectedCandidateId) {
+          const focused = result.candidates.find(
+            ({ reviewRunId }) => reviewRunId === focusRunId,
+          );
+          if (focused) setSelectedCandidateId(focused.id);
+        }
+      } else {
+        setSuggestionsError(true);
+      }
+      setSuggestionsLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, mode, activeWorkflowId, focusRunId]);
+
+  // Backend-driven refresh: only the affected active workflow reloads.
+  useEffect(() => {
+    if (!open || !activeWorkflowId || mode !== "suggestions") return;
+    let unlisten: UnlistenFn | undefined;
+    let cancelled = false;
+    void listen<{ workflowId: string; pendingCount: number }>(
+      "memory://candidates-changed",
+      (event) => {
+        if (!shouldRefreshSuggestions(event.payload, activeWorkflowId, open))
+          return;
+        void refreshPreservingFocus(activeWorkflowId).then(() => {
+          setAnnouncement(
+            `${event.payload.pendingCount} pending memory suggestion${
+              event.payload.pendingCount === 1 ? "" : "s"
+            }.`,
+          );
+        });
+      },
+    ).then((fn) => {
+      if (cancelled) fn();
+      else unlisten = fn;
+    });
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, activeWorkflowId, mode]);
+
+  const selectCandidate = (candidate: MemoryCandidate) => {
+    setSelectedCandidateId(candidate.id);
+    setCandidateEditing(false);
+    setCandidateDraft({
+      title: candidate.title,
+      body: candidate.body,
+      scopeType: candidate.scopeType,
+      memoryType: candidate.memoryType,
+    });
+  };
+
+  const decideCandidate = async (
+    candidate: MemoryCandidate,
+    decision: "approve" | "reject",
+  ) => {
+    if (
+      decision === "approve" &&
+      candidateApprovalRequiresConfirmation(candidate)
+    ) {
+      const scopeNote =
+        candidate.scopeType === "user"
+          ? "This memory will be visible to every workflow on this installation."
+          : "The target memory will be permanently retracted.";
+      const confirmed = await confirmDialog(
+        `${scopeNote} Approve this suggestion?`,
+        { title: "Approve suggestion", kind: "warning" },
+      );
+      if (!confirmed) return;
+    }
+    setCandidateBusy(candidate.id);
+    try {
+      const updated =
+        decision === "approve"
+          ? await api.approveMemoryCandidate(candidate.id)
+          : await api.rejectMemoryCandidate(candidate.id);
+      setCandidates((list) => applyCandidateUpdate(list, updated));
+      setAnnouncement(
+        updated.status === "blocked"
+          ? `Suggestion blocked. ${blockedCandidateCopy(updated.blockedCode)}`
+          : decision === "approve"
+            ? "Suggestion approved."
+            : "Suggestion rejected.",
+      );
+    } catch {
+      setAnnouncement("That action could not be completed. Try again.");
+    } finally {
+      setCandidateBusy(null);
+    }
+  };
+
+  const saveCandidateEdits = async (candidate: MemoryCandidate) => {
+    if (!hasCandidateEdits(candidate, candidateDraft)) {
+      setCandidateEditing(false);
+      return;
+    }
+    setCandidateBusy(candidate.id);
+    try {
+      const updated = await api.updateMemoryCandidate(
+        candidateEditPayload(candidate, candidateDraft),
+      );
+      setCandidates((list) => applyCandidateUpdate(list, updated));
+      setCandidateEditing(false);
+      setAnnouncement("Suggestion updated.");
+    } catch {
+      setAnnouncement(
+        "This edit was not accepted. Titles and bodies have length limits and cannot contain credentials.",
+      );
+    } finally {
+      setCandidateBusy(null);
+    }
+  };
+
+  const retryFailedReview = async (job: MemoryReviewJob) => {
+    setCandidateBusy(job.runId);
+    try {
+      const retried = await api.retryMemoryReview(job.runId);
+      setReviewJobs((jobs) =>
+        jobs.map((item) => (item.runId === job.runId ? retried : item)),
+      );
+      setAnnouncement("Review queued again.");
+    } catch {
+      setAnnouncement(
+        reviewGateReason
+          ? reviewGateReason
+          : "The review could not be retried. Check Memory review settings, then try again.",
+      );
+    } finally {
+      setCandidateBusy(null);
+    }
+  };
+
+  const toggleWorkflowReview = () => {
+    if (!activeWorkflowId) return;
+    setWorkflowReviewSaving(true);
+    void api
+      .setWorkflowMemoryReview(
+        activeWorkflowId,
+        !workflowReviewEnabled,
+      )
+      .then((row) => setWorkflowReviewEnabled(row.enabled))
+      .catch(() => {})
+      .finally(() => setWorkflowReviewSaving(false));
+  };
 
   useEffect(() => {
     if (!open || !activeWorkflowId || !showLinker) return;
@@ -619,6 +916,38 @@ export function MemoriesInspector({
         </button>
       </div>
 
+      <p className="sr-only" role="status" aria-live="polite">
+        {announcement}
+      </p>
+
+      <div className="memory-recall-control">
+        <div>
+          <strong>Suggest memories after runs</strong>
+          <p>
+            After a completed run, the reviewer provider chosen in Settings may
+            propose memory changes. Nothing is saved without your approval.
+          </p>
+          {reviewGateReason ? <span>{reviewGateReason}</span> : null}
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={workflowReviewEnabled}
+          aria-label="Suggest memories after runs"
+          className={`settings-toggle${
+            workflowReviewEnabled ? " is-on" : ""
+          }`}
+          disabled={
+            Boolean(reviewGateReason) ||
+            !activeWorkflowId ||
+            workflowReviewSaving
+          }
+          onClick={toggleWorkflowReview}
+        >
+          <span className="settings-toggle-knob" />
+        </button>
+      </div>
+
       <div
         className={`memories-inspector-body${
           detailOpen ? " is-detail-open" : ""
@@ -629,6 +958,31 @@ export function MemoriesInspector({
           aria-label="Memory library"
           onKeyDown={handleListKeyDown}
         >
+          <div className="memories-mode-tabs" role="tablist" aria-label="Memories modes">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={mode === "memories"}
+              className={`ghost memories-filter${mode === "memories" ? " is-active" : ""}`}
+              onClick={() => setMode("memories")}
+            >
+              All memories
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={mode === "suggestions"}
+              className={`ghost memories-filter${mode === "suggestions" ? " is-active" : ""}`}
+              onClick={() => setMode("suggestions")}
+            >
+              Suggestions
+              {pendingCount > 0 ? (
+                <span className="suggestion-pending-badge">{pendingCount}</span>
+              ) : null}
+            </button>
+          </div>
+          {mode === "memories" ? (
+          <>
           <div className="memories-search-wrap">
             <Icon name="magnifying-glass" size={15} />
             <input
@@ -778,6 +1132,78 @@ export function MemoriesInspector({
               ))}
             </ul>
           )}
+          </>
+          ) : (
+            <div className="suggestions-list-wrap">
+              {failedJobs.map((job) => (
+                <div
+                  key={job.runId}
+                  className="suggestion-failed"
+                  data-suggestion-id={`job-${job.runId}`}
+                >
+                  <div>
+                    <strong>{reviewStatusLabel(job.status)}</strong>
+                    <span>{memoryReviewFailureCopy(job.errorCode)}</span>
+                  </div>
+                  <button
+                    type="button"
+                    className="ghost"
+                    disabled={candidateBusy === job.runId}
+                    onClick={() => void retryFailedReview(job)}
+                  >
+                    {candidateBusy === job.runId ? "Retrying…" : "Retry review"}
+                  </button>
+                </div>
+              ))}
+              {suggestionsLoading && sortedCandidates.length === 0 ? (
+                <div className="memories-list-empty">
+                  <p>Loading suggestions…</p>
+                </div>
+              ) : suggestionsError && sortedCandidates.length === 0 ? (
+                <div className="memories-list-empty" role="alert">
+                  <p>Suggestions could not be loaded. Try again.</p>
+                </div>
+              ) : sortedCandidates.length === 0 && failedJobs.length === 0 ? (
+                <div className="memories-list-empty">
+                  <Icon name="note" size={22} />
+                  <p>
+                    No memory suggestions yet. They appear here after reviewed
+                    runs when Memory review is on.
+                  </p>
+                </div>
+              ) : (
+                <ul className="memories-results suggestions-results">
+                  {sortedCandidates.map((candidate) => (
+                    <li key={candidate.id}>
+                      <button
+                        type="button"
+                        data-suggestion-id={candidate.id}
+                        className={`memories-list-item suggestion-item${
+                          candidate.id === selectedCandidateId ? " is-active" : ""
+                        }`}
+                        onClick={() => selectCandidate(candidate)}
+                      >
+                        <span className="memories-list-top">
+                          <span className="memories-list-title-text">
+                            {candidate.title}
+                          </span>
+                          <span className={`suggestion-status is-${candidate.status}`}>
+                            {CANDIDATE_STATUS_LABELS[candidate.status]}
+                          </span>
+                        </span>
+                        <span className="suggestion-item-meta">
+                          {CANDIDATE_OPERATION_LABELS[candidate.operation]} ·{" "}
+                          {candidate.scopeType} · {candidate.memoryType} ·{" "}
+                          {candidateConfidencePercent(candidate.confidence)}%
+                          confident
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
         </aside>
 
         <section
@@ -785,7 +1211,227 @@ export function MemoriesInspector({
           className="memories-inspector-detail"
           tabIndex={-1}
         >
-          {creating || selected ? (
+          {mode === "suggestions" ? (
+            selectedCandidate ? (
+              <article
+                className="suggestion-detail"
+                data-suggestion-id={`detail-${selectedCandidate.id}`}
+                aria-label="Memory suggestion"
+              >
+                <header className="memories-detail-header">
+                  <div className="memories-detail-heading">
+                    <div className="suggestion-chip-row">
+                      <span className="suggestion-op-chip">
+                        {CANDIDATE_OPERATION_LABELS[selectedCandidate.operation]}
+                      </span>
+                      <span className={`suggestion-status is-${selectedCandidate.status}`}>
+                        {CANDIDATE_STATUS_LABELS[selectedCandidate.status]}
+                      </span>
+                      <span className="muted">
+                        {candidateConfidencePercent(selectedCandidate.confidence)}%
+                        confident · {formatWhen(selectedCandidate.createdAt)}
+                      </span>
+                    </div>
+                    {!candidateEditing ? (
+                      <h3>{selectedCandidate.title}</h3>
+                    ) : null}
+                  </div>
+                </header>
+
+                {selectedCandidate.status === "blocked" &&
+                selectedCandidate.blockedCode ? (
+                  <p className="suggestion-blocked" role="alert">
+                    {blockedCandidateCopy(selectedCandidate.blockedCode)}
+                  </p>
+                ) : null}
+
+                {candidateEditing && candidateIsEditable(selectedCandidate) ? (
+                  <div className="memories-edit-form">
+                    <label className="field">
+                      <span>Title</span>
+                      <input
+                        type="text"
+                        value={candidateDraft.title}
+                        onChange={(event) =>
+                          setCandidateDraft((draft) => ({
+                            ...draft,
+                            title: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                    <div className="memories-detail-toolbar">
+                      <label className="field memories-kind-field">
+                        <span>Scope</span>
+                        <select
+                          value={candidateDraft.scopeType}
+                          onChange={(event) =>
+                            setCandidateDraft((draft) => ({
+                              ...draft,
+                              scopeType: event.target.value as MemoryScopeType,
+                            }))
+                          }
+                        >
+                          {SUGGESTION_SCOPE_TYPES.map((value) => (
+                            <option key={value} value={value}>
+                              {value}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="field memories-kind-field">
+                        <span>Type</span>
+                        <select
+                          value={candidateDraft.memoryType}
+                          onChange={(event) =>
+                            setCandidateDraft((draft) => ({
+                              ...draft,
+                              memoryType: event.target.value as MemoryType,
+                            }))
+                          }
+                        >
+                          {MEMORY_TYPES.map((value) => (
+                            <option key={value} value={value}>
+                              {value}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+                    <label className="field memories-body-field">
+                      <span>Content</span>
+                      <textarea
+                        aria-label="Suggestion content"
+                        value={candidateDraft.body}
+                        rows={10}
+                        onChange={(event) =>
+                          setCandidateDraft((draft) => ({
+                            ...draft,
+                            body: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                    <div className="memories-edit-actions">
+                      <button
+                        type="button"
+                        className="ghost"
+                        disabled={candidateBusy === selectedCandidate.id}
+                        onClick={() => setCandidateEditing(false)}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        className="primary"
+                        disabled={
+                          candidateBusy === selectedCandidate.id ||
+                          !candidateDraft.title.trim() ||
+                          !candidateDraft.body.trim()
+                        }
+                        onClick={() => void saveCandidateEdits(selectedCandidate)}
+                      >
+                        {candidateBusy === selectedCandidate.id
+                          ? "Saving…"
+                          : "Save changes"}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="memories-content-surface">
+                      <pre>{selectedCandidate.body}</pre>
+                    </div>
+                    <div className="suggestion-rationale">
+                      <strong>Why it was proposed</strong>
+                      <p>{selectedCandidate.rationale}</p>
+                    </div>
+                  </>
+                )}
+
+                <div className="muted memories-detail-meta">
+                  <p>
+                    Proposed scope: {selectedCandidate.scopeType} · Type:{" "}
+                    {selectedCandidate.memoryType} ·{" "}
+                    {CANDIDATE_OPERATION_LABELS[selectedCandidate.operation]}
+                  </p>
+                  <button
+                    type="button"
+                    className="ghost memories-history-link"
+                    onClick={() => onOpenRunHistory(selectedCandidate.reviewRunId)}
+                  >
+                    Open source run in History
+                  </button>
+                  {selectedCandidate.targetMemoryId &&
+                  memories.some(
+                    ({ id }) => id === selectedCandidate.targetMemoryId,
+                  ) ? (
+                    <button
+                      type="button"
+                      className="ghost memories-history-link"
+                      onClick={() => {
+                        setMode("memories");
+                        setSelectedId(selectedCandidate.targetMemoryId);
+                        setDetailOpen(true);
+                      }}
+                    >
+                      Open target memory
+                    </button>
+                  ) : null}
+                </div>
+
+                {candidateIsEditable(selectedCandidate) ? (
+                  <div className="suggestion-actions">
+                    {candidateEditing ? null : (
+                      <button
+                        type="button"
+                        className="ghost"
+                        onClick={() => {
+                          setCandidateDraft({
+                            title: selectedCandidate.title,
+                            body: selectedCandidate.body,
+                            scopeType: selectedCandidate.scopeType,
+                            memoryType: selectedCandidate.memoryType,
+                          });
+                          setCandidateEditing(true);
+                        }}
+                      >
+                        <Icon name="pencil-simple" size={15} />
+                        Edit
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="ghost context-action"
+                      disabled={candidateBusy === selectedCandidate.id}
+                      onClick={() => void decideCandidate(selectedCandidate, "reject")}
+                    >
+                      Reject
+                    </button>
+                    <button
+                      type="button"
+                      className="primary"
+                      disabled={candidateBusy === selectedCandidate.id}
+                      onClick={() => void decideCandidate(selectedCandidate, "approve")}
+                    >
+                      {candidateBusy === selectedCandidate.id
+                        ? "Working…"
+                        : "Approve"}
+                    </button>
+                  </div>
+                ) : null}
+              </article>
+            ) : (
+              <div className="memories-inspector-placeholder">
+                <Icon name="note" size={28} />
+                <h3>Select a suggestion</h3>
+                <p className="muted">
+                  Review model-proposed memory changes before anything is saved.
+                </p>
+              </div>
+            )
+          ) : (
+          creating || selected ? (
             <>
               <button
                 type="button"
@@ -1167,6 +1813,7 @@ export function MemoriesInspector({
                 New note
               </button>
             </div>
+          )
           )}
         </section>
       </div>

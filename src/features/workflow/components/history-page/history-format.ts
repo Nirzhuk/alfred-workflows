@@ -49,6 +49,13 @@ export function openHistoryMemory(memoryId: string): void {
   );
 }
 
+/** Deep-link from a History run to its Suggestions in the Memories inspector. */
+export function openHistorySuggestions(runId: string): void {
+  window.dispatchEvent(
+    new CustomEvent("alfred:open-suggestions", { detail: { runId } }),
+  );
+}
+
 export function isCurrentHistoryGeneration(
   requestGeneration: number,
   currentGeneration: number,

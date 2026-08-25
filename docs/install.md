@@ -185,6 +185,36 @@ binary support.
   and keeps its pinned core context. V1 uses no embeddings, network retrieval,
   or model download.
 
+
+### Memory review (optional, off by default)
+
+Memory review lets an agent CLI you already use propose memory changes after a
+completed run. It is **off by default**, both globally (Settings → Memory
+review) and per workflow (Memories inspector → "Suggest memories after runs").
+
+- **Consent** — enabling it requires picking one supported CLI as the reviewer
+  and ticking an acknowledgement before the setting can be saved. Alfred never
+  stores credentials; the CLI uses its own existing login.
+- **Cost** — at most **one additional model invocation** happens after each
+  eligible completed run. Failed and cancelled runs are never reviewed, and
+  there are no automatic retries; if a review fails you can retry it once from
+  History or the Suggestions queue.
+- **Privacy** — the selected CLI receives a bounded digest of the run's
+  persisted text (at most 32 KiB) plus up to 12 relevant existing memories,
+  within the same local CLI boundary you already use for normal runs. Nothing
+  else is uploaded anywhere by Alfred itself.
+- **Candidate-only** — suggestions never touch your saved memories directly.
+  Each one shows its operation, proposed scope/type, confidence, rationale, and
+  source run, and you can edit it while pending. Approving user-scope changes or
+  retractions always asks for confirmation; stale suggestions become "blocked"
+  with a plain-language reason instead of being applied anyway.
+- **Recovery** — turn review off globally or per workflow at any time; that
+  stops all future reviews immediately without deleting anything. Decided
+  suggestion history can be physically deleted under Settings → Data &
+  storage → "Clear decided suggestions". Review failures show stable reasons
+  (such as `auth_required` or `timeout`) and never change a run's status or
+  output.
+
 ## Troubleshooting
 
 | Symptom | What to try |

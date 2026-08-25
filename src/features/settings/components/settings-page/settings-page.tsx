@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { confirm as confirmDialog } from "@tauri-apps/plugin-dialog";
 import { SelectControl } from "../../../../components/select-control";
 import { ConnectedAppsSettings } from "../../../integrations/connected-apps-settings";
 import { useIntegrationsStore } from "../../../integrations/store";
@@ -7,6 +8,16 @@ import {
   showQuickAccess,
   useQuickAccessPreferences,
 } from "../../../quick-access/preferences";
+import {
+  clearDecidedMemoryCandidates,
+} from "../../../workflow/api";
+import {
+  defaultModelFor,
+  modelsForProvider,
+  type ProviderModels,
+} from "../../../workflow/models";
+import { useWorkflowStore } from "../../../workflow/store";
+import type { AgentProviderId } from "../../../workflow/types";
 import { ShortcutSettings } from "../shortcut-settings";
 import {
   SETTINGS_SECTION_LABELS,
@@ -18,6 +29,14 @@ import {
   type NotificationSound,
   useNotificationsStore,
 } from "../../notifications";
+import {
+  MEMORY_REVIEW_ACKNOWLEDGEMENT,
+  MEMORY_REVIEW_EXPLANATION,
+  canSaveMemoryReview,
+  DEFAULT_MEMORY_REVIEW_DRAFT,
+  type MemoryReviewDraft,
+  useMemoryReviewStore,
+} from "../../memory-review";
 import {
   useThemeStore,
   type ThemePreference,
@@ -73,6 +92,48 @@ export function SettingsPage({ activeSection }: Props) {
   const openSystemSettings = useNotificationsStore((s) => s.openSystemSettings);
   const sendTest = useNotificationsStore((s) => s.sendTest);
 
+  const reviewSettings = useMemoryReviewStore((s) => s.settings);
+  const reviewProviders = useMemoryReviewStore((s) => s.providers);
+  const reviewLoaded = useMemoryReviewStore((s) => s.loaded);
+  const reviewSaving = useMemoryReviewStore((s) => s.saving);
+  const reviewError = useMemoryReviewStore((s) => s.error);
+  const loadReviewSettings = useMemoryReviewStore((s) => s.load);
+  const saveReviewSettings = useMemoryReviewStore((s) => s.save);
+  const providerModels = useWorkflowStore((s) => s.providerModels);
+  const loadProviderModels = useWorkflowStore((s) => s.loadProviderModels);
+  const activeWorkflowId = useWorkflowStore((s) => s.activeWorkflowId);
+
+  const [reviewDraft, setReviewDraft] = useState<MemoryReviewDraft>(
+    DEFAULT_MEMORY_REVIEW_DRAFT,
+  );
+  const [clearingSuggestions, setClearingSuggestions] = useState(false);
+  const [clearedNote, setClearedNote] = useState<string | null>(null);
+
+  useEffect(() => {
+    void loadReviewSettings();
+  }, [loadReviewSettings]);
+
+  // Keep the draft in step with the SQLite-backed settings once loaded.
+  useEffect(() => {
+    if (!reviewLoaded) return;
+    setReviewDraft({
+      enabled: reviewSettings.enabled,
+      provider: reviewSettings.provider,
+      model: reviewSettings.model,
+      acknowledged: false,
+    });
+  }, [
+    reviewLoaded,
+    reviewSettings.enabled,
+    reviewSettings.provider,
+    reviewSettings.model,
+    reviewSettings.updatedAt,
+  ]);
+
+  useEffect(() => {
+    void loadProviderModels();
+  }, [loadProviderModels]);
+
   useEffect(() => {
     void refreshPermission();
     const onFocus = () => {
@@ -81,6 +142,29 @@ export function SettingsPage({ activeSection }: Props) {
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
   }, [refreshPermission]);
+
+  const clearSuggestionHistory = async () => {
+    if (!activeWorkflowId) return;
+    const confirmed = await confirmDialog(
+      "Delete all decided memory suggestions for this workflow? Pending suggestions and saved memories are kept.",
+      { title: "Clear suggestion history", kind: "warning" },
+    );
+    if (!confirmed) return;
+    setClearingSuggestions(true);
+    try {
+      const cleared = await clearDecidedMemoryCandidates(activeWorkflowId);
+      setClearedNote(
+        cleared === 0
+          ? "No decided suggestions to delete."
+          : `Deleted ${cleared} decided suggestion${cleared === 1 ? "" : "s"}.`,
+      );
+    } catch {
+      setClearedNote("Suggestion history could not be cleared. Try again.");
+    } finally {
+      setClearingSuggestions(false);
+    }
+  };
+
 
   const permissionLabel =
     permission === "granted"
@@ -474,6 +558,144 @@ export function SettingsPage({ activeSection }: Props) {
           </section>
         ) : null}
 
+        {activeSection === "memory-review" ? (
+          <section
+            className="settings-section"
+            aria-labelledby="memory-review-settings-heading"
+          >
+            <h2 id="memory-review-settings-heading">Memory review</h2>
+            <div className="settings-card">
+              <div className="settings-row settings-row-control">
+                <div>
+                  <p className="settings-label">Suggest memories after runs</p>
+                  <p className="settings-value">
+                    After an eligible completed run, the agent CLI you choose
+                    may propose memory changes for your approval. Off by
+                    default, per workflow.
+                  </p>
+                  <ul className="settings-explanation">
+                    {MEMORY_REVIEW_EXPLANATION.map((point) => (
+                      <li key={point}>{point}</li>
+                    ))}
+                  </ul>
+                </div>
+                <div className="settings-controls">
+                  <button
+                    type="button"
+                    className={[
+                      "settings-toggle",
+                      reviewDraft.enabled ? "is-on" : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                    role="switch"
+                    aria-checked={reviewDraft.enabled}
+                    aria-label="Enable memory review globally"
+                    disabled={reviewSaving}
+                    onClick={() =>
+                      setReviewDraft((draft) => ({
+                        ...draft,
+                        enabled: !draft.enabled,
+                        acknowledged: false,
+                      }))
+                    }
+                  >
+                    <span className="settings-toggle-knob" />
+                  </button>
+                </div>
+              </div>
+
+              <div className="settings-row settings-row-control">
+                <div>
+                  <p className="settings-label">Reviewer provider</p>
+                  <p className="settings-value">
+                    Which installed agent CLI reviews runs. It must already be
+                    signed in; Alfred never stores credentials.
+                  </p>
+                </div>
+                <div className="settings-controls">
+                  <SelectControl
+                    containerClassName="settings-sound-select"
+                    aria-label="Reviewer provider"
+                    value={reviewDraft.provider ?? ""}
+                    disabled={!reviewDraft.enabled || reviewSaving}
+                    onChange={(event) =>
+                      setReviewDraft((draft) => ({
+                        ...draft,
+                        provider: event.currentTarget.value || null,
+                        model: null,
+                        acknowledged: false,
+                      }))
+                    }
+                  >
+                    <option value="">Select a provider…</option>
+                    {reviewProviders.map((provider) => (
+                      <option key={provider.id} value={provider.id}>
+                        {provider.label}
+                      </option>
+                    ))}
+                  </SelectControl>
+                </div>
+              </div>
+
+              <MemoryReviewModelRow
+                provider={reviewDraft.provider}
+                model={reviewDraft.model}
+                providerModels={providerModels}
+                disabled={!reviewDraft.enabled || reviewSaving}
+                onChange={(model) =>
+                  setReviewDraft((draft) => ({ ...draft, model }))
+                }
+              />
+
+              {reviewDraft.enabled && !reviewSettings.enabled ? (
+                <label className="settings-acknowledgement">
+                  <input
+                    type="checkbox"
+                    checked={reviewDraft.acknowledged}
+                    onChange={(event) =>
+                      setReviewDraft((draft) => ({
+                        ...draft,
+                        acknowledged: event.currentTarget.checked,
+                      }))
+                    }
+                  />
+                  <span>{MEMORY_REVIEW_ACKNOWLEDGEMENT}</span>
+                </label>
+              ) : null}
+
+              <div className="settings-row settings-row-control">
+                <div>
+                  {reviewError ? (
+                    <p className="settings-value" role="alert">
+                      {reviewError}
+                    </p>
+                  ) : null}
+                  <p className="settings-hint">
+                    If a review fails, History shows a stable reason such as{" "}
+                    <code>auth_required</code> or <code>timeout</code> with
+                    retry guidance. Failures never change run status or output.
+                  </p>
+                </div>
+                <div className="settings-controls">
+                  <button
+                    type="button"
+                    className="primary"
+                    disabled={
+                      !canSaveMemoryReview(reviewDraft) || reviewSaving
+                    }
+                    onClick={() =>
+                      void saveReviewSettings({ ...reviewDraft })
+                    }
+                  >
+                    {reviewSaving ? "Saving…" : "Save"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </section>
+        ) : null}
+
         {activeSection === "data" ? (
           <section
             className="settings-section"
@@ -499,10 +721,117 @@ export function SettingsPage({ activeSection }: Props) {
                   </p>
                 </div>
               </div>
+              <div className="settings-row">
+                <div>
+                  <p className="settings-label">Suggestion history</p>
+                  <p className="settings-value">
+                    Approved, rejected, and blocked memory suggestions stay for
+                    audit until you delete them. Pending suggestions and
+                    canonical memories are never touched.
+                  </p>
+                  {clearedNote ? (
+                    <p className="settings-hint" role="status">
+                      {clearedNote}
+                    </p>
+                  ) : null}
+                </div>
+                <div className="settings-controls">
+                  <button
+                    type="button"
+                    className="ghost settings-test-btn"
+                    disabled={!activeWorkflowId || clearingSuggestions}
+                    onClick={() => void clearSuggestionHistory()}
+                  >
+                    Clear decided suggestions
+                  </button>
+                </div>
+              </div>
             </div>
           </section>
         ) : null}
       </div>
     </section>
+  );
+}
+
+type MemoryReviewModelRowProps = {
+  provider: string | null;
+  model: string | null;
+  providerModels: ProviderModels[];
+  disabled: boolean;
+  onChange: (model: string | null) => void;
+};
+
+/**
+ * Optional reviewer model. Providers with a fixed catalog get a select;
+ * free-form CLIs get a text field, mirroring the agent node settings.
+ */
+function MemoryReviewModelRow({
+  provider,
+  model,
+  providerModels,
+  disabled,
+  onChange,
+}: MemoryReviewModelRowProps) {
+  const catalog = useMemo(
+    () =>
+      provider
+        ? modelsForProvider(providerModels, provider as AgentProviderId)
+        : undefined,
+    [provider, providerModels],
+  );
+  if (!provider) return null;
+
+  if (catalog?.allowCustom) {
+    return (
+      <div className="settings-row settings-row-control">
+        <div>
+          <p className="settings-label">Reviewer model</p>
+          <p className="settings-value">
+            Optional. Leave empty to use the CLI&apos;s default model.
+          </p>
+        </div>
+        <div className="settings-controls">
+          <label className="field">
+            <span>Model</span>
+            <input
+              type="text"
+              aria-label="Reviewer model"
+              placeholder={defaultModelFor(providerModels, provider as AgentProviderId)}
+              value={model ?? ""}
+              disabled={disabled}
+              onChange={(event) => onChange(event.currentTarget.value || null)}
+            />
+          </label>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="settings-row settings-row-control">
+      <div>
+        <p className="settings-label">Reviewer model</p>
+        <p className="settings-value">
+          Optional. Leave empty to use the CLI&apos;s default model.
+        </p>
+      </div>
+      <div className="settings-controls">
+        <SelectControl
+          containerClassName="settings-sound-select"
+          aria-label="Reviewer model"
+          value={model ?? ""}
+          disabled={disabled}
+          onChange={(event) => onChange(event.currentTarget.value || null)}
+        >
+          <option value="">Provider default</option>
+          {(catalog?.models ?? []).map((option) => (
+            <option key={option.id} value={option.id}>
+              {option.label}
+            </option>
+          ))}
+        </SelectControl>
+      </div>
+    </div>
   );
 }
