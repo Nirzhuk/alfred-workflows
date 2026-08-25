@@ -4,7 +4,48 @@ export type ModelOption = {
   id: string;
   label: string;
   description: string;
+  baseId?: string;
+  fastVariantId?: string;
+  isFastVariant?: boolean;
+  supportsFastToggle?: boolean;
 };
+
+export function modelOptionForValue(
+  catalog: ProviderModels,
+  model: string,
+): ModelOption | undefined {
+  return catalog.models.find(
+    (option) =>
+      option.id === model ||
+      option.baseId === model ||
+      option.fastVariantId === model,
+  );
+}
+
+export function supportsFastToggle(
+  option: ModelOption | undefined,
+): option is ModelOption & { baseId: string; fastVariantId: string } {
+  return Boolean(
+    option?.supportsFastToggle === true &&
+      option.baseId &&
+      option.fastVariantId,
+  );
+}
+
+export function isFastModel(
+  option: ModelOption | undefined,
+  model: string,
+): boolean {
+  return supportsFastToggle(option) && option?.fastVariantId === model;
+}
+
+export function modelIdForFastToggle(
+  option: ModelOption | undefined,
+  fast: boolean,
+): string | null {
+  if (!supportsFastToggle(option)) return null;
+  return fast ? (option.fastVariantId ?? null) : (option.baseId ?? null);
+}
 
 export type ProviderModels = {
   provider: AgentProviderId;

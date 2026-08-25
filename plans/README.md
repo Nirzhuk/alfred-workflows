@@ -238,7 +238,7 @@ and existing CSS motion/reduced-motion rules.
 
 | Plan | Title | Priority | Effort | Depends on | Status |
 |------|-------|----------|--------|------------|--------|
-| 029 | Fast model toggle across agent providers | P2 | M | — | TODO |
+| 029 | Fast model toggle across agent providers | P2 | M | — | DONE |
 
 ### Dependency notes
 

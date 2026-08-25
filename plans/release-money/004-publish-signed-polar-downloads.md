@@ -1,333 +1,228 @@
-# Plan 004: Publish verified official installers through Polar downloads
+# Plan 004: Publish official installers as public GitHub Release assets
 
-> **Executor instructions**: Complete Plan 003, read
-> [Plan 007](007-two-product-perpetual-model.md) for the product model this
-> plan's copy must state, and read the signing
-> reference. Keep GitHub releases as private maintainer staging drafts and use
-> Polar's File Downloads benefit as the customer channel. Do not enable a
-> Tauri automatic updater or live sales in this plan. Follow every gate, stop
-> on a STOP condition, and update the release-money index when done.
+> **Executor instructions**: read [docs/releasing.md](../../docs/releasing.md)
+> (the operator runbook this plan defers to) and the
+> [signing reference](reference-verified-installer-signing.md). Distribution
+> changed on **2026-08-25**: Alfred's official binaries are **free** and are
+> published as **public GitHub Release assets** by a tag push. This plan no
+> longer delivers anything through Polar. Do not enable an automatic updater,
+> live sales, or a Polar download boundary in this plan. Follow every gate,
+> stop on a STOP condition, and update the release-money index when done.
 >
 > **Drift check (run first)**:
 > `git diff --stat ecb94d6..HEAD -- .github/workflows/release.yml src src-tauri docs README.md plans/release-money`
-> Reconcile the current build matrix, version files, signing decisions, menu
-> behavior, and Polar benefit configuration before editing.
+> Reconcile the build matrix, version files, signing decisions, menu behavior,
+> and distribution copy before editing.
 
 ## Status
 
 - **Priority**: P0
 - **Effort**: M
-- **Risk**: HIGH (official binary distribution and signing custody)
-- **Depends on**: `003-configure-polar-commerce.md` and
-  `reference-verified-installer-signing.md`
-- **Category**: security, release infrastructure, docs
+- **Risk**: MEDIUM (public binary distribution custody and GPL source parity)
+- **Depends on**: `reference-verified-installer-signing.md` only — no longer on
+  Plan 003
+- **Category**: release infrastructure, docs
 - **Planned at**: commit `ecb94d6`, 2026-08-15
 - **Rewritten at**: 2026-08-20 against the two-product perpetual model
-  ([007](007-two-product-perpetual-model.md)), from the drift map in
-  [RECONCILIATION-003-004-005.md](RECONCILIATION-003-004-005.md). The pipeline
-  half of this plan (version alignment, required artifacts, checksums, updater
-  guard, runbook, rollback) was already correct and is unchanged. The changes
-  are customer-facing copy, the benefit-class names in the gates, and one
-  additive release-critical field: `ALFRED_RELEASE_DATE` in the acceptance
-  manifest.
+  ([007](007-two-product-perpetual-model.md)).
+- **Rewritten again at 2026-08-25** for the free/public distribution pivot:
+  Alfred ships as open source with free public binaries, so the Polar File
+  Downloads delivery channel, the private-draft-only rule, and all
+  purchase-gated download copy are **superseded**. Plans 003/005 and
+  RECONCILIATION still cite this plan's old Polar-era steps; treat those
+  citations as historical until licensing is either revived (new plan required)
+  or formally dropped.
 
 ## Why this matters
 
-Polar can authorize and host Alfred's installers without an Alfred asset
-server. The release pipeline must still prove the exact binaries before they
-are uploaded, publish checksums and corresponding source, avoid exposing paid
-assets through public GitHub, and tell users honestly that v0.5.0 updates are
-manual through Polar's portal.
+Distributing binaries publicly under GPL-3.0-or-later requires that the exact
+corresponding source is reachable, that users can verify what they download,
+and that nothing reaches the public before the gates prove it. The release
+pipeline is therefore: build → stage privately → verify on clean runners →
+attach checksums → publish. A red gate leaves the release a private draft.
 
-## Current state
+## Current state (implemented and verified)
 
-- `.github/workflows/release.yml` manually builds macOS ARM64/Intel, Linux, and
-  Windows artifacts into a private draft GitHub Release.
-- Both macOS DMGs have passed Developer ID signing, notarization, stapling, and
-  clean-install smoke tests. Windows is an explicitly unsigned beta.
-- The workflow correctly uses `uploadUpdaterJson: false`.
-- `src-tauri/tauri.conf.json` has no updater plugin configuration.
-- The app currently contains a “Check for Updates” stub that says automatic
-  updates are not configured.
-- Plan 003 creates one shared Polar File Downloads benefit attached to both
-  products — Alfred License and Alfred Teams — and granted to each claimed
-  Teams seat.
-- That benefit is **perpetual**. Polar will keep serving newer files to a
-  customer whose one-year update window has closed. That is expected: the
-  window is enforced client-side by comparing the build's
-  `ALFRED_RELEASE_DATE` against the license key's deadline. Step 2 owns saying
-  so to the customer.
-- Polar gives authorized customers personal signed download URLs. Those URLs
-  are never compiled into Alfred or republished.
+- `.github/workflows/release.yml` triggers on `v*` tag push (manual dispatch
+  kept for test builds). It builds macOS Apple Silicon/Intel DMGs, Windows NSIS
+  EXE + MSI, and Linux `.deb`/`.rpm`/`.AppImage`.
+- `verify-version` enforces lockstep across `package.json`,
+  `src-tauri/Cargo.toml`, and `src-tauri/tauri.conf.json`, and rejects a pushed
+  tag that differs from `v<version>`.
+- Artifacts land on a **draft** release first. Clean-runner gates download the
+  exact staged DMGs/EXE and exercise install → launch twice → uninstall;
+  macOS gates additionally verify `codesign`, `spctl`, and
+  `stapler validate`; the Windows gate asserts the installer is **unsigned**
+  (waived Authenticode beta).
+- The `publish-release` job attaches `SHA256SUMS.txt` to the release, uploads
+  an acceptance-manifest artifact (schemaVersion 2, `distribution:
+  "public-github-releases"`: version, source commit, filenames, sizes,
+  architectures, signing status, SHA-256; never secrets), then flips the draft
+  public with `--latest`. A failed gate means never published.
+- macOS Developer ID signing/notarization/stapling proven end-to-end
+  (2026-08-13, run 31695713076; flow unchanged since).
+- The in-app **Help → Download Latest Version…** action opens
+  `https://github.com/Nirzhuk/alfred-workflows/releases/latest`
+  (`LATEST_RELEASES_URL` in
+  `src/features/licensing/download-latest.ts`); the opener capability already
+  allowed `https://github.com/*`. Frontend tests cover the success and
+  browser-failure paths.
+- Living docs (README, install, open-source, releasing, release-todo,
+  BRANDING, building-from-source) state the free/public model.
+- `ALFRED_RELEASE_DATE` is deliberately **unset** in distribution builds: unset
+  means the update-window logic never locks anything, which matches free
+  distribution. Revisit only inside a future licensing plan.
 
 ## Commands you will need
 
 | Purpose | Command | Expected on success |
 | --- | --- | --- |
 | Full local check | `bun run check` | all gates pass |
-| Workflow lint | `actionlint .github/workflows/release.yml` | no errors |
-| Inspect draft | `gh release view v<VERSION> --json assets,isDraft,url` | draft true and required artifacts listed |
+| Workflow YAML parse | `ruby -ryaml -e "YAML.load_file('.github/workflows/release.yml')"` | no output |
+| Inspect release | `gh release view v<VERSION> --json assets,isDraft,isLatest` | `isDraft:false`, required assets + `SHA256SUMS.txt` listed |
 | macOS verify | `codesign --verify --deep --strict <app>` and `xcrun stapler validate <dmg>` | exit 0 |
-| Hash | `shasum -a 256 <installer>` | one recorded SHA-256 per advertised artifact |
+| Hash | `shasum -a 256 <installer>` | matches `SHA256SUMS.txt` |
 | Updater guard | `rg -n 'uploadUpdaterJson|createUpdaterArtifacts|plugins.*updater' .github src-tauri` | `uploadUpdaterJson: false`; no enabled updater config |
+| Hygiene | `bun run verify:release-hygiene` | PASS on all scans |
 
 ## Scope
 
 **In scope**:
 
 - `.github/workflows/release.yml` and focused release scripts;
-- `src/features/workflow/components/workflow-canvas/workflow-canvas.tsx` or
-  the current update-menu handler;
-- `src-tauri/capabilities/default.json` only for approved Polar portal opening;
+- the in-app download-latest action and its tests;
+- `src-tauri/capabilities/default.json` only for approved release-page URLs;
 - `README.md`, `docs/install.md`, `docs/open-source.md`, `docs/releasing.md`,
-  and `docs/release-todo.md`;
-- Polar sandbox File Downloads content and customer-visible product copy;
+  `docs/release-todo.md`, `BRANDING.md`, `docs/building-from-source.md`;
 - this plan and the release-money index status.
 
 **Out of scope**:
 
-- `api-licenses/` or any server deployment;
-- Polar webhooks, access tokens in Alfred, or a custom portal;
-- Tauri updater plugin, updater JSON, private manifest service, or CrabNebula;
-- live Polar products/payments (Plan 006);
-- public GitHub binary releases, Homebrew, or public CDN mirrors;
-- Windows signing beyond the accepted beta limitation.
+- Polar products, checkout links, portal configuration, or any Polar-hosted
+  downloads — reviving paid licensing requires a **new written plan** that
+  states what payment buys now that official builds are free;
+- Tauri updater plugin, updater JSON, or any automatic update service;
+- public Homebrew cask or third-party CDN mirrors (separate deferred decisions);
+- Windows signing beyond the accepted unsigned-beta waiver;
+- `api-licenses/` or any server deployment.
 
 ## Git workflow
 
-- Branch: `codex/004-polar-download-release`.
-- Use imperative commits such as `Route official downloads through Polar`.
-- Do not publish a GitHub release, live Polar product, or production file in
-  this plan.
+- Branch: `codex/004-public-github-release`.
+- Use imperative commits such as `Publish official installers on public GitHub releases`.
 
 ## Steps
 
-### Step 1: Replace obsolete Stripe/backend release documentation
+### Step 1: Convert every customer/operator surface to the free public model — DONE
 
-Update customer and operator documentation so it consistently states:
-
-- Polar is merchant of record and hosts checkout, portal, keys, seats, and downloads;
-- **there are two products, both one-time purchases**: **Alfred License** (one
-  named user, not seat-based) and **Alfred Teams** (one-time per claimed seat);
-- **paying once unlocks every pro feature permanently** — nothing a customer
-  paid for is ever taken away;
-- **the purchase includes one year of updates**, counted from purchase;
-- **what lapsing does**: after the year, builds released later run fine and keep
-  all local data and workflows, but their pro features stay locked until the
-  customer buys again;
-- **what lapsing does not do**: it does not disable the build the customer
-  already has, does not remove a feature they already paid for, does not touch
-  workflows, memories, schedules, triggers, or any local data, and does not
-  make the app stop working;
-- a refunded, revoked, or disabled license **is** different from a lapsed
-  update window and does end entitlement;
-- **building from source is free and fully featured, forever** — payment buys
-  signed builds, Polar-hosted downloads, one year of updates, and support, not
-  capability (see [Plan 008](008-pro-entitlement-and-source-freedom.md));
-- official builds update manually through Polar for v0.5.0;
-- source/self-built Alfred remains usable under GPL;
-- no external payment-gateway IDs, Alfred gateway, third-party binary-hosting
-  origin, account service, webhook, email service, server database, or backend
-  backup is required;
-- the Windows build is an unsigned beta with expected SmartScreen warnings.
-
-Alfred Teams is sold on the marketing website. The app has **one** in-app
-checkout entry point, for Alfred License, plus the customer portal. Do not
-document an in-app Teams purchase path.
-
-Use live Polar checkout/portal destinations approved in Plan 003 without
-embedding prices that can drift. Remove links to the rejected commercial
-gateway plans.
-
-**OPERATOR INPUT REQUIRED — lapse notification copy.** The exact customer-facing
-wording for a lapsed update window is drafted in Step 2 below and marked
-`DRAFT — needs owner approval`. Do not publish it, or any paraphrase of it, to
-a customer surface until the owner approves the wording.
+README (positioning, options table, manual-update paragraph, platforms,
+contributing tail), `docs/install.md` (two free routes, GitHub Releases
+instructions, checksum verification against `SHA256SUMS.txt`, updating),
+`docs/open-source.md` (rewritten policy), `docs/releasing.md` (rewritten
+runbook incl. rollback), `docs/release-todo.md` (owner checklist),
+`BRANDING.md`, `docs/building-from-source.md`.
 
 **Verify**:
 
 ```bash
-rg -n 'Stripe|stripe|CrabNebula|license server|Alfred gateway|authenticated updater' \
-  README.md docs/install.md docs/open-source.md docs/releasing.md docs/release-todo.md
+rg -n 'File Downloads|customer portal|one-time purchase|paid download' \
+  README.md docs BRANDING.md
 ```
 
-Expected: no active architecture claim remains; any historical mention is
-explicitly labeled rejected/legacy.
+Expected: only historical/archival mentions (`docs/polar-operator-handoff.md`,
+`docs/release-acceptance/`) and explicit model-change statements.
 
-### Step 2: Make the in-app update action truthful
+### Step 2: Make the in-app update action truthful — DONE
 
-Replace “Check for Updates” automatic-update behavior with **Download latest
-version** or equivalent. Open the fixed Polar customer-portal destination in
-the system browser and explain that customers sign in by email to obtain their
-personal downloads. Do not fetch a signed file URL inside Alfred.
+**Download Latest Version…** opens the fixed public releases URL in the system
+browser; Alfred never resolves or fetches an installer itself. Browser failure
+shows the manual URL plus rebuild-from-source instructions. No updater plugin,
+key, or manifest exists; `uploadUpdaterJson: false` stays enforced by
+`bun run verify:release-hygiene`.
 
-Source/unconfigured builds may show the public build instructions instead.
-Keep Tauri updater dependencies/configuration absent and
-`uploadUpdaterJson: false`.
+**Verify**: frontend tests cover open-success and browser-failure paths;
+`bun run check` passes.
 
-#### The out-of-window case must be explained, not discovered
+### Step 3: Tag-triggered gated publication pipeline — DONE
 
-Polar's File Downloads benefit is perpetual, so a customer whose update window
-has closed **will still be handed newer files**. Downloading is not the
-boundary; running a newer build is. If the app says nothing, that customer
-installs a new version, finds pro features locked, and reasonably concludes
-they were tricked.
+As described under *Current state*: lockstep versions, tag-equals-version gate,
+private draft staging, clean-runner installer smoke gates, checksum
+attachment, acceptance-manifest artifact, publish-with-`--latest` only after
+every gate passes.
 
-So: an out-of-window build must explain itself **once**, on first run, in a
-dismissible message — not lock silently, and not nag repeatedly. (007 Step 3
-recommends explain-once; the resolver that decides in-window vs out-of-window
-belongs to 007, and the locked-capability treatment belongs to Plan 008. This
-step owns only the download action and the message text.)
+**Verify**: `actionlint` (or YAML parse) clean; one full green run observed
+before the next real tag.
 
-**DRAFT — needs owner approval.** Proposed first-run wording for an
-out-of-window build. This is customer-facing copy and must not ship until the
-owner approves it:
+### Step 4: Cut v1.0.0 — IN PROGRESS
 
-> **This update is outside your update year.**
-> Your purchase included one year of updates, and this build was released after
-> that year ended. Alfred is running normally and every file, workflow,
-> schedule, and memory on this machine is untouched.
-> The version you bought keeps all of its pro features, permanently — you can
-> go on using it for as long as you like. In *this* newer build, pro features
-> stay locked until you buy another year.
-> [Keep using this build] [Get the version I bought] [Buy another year]
+State ready locally: commit `87b3020 Bump version to 1.0.0` and annotated tag
+`v1.0.0`, full `bun run check` green on that exact tree, working tree clean,
+WIP preserved in `stash@{0}`.
 
-The three actions and the sentence order are part of the draft: the
-reassurance ("nothing was taken away") must come before the offer, or the
-message reads as a paywall rather than an explanation.
+Remaining:
 
-**Verify**: frontend tests cover official/unconfigured destinations;
-`bun run check` passes; no updater plugin is enabled; the out-of-window message
-appears at most once per build and never blocks access to local data.
+- [ ] Push `git push origin main v1.0.0` (owner go-live decision).
+- [ ] Watch Actions → release until published; confirm both DMGs, NSIS EXE,
+      MSI, Linux packages, and `SHA256SUMS.txt` on the public release.
+- [ ] Polish the release-notes body (supported OSes, agent CLIs, unsigned-beta
+      Windows warning, manual-update policy, GPL notice + tagged source link).
+- [ ] Spot-download one artifact and match it against `SHA256SUMS.txt`.
 
-### Step 3: Make the private draft workflow produce an acceptance manifest
+**Verify**: `gh release view v1.0.0` shows `isDraft:false`, `isLatest:true`,
+and the complete asset list; hashes match.
 
-Keep the existing manual, private GitHub draft. Ensure CI checks exact version
-alignment across `package.json`, `src-tauri/Cargo.toml`, and
-`src-tauri/tauri.conf.json`, rejects missing/duplicate required artifacts, and
-produces a text/JSON acceptance manifest containing version, source commit,
-filenames, sizes, architectures, SHA-256 checksums, and **`ALFRED_RELEASE_DATE`
-as the exact ISO `YYYY-MM-DD` value baked into these artifacts** — never
-signing secrets.
+### Step 5: Post-launch maintenance — TODO
 
-`ALFRED_RELEASE_DATE` is release-critical and otherwise invisible. It is
-supplied by the release workflow, never read from a local clock, and an unset
-value means "source build" and must never lock anything. A wrong value silently
-grants or denies entitlement to real customers and **will not fail any test**,
-which is why the manifest has to assert it: the manifest is the only place a
-human reviews it before customers do. CI must fail the run if the value is
-absent from a distribution build or is not a valid ISO date.
-
-Required paid artifacts for v0.5.0:
-
-- signed/notarized/stapled Apple Silicon DMG;
-- signed/notarized/stapled Intel DMG;
-- explicit unsigned-beta Windows x64 NSIS installer.
-
-Linux remains source/best-effort unless the operator separately approves it as
-a supported paid download.
-
-- **OPERATOR INPUT REQUIRED — Linux paid-download approval**: `<yes | no>`.
-  Until this is answered, the required-artifact list above is the complete
-  list and Linux ships as source/best-effort.
-
-**Verify**: `actionlint` passes; a draft run contains exactly the required
-artifacts plus one matching acceptance manifest and no public release.
-
-### Step 4: Smoke-test the downloaded draft artifacts
-
-Download from the draft—not local build output—and run the existing clean
-install/launch/relaunch/uninstall gates. Manually exercise Windows Start-menu
-launch, CLI detection outside a terminal, one real workflow, persistence,
-tray, schedule, trigger, and upgrade behavior. Verify macOS signatures and
-checksums from the downloaded bytes.
-
-**Verify**: record platform, architecture, source commit, artifact checksum,
-and pass/fail without credentials. Every advertised platform passes.
-
-### Step 5: Upload the exact accepted files to Polar sandbox
-
-Upload only the accepted installer files, checksum manifest, release notes,
-license notices, and a prominent corresponding-source link to the shared Polar
-File Downloads benefit. Start manually through the dashboard for v0.5.0; do
-not add a permanent Polar access token to CI merely to automate one release.
-
-Add new files before disabling old current-release files. Never delete an old
-file until replacement and rollback access are verified. Confirm the uploaded
-bytes match the draft checksums.
-
-**Verify**: an Alfred License purchaser and a claimed Alfred Teams sandbox
-member each download the exact files; unrelated/unclaimed users cannot; local
-hashes match after download. A customer whose update window has closed **can**
-still download — confirm that, rather than treating it as a defect.
-
-### Step 6: Document the repeatable release runbook
-
-Document this order:
-
-1. freeze version/source commit;
-2. build private GitHub draft;
-3. verify signing, install behavior, and checksums;
-4. upload accepted files and source link to Polar;
-5. verify every benefit class;
-6. enable the new files/links;
-7. retain or disable old files according to rollback policy;
-8. keep the GitHub draft private or remove it under the retention policy.
-
-Include a rollback that disables the new Polar files/checkout links without
-deleting customer purchase history or local data.
-
-**Verify**: a second operator can follow the sandbox runbook from the document
-without using a backend or receiving a Polar access token in Alfred.
+- Keep every tag that has a published release: the tag **is** the GPL
+  corresponding-source anchor named in the release body. Deleting it breaks the
+  release's source links.
+- Rollback per the runbook: unmark latest / delete assets / delete release and
+  tag together.
+- If the repository is ever renamed, update `LATEST_RELEASES_URL` and ship it —
+  released binaries keep pointing at the old slug forever.
 
 ## Test plan
 
-- Workflow checks validate version alignment, required filenames,
-  architectures, checksums, draft-only publication, and absence of updater
-  JSON.
-- Packaged smoke tests use the exact downloaded DMG/EXE artifacts.
-- Frontend tests cover the manual download action and allow-listed destination.
-- Polar sandbox E2E covers both benefit classes (individual, teams) and unauthorized denial.
+- Workflow gates: version alignment, tag equality, required filenames,
+  architectures, checksums, draft-before-publish, absence of updater config.
+- Packaged smoke tests use the exact downloaded draft artifacts on native
+  runners (both DMG architectures + Windows silent install/uninstall).
+- Frontend tests cover the manual download action and its failure path.
+- `bun run verify:release-hygiene` guards architecture copy, secrets, and the
+  updater-off invariant.
 
 ## Done criteria
 
-- [ ] Active docs contain only the Polar/backendless release architecture.
-- [ ] Every customer-facing surface states: two one-time products, permanent
-      pro features, one year of updates, what lapsing does and does not do, and
-      that source builds are free and fully featured forever.
-- [ ] No surface mentions annual, lifetime, or subscription tiers.
-- [ ] The app opens Polar downloads instead of promising automatic updates.
-- [ ] An out-of-window build explains itself once and never blocks local data.
-- [ ] The lapse copy is either owner-approved or still marked `DRAFT` and unpublished.
-- [ ] Private CI draft produces the exact required artifact/checksum manifest.
-- [ ] The acceptance manifest asserts `ALFRED_RELEASE_DATE`, and CI fails a
-      distribution build that is missing it or has a malformed date.
-- [ ] Both macOS DMGs and Windows NSIS pass downloaded-artifact smoke tests.
-- [ ] Polar sandbox hosts byte-identical accepted files for both paid benefit classes.
-- [ ] Unauthorized and unclaimed users cannot download official files.
-- [ ] Corresponding source and GPL notices are adjacent to paid downloads.
-- [ ] No Polar access token, customer URL, or signing private key ships in Alfred.
-- [ ] `actionlint` and `bun run check` pass.
-- [ ] The roadmap row is `DONE`.
+- [x] Living docs describe only the free public-GitHub-Releases architecture.
+- [x] No surface sells annual/lifetime/subscription tiers or paid downloads.
+- [x] The app opens the public releases page instead of promising automatic
+      updates.
+- [x] CI stages a draft, gates it on clean runners, attaches SHA256SUMS.txt,
+      and publishes only when every gate passes.
+- [x] Both macOS DMGs pass downloaded-artifact smoke tests; Windows NSIS
+      passes install/launch×2/uninstall and stays verifiably unsigned.
+- [x] Corresponding source (the tag) is linked from every release body.
+- [x] No signing private key, token, or secret ships in Alfred or CI artifacts.
+- [ ] v1.0.0 (or the first agreed version) is actually published with matching
+      checksums.
+- [ ] `bun run check`, hygiene scan, and YAML parse pass at HEAD.
+- [ ] The roadmap row is updated to `DONE`.
 
 ## STOP conditions
 
-- A GitHub release or official binary becomes public.
-- Polar cannot restrict file access to purchasers/claimed seat members.
-- Uploaded bytes differ from the accepted checksums.
-- macOS signing/notarization or required packaged smoke fails.
-- Windows is marketed as signed or warning-free.
-- GPL corresponding source cannot be provided beside the binary offer.
-- The release requires an automatic updater or custom asset backend for v0.5.0.
-- `ALFRED_RELEASE_DATE` is missing, malformed, or wrong on a distribution build.
-- Lapse copy is published to a customer surface without owner approval.
-- A verification gate fails twice after a scoped correction.
+- A release goes public while any gate is red.
+- Published bytes differ from the attached `SHA256SUMS.txt`.
+- A published release loses its corresponding-source tag/link (GPL violation).
+- Windows is marketed as signed or warning-free anywhere.
+- An automatic updater or asset backend is introduced without a separate
+  approved plan.
+- The repository is renamed without updating `LATEST_RELEASES_URL` and cutting
+  a follow-up release.
 
 ## Maintenance notes
 
-Polar is the authorization boundary for files; Tauri/local license state is
-not. Re-verify downloads for both the individual and Teams seat benefits after
-changing Polar attachments. Re-check `ALFRED_RELEASE_DATE` on every release:
-it is the only release input that can quietly change what a paying customer is
-entitled to. Automate uploads later only if the API supports the same staged,
-checksum-verified, rollback-safe flow.
+The distribution boundary is now "what CI proved before publishing", not a
+payment wall. Re-read the runbook after any workflow edit; the gates are the
+only thing standing between a broken build and the public. If paid licensing
+returns, write a fresh delivery plan — do not resurrect this plan's removed
+Polar sections silently.

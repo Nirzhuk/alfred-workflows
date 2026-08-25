@@ -16,6 +16,7 @@ use super::pi;
 use super::AgentProvider;
 use directories::BaseDirs;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
@@ -28,6 +29,14 @@ pub struct ModelOption {
     pub label: String,
     #[serde(default)]
     pub description: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fast_variant_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub is_fast_variant: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub supports_fast_toggle: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -55,7 +64,130 @@ fn opt(
         id: id.into(),
         label: label.into(),
         description: description.into(),
+        base_id: None,
+        fast_variant_id: None,
+        is_fast_variant: None,
+        supports_fast_toggle: None,
     }
+}
+
+fn fast_base_id(id: &str) -> Option<&str> {
+    id.strip_suffix("-fast").filter(|base| !base.is_empty())
+}
+
+fn is_fast_variant(model: &ModelOption) -> bool {
+    model.is_fast_variant == Some(true) || fast_base_id(&model.id).is_some()
+}
+
+/// Collapse confident base/fast pairs into one picker row.
+///
+/// A pair is accepted only when one base maps to one fast variant and that
+/// fast variant maps back to the same base. Ambiguous or incomplete matches
+/// remain flat so discovery never silently changes a model id.
+pub fn pair_fast_variants(models: Vec<ModelOption>) -> Vec<ModelOption> {
+    if models.len() < 2 {
+        return models;
+    }
+
+    let mut indices_by_id: HashMap<String, Vec<usize>> = HashMap::new();
+    for (index, model) in models.iter().enumerate() {
+        indices_by_id
+            .entry(model.id.clone())
+            .or_default()
+            .push(index);
+    }
+
+    let mut base_to_fast: HashMap<usize, Vec<usize>> = HashMap::new();
+    let mut fast_to_base: HashMap<usize, Vec<usize>> = HashMap::new();
+
+    for (base_index, model) in models.iter().enumerate() {
+        if is_fast_variant(model) {
+            continue;
+        }
+        let Some(fast_id) = model.fast_variant_id.as_deref() else {
+            continue;
+        };
+        let Some(fast_indices) = indices_by_id.get(fast_id) else {
+            continue;
+        };
+        for &fast_index in fast_indices {
+            if fast_index == base_index {
+                continue;
+            }
+            base_to_fast.entry(base_index).or_default().push(fast_index);
+            fast_to_base.entry(fast_index).or_default().push(base_index);
+        }
+    }
+
+    for (fast_index, model) in models.iter().enumerate() {
+        if !is_fast_variant(model) {
+            continue;
+        }
+        let base_id = model.base_id.as_deref().or_else(|| fast_base_id(&model.id));
+        let Some(base_id) = base_id else {
+            continue;
+        };
+        let Some(base_indices) = indices_by_id.get(base_id) else {
+            continue;
+        };
+        for &base_index in base_indices {
+            if base_index == fast_index || is_fast_variant(&models[base_index]) {
+                continue;
+            }
+            base_to_fast.entry(base_index).or_default().push(fast_index);
+            fast_to_base.entry(fast_index).or_default().push(base_index);
+        }
+    }
+
+    for indices in base_to_fast.values_mut() {
+        indices.sort_unstable();
+        indices.dedup();
+    }
+    for indices in fast_to_base.values_mut() {
+        indices.sort_unstable();
+        indices.dedup();
+    }
+
+    let mut fast_id_by_base = HashMap::new();
+    let mut paired_fast = vec![false; models.len()];
+    for (&base_index, fast_indices) in &base_to_fast {
+        if fast_indices.len() != 1 {
+            continue;
+        }
+        let fast_index = fast_indices[0];
+        let Some(base_indices) = fast_to_base.get(&fast_index) else {
+            continue;
+        };
+        if base_indices.len() != 1 || base_indices[0] != base_index {
+            continue;
+        }
+        fast_id_by_base.insert(base_index, models[fast_index].id.clone());
+        paired_fast[fast_index] = true;
+    }
+
+    if fast_id_by_base.is_empty() {
+        return models;
+    }
+
+    let mut paired_models = Vec::with_capacity(models.len());
+    for (index, mut model) in models.into_iter().enumerate() {
+        if paired_fast[index] {
+            continue;
+        }
+        if let Some(fast_id) = fast_id_by_base.get(&index) {
+            model.base_id = Some(model.id.clone());
+            model.fast_variant_id = Some(fast_id.clone());
+            model.is_fast_variant = Some(false);
+            model.supports_fast_toggle = Some(true);
+        }
+        paired_models.push(model);
+    }
+    paired_models
+}
+
+#[cfg(test)]
+fn test_model(id: &str) -> ModelOption {
+    opt(id, id, "")
 }
 
 pub fn default_model(provider: AgentProvider) -> &'static str {
@@ -197,6 +329,7 @@ fn discover_for(provider: AgentProvider) -> ProviderModels {
 
     match result {
         Ok(mut catalog) => {
+            catalog.models = pair_fast_variants(catalog.models);
             catalog.provider = provider.as_str().into();
             catalog.allow_custom = true;
             if catalog.source.is_empty() {
@@ -527,15 +660,17 @@ fn cursor_fallback_models() -> Vec<ModelOption> {
 fn discover_cursor() -> Result<ProviderModels, String> {
     let mut errors = Vec::new();
 
-    match discover_cursor_from_cli() {
-        Ok(catalog) if !catalog.models.is_empty() => return Ok(catalog),
-        Ok(_) => errors.push("CLI returned no models".into()),
-        Err(e) => errors.push(e),
-    }
-
+    // Cursor IDE carries curated labels and parameterized variants; use the
+    // CLI only when the IDE catalog is unavailable.
     match discover_cursor_from_ide_state() {
         Ok(catalog) if !catalog.models.is_empty() => return Ok(catalog),
         Ok(_) => errors.push("Cursor IDE state had no agent models".into()),
+        Err(e) => errors.push(e),
+    }
+
+    match discover_cursor_from_cli() {
+        Ok(catalog) if !catalog.models.is_empty() => return Ok(catalog),
+        Ok(_) => errors.push("CLI returned no models".into()),
         Err(e) => errors.push(e),
     }
 
@@ -626,6 +761,86 @@ fn parse_cursor_cli_models(text: &str) -> Vec<ModelOption> {
     }
 
     models
+}
+
+fn cursor_variant_is_fast(variant: &serde_json::Value, id: &str) -> bool {
+    if fast_base_id(id).is_some() {
+        return true;
+    }
+    variant
+        .get("parameterValues")
+        .and_then(|values| values.as_array())
+        .is_some_and(|values| {
+            values.iter().any(|parameter| {
+                parameter.get("id").and_then(|value| value.as_str()) == Some("fast")
+                    && (parameter.get("value").and_then(|value| value.as_bool()) == Some(true)
+                        || parameter.get("value").and_then(|value| value.as_str()) == Some("true"))
+            })
+        })
+}
+
+fn cursor_variant_id<'a>(variant: &'a serde_json::Value, fallback: &'a str) -> &'a str {
+    variant
+        .get("legacySlug")
+        .and_then(|value| value.as_str())
+        .or_else(|| {
+            variant
+                .get("variantStringRepresentation")
+                .and_then(|value| value.as_str())
+        })
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+        .unwrap_or(fallback)
+}
+
+fn cursor_variant_pair_key(variant: &serde_json::Value) -> Option<String> {
+    let values = variant.get("parameterValues")?.as_array()?;
+    let mut parameters = values
+        .iter()
+        .filter_map(|parameter| {
+            let id = parameter.get("id").and_then(|value| value.as_str())?;
+            if id == "fast" {
+                return None;
+            }
+            let value = parameter.get("value")?;
+            let value = value
+                .as_str()
+                .map(str::to_owned)
+                .unwrap_or_else(|| value.to_string());
+            Some(format!("{id}={value}"))
+        })
+        .collect::<Vec<_>>();
+    parameters.sort_unstable();
+    Some(parameters.join(","))
+}
+
+fn cursor_variant_counterpart_id(
+    variant: &serde_json::Value,
+    variant_id: &str,
+    variants: &[serde_json::Value],
+) -> Option<String> {
+    let key = cursor_variant_pair_key(variant)?;
+    let mut counterpart_id = None;
+    for candidate in variants {
+        let candidate_id = cursor_variant_id(candidate, "");
+        if candidate_id.is_empty()
+            || candidate_id == variant_id
+            || cursor_variant_is_fast(candidate, candidate_id)
+        {
+            continue;
+        }
+        let Some(candidate_key) = cursor_variant_pair_key(candidate) else {
+            continue;
+        };
+        if candidate_key != key {
+            continue;
+        }
+        if counterpart_id.is_some() {
+            return None;
+        }
+        counterpart_id = Some(candidate_id.to_string());
+    }
+    counterpart_id
 }
 
 fn looks_like_cursor_model_id(id: &str) -> bool {
@@ -728,17 +943,8 @@ fn discover_cursor_from_ide_state() -> Result<ProviderModels, String> {
         let mut pushed_variant = false;
         if let Some(variants) = item.get("variants").and_then(|v| v.as_array()) {
             for variant in variants {
-                let variant_id = variant
-                    .get("legacySlug")
-                    .and_then(|v| v.as_str())
-                    .or_else(|| {
-                        variant
-                            .get("variantStringRepresentation")
-                            .and_then(|v| v.as_str())
-                    })
-                    .map(str::trim)
-                    .filter(|id| !id.is_empty())
-                    .unwrap_or(base_id);
+                let variant_id = cursor_variant_id(variant, base_id);
+                let is_fast = cursor_variant_is_fast(variant, variant_id);
                 if !seen.insert(variant_id.to_string()) {
                     continue;
                 }
@@ -749,20 +955,19 @@ fn discover_cursor_from_ide_state() -> Result<ProviderModels, String> {
                     .map(strip_html_tags)
                     .filter(|s| !s.is_empty())
                     .unwrap_or_else(|| base_label.clone());
-                models.push(ModelOption {
-                    id: variant_id.to_string(),
-                    label: variant_label,
-                    description: description.clone(),
-                });
+                let mut option = opt(variant_id, variant_label, description.clone());
+                if is_fast {
+                    option.is_fast_variant = Some(true);
+                    option.base_id = fast_base_id(variant_id)
+                        .map(str::to_owned)
+                        .or_else(|| cursor_variant_counterpart_id(variant, variant_id, variants));
+                }
+                models.push(option);
                 pushed_variant = true;
             }
         }
         if !pushed_variant && seen.insert(base_id.to_string()) {
-            models.push(ModelOption {
-                id: base_id.to_string(),
-                label: base_label,
-                description,
-            });
+            models.push(opt(base_id, base_label, description));
         }
     }
 
@@ -977,5 +1182,118 @@ mod pi_family_tests {
         assert_eq!(catalog.default_model, pi::CLI_DEFAULT_MODEL);
         assert_eq!(catalog.models[0].id, pi::CLI_DEFAULT_MODEL);
         assert!(catalog.allow_custom);
+    }
+    #[test]
+    fn pairs_one_suffix_variant_and_removes_the_duplicate_row() {
+        let models = pair_fast_variants(vec![
+            test_model("gpt-5.3-codex-high"),
+            test_model("gpt-5.3-codex-high-fast"),
+            test_model("gpt-5.2"),
+        ]);
+
+        assert_eq!(
+            models
+                .iter()
+                .map(|model| model.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["gpt-5.3-codex-high", "gpt-5.2"]
+        );
+        assert_eq!(models[0].base_id.as_deref(), Some("gpt-5.3-codex-high"));
+        assert_eq!(
+            models[0].fast_variant_id.as_deref(),
+            Some("gpt-5.3-codex-high-fast")
+        );
+        assert_eq!(models[0].supports_fast_toggle, Some(true));
+    }
+
+    #[test]
+    fn keeps_ambiguous_pairs_flat() {
+        let mut fast_low = test_model("cursor-grok-low-priority");
+        fast_low.is_fast_variant = Some(true);
+        fast_low.base_id = Some("cursor-grok".into());
+        let mut fast_high = test_model("cursor-grok-high-priority");
+        fast_high.is_fast_variant = Some(true);
+        fast_high.base_id = Some("cursor-grok".into());
+
+        let models = pair_fast_variants(vec![test_model("cursor-grok"), fast_low, fast_high]);
+
+        assert_eq!(models.len(), 3);
+        assert!(models
+            .iter()
+            .all(|model| model.supports_fast_toggle != Some(true)));
+    }
+
+    #[test]
+    fn keeps_missing_half_pairs_flat() {
+        let models = pair_fast_variants(vec![
+            test_model("gpt-5.3-codex-fast"),
+            test_model("gpt-5.2"),
+        ]);
+
+        assert_eq!(
+            models
+                .iter()
+                .map(|model| model.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["gpt-5.3-codex-fast", "gpt-5.2"]
+        );
+        assert!(models
+            .iter()
+            .all(|model| model.supports_fast_toggle != Some(true)));
+    }
+
+    #[test]
+    fn pairs_explicit_mapper_metadata_without_a_fast_suffix() {
+        let mut base = test_model("cursor-grok");
+        base.fast_variant_id = Some("cursor-grok-priority".into());
+        let mut fast = test_model("cursor-grok-priority");
+        fast.is_fast_variant = Some(true);
+        fast.base_id = Some("cursor-grok".into());
+
+        let models = pair_fast_variants(vec![base, fast]);
+
+        assert_eq!(models.len(), 1);
+        assert_eq!(models[0].id, "cursor-grok");
+        assert_eq!(
+            models[0].fast_variant_id.as_deref(),
+            Some("cursor-grok-priority")
+        );
+        assert_eq!(models[0].supports_fast_toggle, Some(true));
+    }
+    #[test]
+    fn detects_cursor_fast_parameter_values() {
+        let fast = serde_json::json!({
+            "parameterValues": [{"id": "fast", "value": "true"}]
+        });
+        let base = serde_json::json!({
+            "parameterValues": [{"id": "fast", "value": "false"}]
+        });
+
+        assert!(cursor_variant_is_fast(&fast, "cursor-grok-high"));
+        assert!(!cursor_variant_is_fast(&base, "cursor-grok-high"));
+    }
+    #[test]
+    fn matches_parameterized_cursor_fast_variant_to_its_counterpart() {
+        let base = serde_json::json!({
+            "variantStringRepresentation": "grok-4.5[effort=high,fast=false]",
+            "parameterValues": [
+                {"id": "effort", "value": "high"},
+                {"id": "fast", "value": "false"}
+            ]
+        });
+        let fast = serde_json::json!({
+            "variantStringRepresentation": "grok-4.5[effort=high,fast=true]",
+            "parameterValues": [
+                {"id": "effort", "value": "high"},
+                {"id": "fast", "value": "true"}
+            ]
+        });
+        let variants = vec![base.clone(), fast.clone()];
+
+        assert_eq!(
+            cursor_variant_counterpart_id(&fast, "grok-4.5[effort=high,fast=true]", &variants,)
+                .as_deref(),
+            Some("grok-4.5[effort=high,fast=false]")
+        );
     }
 }

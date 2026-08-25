@@ -46,3 +46,9 @@ src-tauri/gen/schemas
 .turbo
 .cache
 graphify-out
+
+# BEGIN oh-my-opencode-slim worktrees
+.slim/worktrees/
+.slim/worktrees.json
+.slim/deepwork/
+# END oh-my-opencode-slim worktrees

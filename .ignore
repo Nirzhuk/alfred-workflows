@@ -1,0 +1,6 @@
+!.slim/deepwork/
+!.slim/deepwork/**
+!.slim/
+!.slim/worktrees.json
+!.slim/worktrees/
+!.slim/worktrees/**

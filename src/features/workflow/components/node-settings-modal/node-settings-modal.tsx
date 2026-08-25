@@ -10,7 +10,11 @@ import { Modal, ModalHeader } from "../../../../components/modal";
 import { AppActionSettings } from "../../../integrations/app-action-settings";
 import * as api from "../../api";
 import {
+  isFastModel,
+  modelIdForFastToggle,
+  modelOptionForValue,
   modelsForProvider,
+  supportsFastToggle,
   type ProviderModels,
 } from "../../models";
 import { useWorkflowStore } from "../../store";
@@ -676,7 +680,7 @@ function AgentSettings({
 }: AgentSettingsProps) {
   const catalog = modelsForProvider(providerModels, provider);
   const selectedModel = model || catalog.defaultModel;
-  const selectedOption = catalog.models.find((m) => m.id === selectedModel);
+  const selectedOption = modelOptionForValue(catalog, selectedModel);
   const savedModelIsCustom = catalog.allowCustom && !selectedOption;
   const [customModelSelected, setCustomModelSelected] = useState(false);
   const [customModelDraft, setCustomModelDraft] = useState(
@@ -684,6 +688,8 @@ function AgentSettings({
   );
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const showCustomModel = savedModelIsCustom || customModelSelected;
+  const showFastToggle = !showCustomModel && supportsFastToggle(selectedOption);
+  const fastEnabled = showFastToggle && isFastModel(selectedOption, selectedModel);
   const providerSkills = skills.filter((s) => s.providers.includes(provider));
 
   const invocation =
@@ -701,83 +707,104 @@ function AgentSettings({
 
         <div className="field model-select-field">
           <span>Model</span>
-          <DropdownMenu
-            open={modelMenuOpen}
-            onOpenChange={setModelMenuOpen}
-            className="model-select"
-          >
-            <DropdownMenuTrigger
-              className="model-select-trigger"
-              aria-label="Select model"
+          <div className="model-select-row">
+            <DropdownMenu
+              open={modelMenuOpen}
+              onOpenChange={setModelMenuOpen}
+              className="model-select"
             >
-              <span className="model-select-value">
-                {showCustomModel
-                  ? customModelDraft.trim() || "Custom…"
-                  : selectedOption?.label || selectedModel}
-              </span>
-              <ChevronDownIcon />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              align="start"
-              side="bottom"
-              className="model-select-menu"
-              aria-label="Models"
-            >
-              {catalog.models.map((option) => {
-                const selected =
-                  !showCustomModel && option.id === selectedModel;
-                return (
+              <DropdownMenuTrigger
+                className="model-select-trigger"
+                aria-label="Select model"
+              >
+                <span className="model-select-value">
+                  {showCustomModel
+                    ? customModelDraft.trim() || "Custom…"
+                    : selectedOption?.label || selectedModel}
+                </span>
+                <ChevronDownIcon />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="start"
+                side="bottom"
+                className="model-select-menu"
+                aria-label="Models"
+              >
+                {catalog.models.map((option) => {
+                  const selected =
+                    !showCustomModel && selectedOption?.id === option.id;
+                  return (
+                    <MenuItem
+                      key={option.id}
+                      className="model-select-option"
+                      aria-checked={selected}
+                      role="menuitemradio"
+                      title={option.description || undefined}
+                      onSelect={() => {
+                        setCustomModelSelected(false);
+                        setCustomModelDraft("");
+                        setModelMenuOpen(false);
+                        onUpdate({ model: option.baseId ?? option.id });
+                      }}
+                    >
+                      <span className="model-select-option-copy">
+                        <span className="model-select-option-label">
+                          {option.label}
+                        </span>
+                        {option.description ? (
+                          <span className="model-select-option-description">
+                            {option.description}
+                          </span>
+                        ) : null}
+                      </span>
+                      {selected ? <CheckIcon /> : null}
+                    </MenuItem>
+                  );
+                })}
+                {catalog.allowCustom ? (
                   <MenuItem
-                    key={option.id}
                     className="model-select-option"
-                    aria-checked={selected}
+                    aria-checked={showCustomModel}
                     role="menuitemradio"
-                    title={option.description || undefined}
                     onSelect={() => {
-                      setCustomModelSelected(false);
-                      setCustomModelDraft("");
+                      setCustomModelSelected(true);
+                      setCustomModelDraft(
+                        savedModelIsCustom ? selectedModel : "",
+                      );
                       setModelMenuOpen(false);
-                      onUpdate({ model: option.id });
                     }}
                   >
                     <span className="model-select-option-copy">
                       <span className="model-select-option-label">
-                        {option.label}
+                        Custom…
                       </span>
-                      {option.description ? (
-                        <span className="model-select-option-description">
-                          {option.description}
-                        </span>
-                      ) : null}
+                      <span className="model-select-option-description">
+                        Enter a model alias or ID
+                      </span>
                     </span>
-                    {selected ? <CheckIcon /> : null}
+                    {showCustomModel ? <CheckIcon /> : null}
                   </MenuItem>
-                );
-              })}
-              {catalog.allowCustom ? (
-                <MenuItem
-                  className="model-select-option"
-                  aria-checked={showCustomModel}
-                  role="menuitemradio"
-                  onSelect={() => {
-                    setCustomModelSelected(true);
-                    setCustomModelDraft(
-                      savedModelIsCustom ? selectedModel : "",
+                ) : null}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            {showFastToggle ? (
+              <label className="field checkbox-field model-fast-toggle">
+                <input
+                  type="checkbox"
+                  aria-label="Fast model"
+                  checked={fastEnabled}
+                  onChange={(event) => {
+                    const nextModel = modelIdForFastToggle(
+                      selectedOption,
+                      event.currentTarget.checked,
                     );
-                    setModelMenuOpen(false);
+                    if (nextModel) onUpdate({ model: nextModel });
                   }}
-                >
-                  <span className="model-select-option-copy">
-                    <span className="model-select-option-label">Custom…</span>
-                    <span className="model-select-option-description">
-                      Enter a model alias or ID
-                    </span>
-                  </span>
-                  {showCustomModel ? <CheckIcon /> : null}
-                </MenuItem>
-              ) : null}
-            </DropdownMenuContent>
-          </DropdownMenu>
+                />
+                <span>Fast</span>
+              </label>
+            ) : null}
+          </div>
         </div>
 
         <button

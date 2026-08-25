@@ -15,6 +15,13 @@ Status values: `TODO`, `IN PROGRESS`, `DONE`, `BLOCKED (reason)`, or
 
 ## Fixed product contract
 
+> **Suspended 2026-08-25:** official binaries are now free and public via
+> GitHub Releases ([Plan 004](004-publish-signed-polar-downloads.md), rewritten),
+> so the Polar-hosted download boundary described below no longer reflects
+> shipped reality. This contract remains the spec **if paid licensing is
+> revived**; re-approving prices and "what payment buys" is a prerequisite for
+> Plans 003/005/006.
+
 This is the current contract. It replaced the four-product
 annual/lifetime/seat model on 2026-08-20 via
 [Plan 007](007-two-product-perpetual-model.md); the retired model is recorded
@@ -101,7 +108,7 @@ under "Historical" at the end of this section.
 | [001](archive/001-connect-desktop-polar-licensing.md) | Build the direct Polar license client with injected fixtures, secure storage, and a 30-day offline window | P0 | L | — | DONE (archived) |
 | [002](archive/002-build-polar-license-settings.md) | Build License & Billing settings with injected checkout/portal configuration | P0 | M | 001 | DONE (archived) |
 | [003](003-configure-polar-commerce.md) | Configure Polar sandbox for the two products, bind public IDs/URLs, and prove the real integration | P0 | M | 001, 002, **007** | BLOCKED — rewritten 2026-08-20 for the two-product model. Step 1's verifier/manifest shape is re-opened by 007 Step 4 (still three benefit classes; `verifier.ts` still asserts a key with no expiry). Steps 2–8 need the two approved prices, authenticated Polar sandbox access, and proof that Polar can issue a one-time product's key with a one-year expiry and sell a seat product one-time per seat |
-| [004](004-publish-signed-polar-downloads.md) | Stage, verify, document, and deliver signed installers through Polar | P0 | M | 003; signing reference | IN PROGRESS — rewritten 2026-08-20; the pipeline half (version alignment, artifacts, checksums, updater guard, runbook) was already correct and is unchanged. Steps 1–2 re-open for the new copy and the out-of-window explanation; Step 3 gains `ALFRED_RELEASE_DATE` in the acceptance manifest; Steps 4–6 need signed artifacts and Polar sandbox downloads |
+| [004](004-publish-signed-polar-downloads.md) | Publish official installers as **public GitHub Release assets** (free distribution) | P0 | M | signing reference | IN PROGRESS — rewritten 2026-08-25 for the free/public-distribution pivot; pipeline, gates, checksums, docs, and in-app download action shipped and verified. Remaining: push `v1.0.0`, polish release notes. Supersedes the Polar-delivery premise; [005](005-run-polar-paid-release-acceptance.md)/[006](006-launch-polar-paid-release.md) need their own re-plan if licensing revives |
 | [005](005-run-polar-paid-release-acceptance.md) | Pass the packaged Polar sandbox acceptance matrix | P0 | L | 004 | IN PROGRESS — rewritten 2026-08-20. Matrix D's offline boundaries stay automated (15 injected-clock tests, exact) with the `expired` row corrected; nine update-window rows (W1–W9) are new; matrix E inherits the signed-macOS and packaged-Windows credential-store smokes from [plans/008](../008-connected-apps-foundation.md). [Acceptance template](../../docs/release-acceptance/TEMPLATE-polar.md) updated. Matrices A–C and E–F need Polar sandbox, sandbox purchases, and clean macOS/Windows machines |
 | [006](006-launch-polar-paid-release.md) | Configure production Polar, run live canaries, and open sales | P0 | M | 005 | TODO |
 | [007](007-two-product-perpetual-model.md) | Move to two one-time products with permanent features and a one-year update window | P0 | L | 001, 002 | TODO — **blocks 003–006**; needs the two approved prices and the Polar one-time/expiring-key/one-time-per-seat confirmation. Plans 003/004/005 and the acceptance template are already rewritten to its model, so the remaining work is code plus operator input, not planning |
@@ -150,8 +157,8 @@ Consequences:
 3. Plan 003 is the first operator-assisted gate. It configures Polar only after
    the code is ready, then binds public IDs/URLs and proves the real sandbox
    integration. Missing dashboard access cannot invalidate Plans 001–002.
-4. Plan 004 keeps the verified GitHub draft build/signing pipeline, then moves
-   accepted installers and checksums into Polar's File Downloads benefit.
+4. Plan 004 was rewritten on 2026-08-25: official binaries publish as free
+   public GitHub Release assets; the Polar-delivery steps are superseded.
 5. Plan 005 proves the Alfred License and Alfred Teams journeys, activation,
    offline behavior, the update window, revocation, portal, packaged-platform
    behavior, and packaged credential storage in the sandbox.
@@ -167,9 +174,8 @@ Consequences:
 - Plan 003 begins with executable verifier/configuration code, then pauses only
   for unavoidable Polar sandbox login and commercial-policy approval. Resume
   the same plan after the operator supplies those inputs.
-- Plan 004 requires access to the existing GitHub release workflow and Polar
-  sandbox downloads; Plan 005 additionally requires the named clean platform
-  environments; Plan 006 is the only live-money plan.
+- Plan 004 is executable end-to-end with no Polar access at all; its only open
+  step is the owner's go-live push of the version commit and tag.
 - Missing external authorization is not a reason to block or weaken earlier
   plans. Complete all local steps, record the exact pending operator action,
   and resume without redesigning the architecture.
