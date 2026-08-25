@@ -14,6 +14,7 @@ pub struct Workflow {
     #[serde(default)]
     pub working_directory: String,
     pub folder_id: Option<String>,
+    pub memory_retrieval_enabled: bool,
     pub graph: Value,
     pub created_at: String,
     pub updated_at: String,
@@ -40,6 +41,7 @@ pub struct UpdateWorkflowInput {
     pub name: Option<String>,
     pub description: Option<String>,
     pub working_directory: Option<String>,
+    pub memory_retrieval_enabled: Option<bool>,
     pub graph: Option<Value>,
 }
 
@@ -52,16 +54,17 @@ fn now() -> String {
 }
 
 fn row_to_workflow(row: &rusqlite::Row<'_>) -> rusqlite::Result<Workflow> {
-    let graph_json: String = row.get(5)?;
+    let graph_json: String = row.get(6)?;
     Ok(Workflow {
         id: row.get(0)?,
         name: row.get(1)?,
         description: row.get(2)?,
         working_directory: row.get(3)?,
         folder_id: row.get(4)?,
+        memory_retrieval_enabled: row.get::<_, i64>(5)? != 0,
         graph: serde_json::from_str(&graph_json).unwrap_or_else(|_| empty_graph()),
-        created_at: row.get(6)?,
-        updated_at: row.get(7)?,
+        created_at: row.get(7)?,
+        updated_at: row.get(8)?,
     })
 }
 
@@ -69,7 +72,7 @@ impl Db {
     pub fn list_workflows(&self) -> Result<Vec<Workflow>, DbError> {
         self.with_conn(|conn| {
             let mut stmt = conn.prepare(
-                "SELECT id, name, description, working_directory, folder_id, graph_json, created_at, updated_at
+                "SELECT id, name, description, working_directory, folder_id, memory_retrieval_enabled, graph_json, created_at, updated_at
                  FROM workflows
                  ORDER BY sort_order ASC, updated_at DESC",
             )?;
@@ -85,7 +88,7 @@ impl Db {
     pub fn get_workflow(&self, id: &str) -> Result<Option<Workflow>, DbError> {
         self.with_conn(|conn| {
             let mut stmt = conn.prepare(
-                "SELECT id, name, description, working_directory, folder_id, graph_json, created_at, updated_at
+                "SELECT id, name, description, working_directory, folder_id, memory_retrieval_enabled, graph_json, created_at, updated_at
                  FROM workflows
                  WHERE id = ?1",
             )?;
@@ -120,8 +123,8 @@ impl Db {
                 )
                 .unwrap_or(-1);
             conn.execute(
-                "INSERT INTO workflows (id, name, description, working_directory, folder_id, sort_order, graph_json, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8)",
+                "INSERT INTO workflows (id, name, description, working_directory, folder_id, sort_order, memory_retrieval_enabled, graph_json, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, ?7, ?8, ?8)",
                 params![
                     id,
                     input.name,
@@ -168,6 +171,9 @@ impl Db {
         let working_directory = input
             .working_directory
             .unwrap_or(existing.working_directory);
+        let memory_retrieval_enabled = input
+            .memory_retrieval_enabled
+            .unwrap_or(existing.memory_retrieval_enabled);
         let graph = input.graph.unwrap_or(existing.graph);
         let graph_json =
             serde_json::to_string(&graph).map_err(|e| DbError::Other(e.to_string()))?;
@@ -176,12 +182,14 @@ impl Db {
         self.with_conn(|conn| {
             conn.execute(
                 "UPDATE workflows
-                 SET name = ?1, description = ?2, working_directory = ?3, graph_json = ?4, updated_at = ?5
-                 WHERE id = ?6",
+                 SET name = ?1, description = ?2, working_directory = ?3,
+                     memory_retrieval_enabled = ?4, graph_json = ?5, updated_at = ?6
+                 WHERE id = ?7",
                 params![
                     name,
                     description,
                     working_directory,
+                    if memory_retrieval_enabled { 1 } else { 0 },
                     graph_json,
                     updated_at,
                     input.id
@@ -195,13 +203,49 @@ impl Db {
     }
 
     pub fn delete_workflow(&self, id: &str) -> Result<(), DbError> {
-        let changed = self.with_conn(|conn| {
+        let (changed, deleted_artifacts) = self.with_conn(|conn| {
             let transaction = conn.unchecked_transaction()?;
+            let deleted_artifacts = {
+                let mut statement = transaction.prepare(
+                    "SELECT artifact_path FROM memories
+                     WHERE workflow_id = ?1 AND scope_type = 'workflow' AND artifact_path IS NOT NULL",
+                )?;
+                let rows = statement
+                    .query_map(params![id], |row| row.get::<_, String>(0))?
+                    .collect::<Result<Vec<_>, _>>()?;
+                rows
+            };
+            let preserved_memory_ids = {
+                let mut statement = transaction.prepare(
+                    "SELECT id FROM memories
+                     WHERE workflow_id = ?1 AND scope_type IN ('user', 'workspace')",
+                )?;
+                let rows = statement
+                    .query_map(params![id], |row| row.get::<_, String>(0))?
+                    .collect::<Result<Vec<_>, _>>()?;
+                rows
+            };
             // Explicit cleanup so delete still works if CASCADE isn't active
             // on an older database connection.
-            transaction.execute("DELETE FROM memory_fts WHERE workflow_id = ?1", params![id])?;
+            transaction.execute(
+                "DELETE FROM memory_fts WHERE memory_id IN (
+                   SELECT id FROM memories WHERE workflow_id = ?1 AND scope_type = 'workflow'
+                 )",
+                params![id],
+            )?;
             transaction.execute("DELETE FROM run_step_fts WHERE workflow_id = ?1", params![id])?;
-            transaction.execute("DELETE FROM memories WHERE workflow_id = ?1", params![id])?;
+            transaction.execute(
+                "DELETE FROM memories WHERE workflow_id = ?1 AND scope_type = 'workflow'",
+                params![id],
+            )?;
+            transaction.execute(
+                "UPDATE memories SET workflow_id = NULL
+                 WHERE workflow_id = ?1 AND scope_type IN ('user', 'workspace')",
+                params![id],
+            )?;
+            for memory_id in preserved_memory_ids {
+                super::history::index_memory(&transaction, &memory_id)?;
+            }
             transaction.execute("DELETE FROM schedules WHERE workflow_id = ?1", params![id])?;
             transaction.execute(
                 "DELETE FROM run_steps WHERE run_id IN (SELECT id FROM runs WHERE workflow_id = ?1)",
@@ -210,18 +254,15 @@ impl Db {
             transaction.execute("DELETE FROM runs WHERE workflow_id = ?1", params![id])?;
             let changed = transaction.execute("DELETE FROM workflows WHERE id = ?1", params![id])?;
             transaction.commit()?;
-            Ok(changed)
+            Ok((changed, deleted_artifacts))
         })?;
 
         if changed == 0 {
             return Err(DbError::Other(format!("workflow not found: {id}")));
         }
 
-        let artifacts = super::app_data_dir()
-            .map(|d| d.join("artifacts").join(id))
-            .ok();
-        if let Some(dir) = artifacts {
-            let _ = std::fs::remove_dir_all(dir);
+        for artifact in deleted_artifacts {
+            let _ = std::fs::remove_file(artifact);
         }
 
         Ok(())

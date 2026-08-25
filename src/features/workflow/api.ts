@@ -8,9 +8,20 @@ import type {
   AgentUsageSnapshot,
   ActiveRunInfo,
   AppTriggerStatus,
+  HistorySearchHit,
+  HistorySearchInput,
+  MemoryCandidate,
+  MemoryCandidateStatus,
   MemoryKind,
+  MemoryReviewJob,
+  MemoryReviewSettings,
+  MemoryScopeType,
   MemorySource,
+  MemoryStatus,
+  MemoryType,
   OutputMemory,
+  RunHistoryDetail,
+  RunHistoryItem,
   RunSummary,
   Schedule,
   ScheduleListItem,
@@ -20,6 +31,7 @@ import type {
   Workflow,
   WorkflowFolder,
   WorkflowGraph,
+  WorkflowMemoryReview,
 } from "./types";
 
 export async function listWorkflows(): Promise<Workflow[]> {
@@ -45,6 +57,7 @@ export async function updateWorkflow(input: {
   name?: string;
   description?: string;
   workingDirectory?: string;
+  memoryRetrievalEnabled?: boolean;
   graph?: WorkflowGraph;
 }): Promise<Workflow> {
   return invoke("update_workflow", { input });
@@ -143,6 +156,36 @@ export async function listActiveRuns(): Promise<ActiveRunInfo[]> {
   return invoke("list_active_runs");
 }
 
+export async function listRunHistory(input: {
+  workflowId?: string | null;
+  limit?: number;
+  offset?: number;
+} = {}): Promise<RunHistoryItem[]> {
+  return invoke("list_run_history", {
+    workflowId: input.workflowId ?? null,
+    limit: input.limit ?? 25,
+    offset: input.offset ?? 0,
+  });
+}
+
+export async function getRunHistory(
+  runId: string,
+): Promise<RunHistoryDetail | null> {
+  return invoke("get_run_history", { runId });
+}
+
+export async function searchHistory(
+  input: HistorySearchInput,
+): Promise<HistorySearchHit[]> {
+  return invoke("search_history", {
+    input: {
+      query: input.query,
+      workflowId: input.workflowId ?? null,
+      limit: input.limit ?? 25,
+    },
+  });
+}
+
 export async function listSchedules(): Promise<ScheduleListItem[]> {
   return invoke("list_schedules");
 }
@@ -217,8 +260,11 @@ export async function webhookBaseUrl(): Promise<string | null> {
   return invoke("webhook_base_url");
 }
 
-export async function listMemories(workflowId: string): Promise<OutputMemory[]> {
-  return invoke("list_memories", { workflowId });
+export async function listMemories(
+  workflowId: string,
+  includeHistory = false,
+): Promise<OutputMemory[]> {
+  return invoke("list_memories", { workflowId, includeHistory });
 }
 
 /** Memories from other workflows that can still be linked in. */
@@ -249,8 +295,16 @@ export async function createMemory(input: {
   runId?: string | null;
   nodeId?: string | null;
   kind?: MemoryKind;
+  scopeType?: MemoryScopeType;
+  memoryType?: MemoryType;
   source?: MemorySource;
   pinned?: boolean;
+  confidence?: number;
+  salience?: number;
+  status?: MemoryStatus;
+  supersedesId?: string | null;
+  lastConfirmedAt?: string | null;
+  expiresAt?: string | null;
   id?: string;
 }): Promise<OutputMemory> {
   return invoke("create_memory", { input });
@@ -258,18 +312,109 @@ export async function createMemory(input: {
 
 export async function updateMemory(input: {
   id: string;
+  contextWorkflowId?: string;
   title?: string;
   body?: string;
   pinned?: boolean;
   kind?: MemoryKind;
+  scopeType?: MemoryScopeType;
+  memoryType?: MemoryType;
+  confidence?: number;
+  salience?: number;
+  status?: MemoryStatus;
+  supersedesId?: string | null;
+  lastConfirmedAt?: string | null;
+  expiresAt?: string | null;
 }): Promise<OutputMemory> {
   return invoke("update_memory", { input });
 }
 
-export async function deleteMemory(id: string): Promise<void> {
-  return invoke("delete_memory", { id });
+export async function deleteMemory(
+  id: string,
+  contextWorkflowId?: string,
+): Promise<void> {
+  return invoke("delete_memory", { id, contextWorkflowId });
 }
 
 export async function clearMemories(workflowId: string): Promise<number> {
   return invoke("clear_memories", { workflowId });
+}
+
+// ---------------------------------------------------------------------------
+// Post-run memory review (Plan 028)
+// ---------------------------------------------------------------------------
+
+export async function getMemoryReviewSettings(): Promise<MemoryReviewSettings> {
+  return invoke("get_memory_review_settings");
+}
+
+export async function updateMemoryReviewSettings(input: {
+  enabled: boolean;
+  provider: string | null;
+  model?: string | null;
+  maxCandidates?: number;
+}): Promise<MemoryReviewSettings> {
+  return invoke("update_memory_review_settings", { input });
+}
+
+export async function setWorkflowMemoryReview(
+  workflowId: string,
+  enabled: boolean,
+): Promise<WorkflowMemoryReview> {
+  return invoke("set_workflow_memory_review", { workflowId, enabled });
+}
+
+export async function listMemoryCandidates(input: {
+  workflowId: string;
+  status?: MemoryCandidateStatus;
+}): Promise<MemoryCandidate[]> {
+  return invoke("list_memory_candidates", { input });
+}
+
+/** Pending candidates only may be edited; decided ones are final. */
+export async function updateMemoryCandidate(input: {
+  id: string;
+  title?: string;
+  body?: string;
+  scopeType?: MemoryScopeType;
+  memoryType?: MemoryType;
+}): Promise<MemoryCandidate> {
+  return invoke("update_memory_candidate", { input });
+}
+
+export async function approveMemoryCandidate(id: string): Promise<MemoryCandidate> {
+  return invoke("approve_memory_candidate", { id });
+}
+
+export async function rejectMemoryCandidate(id: string): Promise<MemoryCandidate> {
+  return invoke("reject_memory_candidate", { id });
+}
+
+export async function retryMemoryReview(runId: string): Promise<MemoryReviewJob> {
+  return invoke("retry_memory_review", { runId });
+}
+
+export async function getMemoryReviewJob(
+  runId: string,
+): Promise<MemoryReviewJob | null> {
+  return invoke("get_memory_review_job", { runId });
+}
+
+export async function listMemoryReviews(
+  workflowId: string,
+): Promise<MemoryReviewJob[]> {
+  return invoke("list_memory_reviews", { workflowId });
+}
+
+export async function getWorkflowMemoryReview(
+  workflowId: string,
+): Promise<WorkflowMemoryReview | null> {
+  return invoke("get_workflow_memory_review", { workflowId });
+}
+
+/** Data settings: physically delete decided candidates for a workflow. */
+export async function clearDecidedMemoryCandidates(
+  workflowId: string,
+): Promise<number> {
+  return invoke("clear_decided_memory_candidates", { workflowId });
 }

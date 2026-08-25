@@ -306,7 +306,7 @@ and explainable; model-authored learning is staged for approval.
 | 025 | Make run history and saved memories searchable | P0 | L | — | DONE |
 | 026 | Turn workflow notes into scoped atomic memory | P0 | L | 025 | DONE |
 | 027 | Retrieve relevant memory automatically for agent steps | P0 | L | 025, 026 | DONE |
-| 028 | Curate memory through reviewable post-run suggestions | P1 | XL | 025, 026, 027 | TODO |
+| 028 | Curate memory through reviewable post-run suggestions | P1 | XL | 025, 026, 027 | DONE (verified 2026-08-25 at `c1969ab`: `bun test` 304 pass, focused memory-curation tests 17 pass, `bun run build:frontend`, full `bun run check` incl. cargo suite, and `git diff --check` all clean) |
 
 ### Required execution order
 

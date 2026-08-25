@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-export type SidebarView = "canvas" | "schedules" | "settings";
+export type SidebarView = "canvas" | "history" | "schedules" | "settings";
 
 type Props = {
   view: SidebarView;
@@ -78,6 +78,26 @@ function ClockIcon() {
         stroke="currentColor"
         strokeWidth="1.35"
         strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function HistoryIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" aria-hidden>
+      <path
+        d="M4.1 6.2A7 7 0 1 1 3 10"
+        stroke="currentColor"
+        strokeWidth="1.35"
+        strokeLinecap="round"
+      />
+      <path
+        d="M4.1 2.9v3.3H.8M10 6.1v4.2l2.8 1.7"
+        stroke="currentColor"
+        strokeWidth="1.35"
+        strokeLinecap="round"
+        strokeLinejoin="round"
       />
     </svg>
   );
@@ -185,6 +205,12 @@ export function SidebarNav({
         disabled={!memoriesEnabled}
         title={!memoriesEnabled ? "Open a workflow to view its memories" : undefined}
         onClick={onOpenMemories}
+      />
+      <NavButton
+        label="History"
+        icon={<HistoryIcon />}
+        active={view === "history"}
+        onClick={() => onChange("history")}
       />
       <NavButton
         label="Schedules"

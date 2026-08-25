@@ -139,7 +139,14 @@ binary support.
 
 - **Local data** — workflows, runs, schedules, and memories live in an on-disk
   SQLite database under the app’s application-support directory. Nothing is
-  uploaded to an Alfred cloud.
+  uploaded to an Alfred cloud. Memory remains local until you explicitly delete
+  it; retracting or superseding a claim retains it for correction history.
+- **Local history search** — searchable run history covers persisted run steps
+  and saved memories using SQLite FTS5. It uses no embeddings or remote search
+  service. The search tables are a derived index that Alfred can rebuild from
+  canonical local rows; deleting canonical runs or memories removes them from
+  search. History may include prompts and agent/tool results, so treat it as
+  private local data.
 - **Schedules & triggers** — cron, file watchers, and local webhooks only fire
   while Alfred is running (including when the window is closed but the app
   stays in the menu bar / tray). Fully quitting the app pauses automations.
@@ -148,6 +155,74 @@ binary support.
 - **Permissions** — agent steps inherit whatever tools and file access those
   CLIs already have. Treat workflow prompts like instructions you would type
   into the agent yourself.
+
+### Memory scope and prompt safety
+
+- User memory is keyed to `local-user` and appears in every workflow on this
+  installation. Workspace memory appears only for the same lexically normalized
+  configured absolute working-directory path. Workflow memory stays with one
+  workflow unless explicitly linked to another.
+- Memory meaning (`preference`, `fact`, `decision`, `constraint`, `lesson`,
+  `episode`, `checkpoint`, `note`, `output`, or `artifact`) is separate from
+  content kind (`text`, `note`, or `artifact`).
+- Memory lifecycle is `active`, `superseded`, or `retracted`. Only active,
+  unexpired records can enter a run prompt; inactive records remain visible
+  until explicitly deleted.
+- Pinned context is capped at 6,000 UTF-8 bytes, divided softly across user
+  (1,500), workspace (2,000), and workflow/linked (2,500) scope. Overflow is
+  omitted from the prompt with a count-only notice, not deleted from the local
+  library.
+- Durable memory is reference data, not authorization. It cannot grant
+  permission or override your current request, workflow instructions, or safety
+  boundaries; instructions embedded in memory text are ignored.
+
+### Automatic recall
+
+- New workflows have **Automatic recall** enabled. Existing workflows remain
+  off after migration until you opt in. Open the workflow's Memories inspector
+  and use the Automatic recall switch to enable or disable it at any time; this
+  does not rewrite the graph or delete memory.
+- Recall runs locally immediately before each Agent and Custom agent step using
+  that step's current accumulated prompt. It combines exact SQLite FTS5 result
+  position with scope, recency, salience, and confidence, and falls back to
+  recent visible memory when there is no exact match. Utility nodes receive no
+  automatic memory.
+- Each step can add at most 8 recalled items / 6,000 UTF-8 bytes, with a
+  1,200-byte per-item limit. History records included memory ids, reasons,
+  ranks, scores, and rendered sizes without copying bodies or the search query.
+- Recall failure is non-fatal: the workflow continues without recalled context
+  and keeps its pinned core context. V1 uses no embeddings, network retrieval,
+  or model download.
+
+
+### Memory review (optional, off by default)
+
+Memory review lets an agent CLI you already use propose memory changes after a
+completed run. It is **off by default**, both globally (Settings → Memory
+review) and per workflow (Memories inspector → "Suggest memories after runs").
+
+- **Consent** — enabling it requires picking one supported CLI as the reviewer
+  and ticking an acknowledgement before the setting can be saved. Alfred never
+  stores credentials; the CLI uses its own existing login.
+- **Cost** — at most **one additional model invocation** happens after each
+  eligible completed run. Failed and cancelled runs are never reviewed, and
+  there are no automatic retries; if a review fails you can retry it once from
+  History or the Suggestions queue.
+- **Privacy** — the selected CLI receives a bounded digest of the run's
+  persisted text (at most 32 KiB) plus up to 12 relevant existing memories,
+  within the same local CLI boundary you already use for normal runs. Nothing
+  else is uploaded anywhere by Alfred itself.
+- **Candidate-only** — suggestions never touch your saved memories directly.
+  Each one shows its operation, proposed scope/type, confidence, rationale, and
+  source run, and you can edit it while pending. Approving user-scope changes or
+  retractions always asks for confirmation; stale suggestions become "blocked"
+  with a plain-language reason instead of being applied anyway.
+- **Recovery** — turn review off globally or per workflow at any time; that
+  stops all future reviews immediately without deleting anything. Decided
+  suggestion history can be physically deleted under Settings → Data &
+  storage → "Clear decided suggestions". Review failures show stable reasons
+  (such as `auth_required` or `timeout`) and never change a run's status or
+  output.
 
 ## Troubleshooting
 

@@ -170,6 +170,19 @@ function NativeAgentsIcon() {
   );
 }
 
+function MemoryReviewIcon() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden>
+      <path
+        d="M8 2.5 9.6 5.7l3.4.5-2.5 2.4.6 3.4L8 10.4l-3.1 1.6.6-3.4L3 6.2l3.4-.5L8 2.5Z"
+        stroke="currentColor"
+        strokeWidth="1.35"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 function DataIcon() {
   return (
     <svg viewBox="0 0 16 16" fill="none" aria-hidden>
@@ -265,6 +278,12 @@ const NAV_GROUPS: SettingsNavGroup[] = [
   {
     label: "Local",
     items: [
+      {
+        id: "memory-review",
+        label: SETTINGS_SECTION_LABELS["memory-review"],
+        description: "Post-run memory suggestions and consent",
+        icon: <MemoryReviewIcon />,
+      },
       {
         id: "data",
         label: SETTINGS_SECTION_LABELS.data,

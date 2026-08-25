@@ -13,6 +13,8 @@ import {
 } from "../../../settings/components/settings-sidebar";
 import { SchedulesPage } from "../schedules-page";
 import { SidebarFolderContext } from "../sidebar-folder-context";
+import { HistoryPage } from "../history-page";
+import { historyNavigation } from "../history-page/history-format";
 import { SidebarBottomBar } from "../sidebar-bottom-bar";
 import { SidebarNav, type SidebarView } from "../sidebar-nav";
 import { AgentUsageBar } from "../agent-usage-bar";
@@ -21,7 +23,10 @@ import { WorkflowFolderContextMenu } from "../workflow-folder-context-menu";
 import { WorkflowFolderModal } from "../workflow-folder-modal";
 import { WorkflowList, type ScrolledFolder } from "../workflow-list";
 import { FlowEditor } from "../flow-editor";
-import { MemoriesInspector } from "../memories-inspector";
+import {
+  MemoriesInspector,
+  type MemoriesInspectorMode,
+} from "../memories-inspector";
 import { OutputModal } from "../output-modal";
 import { RunActivityPanel } from "../run-activity-panel";
 import { RenameWorkflowModal } from "../rename-workflow-modal";
@@ -220,6 +225,12 @@ export function WorkflowCanvas() {
   } | null>(null);
   const [memoriesOpen, setMemoriesOpen] = useState(false);
   const [memoriesFocusId, setMemoriesFocusId] = useState<string | null>(null);
+  const [memoriesMode, setMemoriesMode] =
+    useState<MemoriesInspectorMode>("memories");
+  const [suggestionsFocusRunId, setSuggestionsFocusRunId] = useState<
+    string | null
+  >(null);
+  const [historyRunId, setHistoryRunId] = useState<string | null>(null);
   const [runPanelMounted, setRunPanelMounted] = useState(runPanelOpen);
   const [view, setView] = useState<SidebarView>("canvas");
   const [settingsSection, setSettingsSection] =
@@ -235,6 +246,14 @@ export function WorkflowCanvas() {
       return false;
     }
   });
+
+  const navigateHistory = (
+    action: Parameters<typeof historyNavigation>[0],
+  ) => {
+    const next = historyNavigation(action);
+    setHistoryRunId(next.runId);
+    setView(next.view);
+  };
 
   const setSidebarOpen = (open: boolean) => {
     const collapsed = !open;
@@ -337,6 +356,16 @@ export function WorkflowCanvas() {
     const openMemories = (event: Event) => {
       const detail = (event as CustomEvent<{ memoryId?: string }>).detail;
       setMemoriesFocusId(detail?.memoryId ?? null);
+      setMemoriesMode("memories");
+      setSuggestionsFocusRunId(null);
+      setMemoriesOpen(true);
+    };
+    const openSuggestions = (event: Event) => {
+      const runId =
+        (event as CustomEvent<{ runId?: string }>).detail?.runId ?? null;
+      setMemoriesFocusId(null);
+      setMemoriesMode("suggestions");
+      setSuggestionsFocusRunId(runId);
       setMemoriesOpen(true);
     };
     const openSettings = (event: Event) => {
@@ -428,6 +457,7 @@ export function WorkflowCanvas() {
     window.addEventListener("alfred:open-schedule", openSchedule);
     window.addEventListener("alfred:delete-workflow", openDelete);
     window.addEventListener("alfred:open-memories", openMemories);
+    window.addEventListener("alfred:open-suggestions", openSuggestions);
     window.addEventListener("alfred:open-settings", openSettings);
     window.addEventListener("alfred:open-schedules", openSchedules);
     window.addEventListener("alfred:rename-workflow", renameWorkflow);
@@ -441,6 +471,7 @@ export function WorkflowCanvas() {
       window.removeEventListener("alfred:open-schedule", openSchedule);
       window.removeEventListener("alfred:delete-workflow", openDelete);
       window.removeEventListener("alfred:open-memories", openMemories);
+      window.removeEventListener("alfred:open-suggestions", openSuggestions);
       window.removeEventListener("alfred:open-settings", openSettings);
       window.removeEventListener("alfred:open-schedules", openSchedules);
       window.removeEventListener("alfred:rename-workflow", renameWorkflow);
@@ -544,7 +575,13 @@ export function WorkflowCanvas() {
                   activityEnabled={canOpenActivity}
                   memoriesOpen={memoriesOpen}
                   memoriesEnabled={Boolean(activeWorkflowId)}
-                  onChange={setView}
+                  onChange={(nextView) => {
+                    if (nextView === "history") {
+                      navigateHistory({ type: "open-history" });
+                    } else {
+                      setView(nextView);
+                    }
+                  }}
                   onNewWorkflow={() => {
                     setView("canvas");
                     void createWorkflow();
@@ -625,6 +662,13 @@ export function WorkflowCanvas() {
 
         {view === "settings" ? (
           <SettingsPage activeSection={settingsSection} />
+        ) : view === "history" ? (
+          <HistoryPage
+            activeWorkflowId={activeWorkflowId}
+            initialRunId={historyRunId}
+            onSelectedRunIdChange={setHistoryRunId}
+            onClose={() => navigateHistory({ type: "close-history" })}
+          />
         ) : view === "schedules" ? (
           <SchedulesPage
             key={schedulesTick}
@@ -771,6 +815,7 @@ export function WorkflowCanvas() {
             </section>
 
             {runPanelMounted ? <RunActivityPanel /> : null}
+
           </>
         )}
       </div>
@@ -779,6 +824,13 @@ export function WorkflowCanvas() {
       <MemoriesInspector
         open={memoriesOpen}
         initialMemoryId={memoriesFocusId}
+        initialMode={memoriesMode}
+        focusRunId={suggestionsFocusRunId}
+        onOpenRunHistory={(runId) => {
+          setMemoriesOpen(false);
+          setMemoriesFocusId(null);
+          navigateHistory({ type: "open-run", runId });
+        }}
         onClose={() => {
           setMemoriesOpen(false);
           setMemoriesFocusId(null);

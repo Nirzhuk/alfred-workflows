@@ -27,6 +27,7 @@ import {
   type AgentCapabilityManifest,
 } from "../../agent-capabilities";
 import { useWorkflowStore } from "../../store";
+import { isMemoryPromptEligible } from "../../memories";
 import {
   mergeAttachments,
   pickFileAttachments,
@@ -583,8 +584,14 @@ function MemorySettings({
 }: MemorySettingsProps) {
   const selectedIds = new Set(memoryIds);
   const available = [
-    ...memories.filter((m) => m.origin !== "linkable"),
-    ...linkable.filter((m) => !selectedIds.has(m.id)),
+    ...memories.filter(
+      (memory) =>
+        memory.origin !== "linkable" && isMemoryPromptEligible(memory),
+    ),
+    ...linkable.filter(
+      (memory) =>
+        !selectedIds.has(memory.id) && isMemoryPromptEligible(memory),
+    ),
   ];
   const q = linkQuery.trim().toLowerCase();
   const filtered = available.filter((m) => {

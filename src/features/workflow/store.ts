@@ -44,6 +44,7 @@ import {
   clearLegacyMemories,
   loadLegacyMemories,
   asOwnedMemory,
+  canPinMemory,
   sortMemories,
 } from "./memories";
 import { notifyRunFinished, shouldNotifyAboutRun } from "../../native";
@@ -56,8 +57,16 @@ type AddMemoryInput = {
   runId?: string | null;
   nodeId?: string | null;
   kind?: OutputMemory["kind"];
+  scopeType?: OutputMemory["scopeType"];
+  memoryType?: OutputMemory["memoryType"];
   source?: OutputMemory["source"];
   pinned?: boolean;
+  confidence?: number;
+  salience?: number;
+  status?: OutputMemory["status"];
+  supersedesId?: string | null;
+  lastConfirmedAt?: string | null;
+  expiresAt?: string | null;
 };
 
 export type WorkflowRunState = {
@@ -311,6 +320,7 @@ type WorkflowStore = {
   ) => Promise<void>;
   renameWorkflow: (id: string, name: string) => Promise<void>;
   setWorkingDirectory: (id: string, workingDirectory: string) => Promise<void>;
+  setMemoryRetrievalEnabled: (id: string, enabled: boolean) => Promise<void>;
   reorderWorkflows: (orderedIds: string[]) => Promise<void>;
   deleteWorkflow: (id: string) => Promise<void>;
   saveActiveWorkflow: () => Promise<void>;
@@ -335,6 +345,14 @@ type WorkflowStore = {
     body?: string;
     pinned?: boolean;
     kind?: OutputMemory["kind"];
+    scopeType?: OutputMemory["scopeType"];
+    memoryType?: OutputMemory["memoryType"];
+    confidence?: number;
+    salience?: number;
+    status?: OutputMemory["status"];
+    supersedesId?: string | null;
+    lastConfirmedAt?: string | null;
+    expiresAt?: string | null;
   }) => Promise<OutputMemory | null>;
   togglePinMemory: (id: string) => Promise<void>;
   removeMemory: (id: string) => Promise<void>;
@@ -913,6 +931,31 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
     }
   },
 
+  setMemoryRetrievalEnabled: async (id, enabled) => {
+    const previous = get().workflows;
+    set({
+      error: null,
+      workflows: previous.map((workflow) =>
+        workflow.id === id
+          ? { ...workflow, memoryRetrievalEnabled: enabled }
+          : workflow,
+      ),
+    });
+    try {
+      const workflow = await api.updateWorkflow({
+        id,
+        memoryRetrievalEnabled: enabled,
+      });
+      set((state) => ({
+        workflows: state.workflows.map((item) =>
+          item.id === workflow.id ? workflow : item,
+        ),
+      }));
+    } catch (e) {
+      set({ workflows: previous, error: String(e) });
+    }
+  },
+
   reorderWorkflows: async (orderedIds) => {
     const previous = get().workflows;
     const byId = new Map(previous.map((w) => [w.id, w]));
@@ -1207,11 +1250,11 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
 
   loadMemories: async (workflowId) => {
     try {
-      let memories = await api.listMemories(workflowId);
+      let memories = await api.listMemories(workflowId, true);
       if (memories.length === 0) {
         const migrated = await migrateLegacyMemories(workflowId);
         if (migrated) {
-          memories = await api.listMemories(workflowId);
+          memories = await api.listMemories(workflowId, true);
         }
       }
       if (get().activeWorkflowId === workflowId) {
@@ -1226,14 +1269,6 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
     const workflowId = input.workflowId ?? get().activeWorkflowId;
     if (!workflowId || !input.body.trim()) return null;
 
-    // Avoid near-duplicate consecutive saves of the same body.
-    if (
-      get().activeWorkflowId === workflowId &&
-      get().memories[0]?.body === input.body
-    ) {
-      return get().memories[0] ?? null;
-    }
-
     try {
       const created = await api.createMemory({
         workflowId,
@@ -1242,8 +1277,16 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
         runId: input.runId ?? null,
         nodeId: input.nodeId ?? null,
         kind: input.kind,
+        scopeType: input.scopeType,
+        memoryType: input.memoryType,
         source: input.source ?? "run",
         pinned: input.pinned,
+        confidence: input.confidence,
+        salience: input.salience,
+        status: input.status,
+        supersedesId: input.supersedesId,
+        lastConfirmedAt: input.lastConfirmedAt,
+        expiresAt: input.expiresAt,
       });
       const memory = asOwnedMemory(created);
       if (get().activeWorkflowId === workflowId) {
@@ -1309,7 +1352,10 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
         return null;
       }
       const updated = asOwnedMemory({
-        ...(await api.updateMemory(input)),
+        ...(await api.updateMemory({
+          ...input,
+          contextWorkflowId: get().activeWorkflowId ?? undefined,
+        })),
         origin: existing?.origin ?? "owned",
         sourceWorkflowName: existing?.sourceWorkflowName,
       });
@@ -1334,6 +1380,10 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
       });
       return;
     }
+    if (!canPinMemory(current)) {
+      set({ error: "Only active memories can be pinned." });
+      return;
+    }
     await get().updateMemoryFields({ id, pinned: !current.pinned });
   },
 
@@ -1345,7 +1395,7 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
       return;
     }
     try {
-      await api.deleteMemory(id);
+      await api.deleteMemory(id, get().activeWorkflowId ?? undefined);
       set((state) => ({
         memories: state.memories.filter((m) => m.id !== id),
       }));

@@ -711,6 +711,14 @@ fn seed_local_data(db: &Db) -> String {
         source: None,
         pinned: Some(true),
         id: None,
+        scope_type: None,
+        memory_type: None,
+        salience: None,
+        confidence: None,
+        status: None,
+        supersedes_id: None,
+        last_confirmed_at: None,
+        expires_at: None,
     })
     .expect("memory");
     db.upsert_schedule(
@@ -740,8 +748,11 @@ fn assert_local_data_usable(db: &Db, workflow_id: &str, label: &str) {
         1,
         "workflows {label}"
     );
+    let context = db.memory_context(workflow_id).expect(label);
     assert_eq!(
-        db.list_memories(workflow_id).expect(label).len(),
+        db.list_memories_for_context(&context, true)
+            .expect(label)
+            .len(),
         1,
         "memories {label}"
     );
@@ -768,6 +779,14 @@ fn assert_local_data_usable(db: &Db, workflow_id: &str, label: &str) {
             source: None,
             pinned: None,
             id: None,
+            scope_type: None,
+            memory_type: None,
+            salience: None,
+            confidence: None,
+            status: None,
+            supersedes_id: None,
+            last_confirmed_at: None,
+            expires_at: None,
         })
         .unwrap_or_else(|_| panic!("memory write blocked while {label}"));
     db.delete_memory(&extra.id).expect("cleanup");
