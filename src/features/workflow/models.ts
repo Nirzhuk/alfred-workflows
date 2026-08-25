@@ -141,6 +141,48 @@ export const FALLBACK_PROVIDER_MODELS: ProviderModels[] = [
       { id: "grok-code-fast-1", label: "Grok Code Fast 1", description: "" },
     ],
   },
+  {
+    provider: "pi",
+    defaultModel: "default",
+    allowCustom: true,
+    source: "fallback",
+    available: false,
+    models: [
+      { id: "default", label: "CLI default", description: "" },
+      {
+        id: "anthropic/claude-sonnet-5",
+        label: "Claude Sonnet 5",
+        description: "",
+      },
+      { id: "openai/gpt-5.6-luna", label: "GPT-5.6 Luna", description: "" },
+      {
+        id: "google/gemini-3-pro-preview",
+        label: "Gemini 3 Pro Preview",
+        description: "",
+      },
+    ],
+  },
+  {
+    provider: "omp",
+    defaultModel: "default",
+    allowCustom: true,
+    source: "fallback",
+    available: false,
+    models: [
+      { id: "default", label: "CLI default", description: "" },
+      {
+        id: "anthropic/claude-sonnet-5",
+        label: "Claude Sonnet 5",
+        description: "",
+      },
+      { id: "openai/gpt-5.6-luna", label: "GPT-5.6 Luna", description: "" },
+      {
+        id: "google/gemini-3-pro-preview",
+        label: "Gemini 3 Pro Preview",
+        description: "",
+      },
+    ],
+  },
 ];
 
 export function modelsForProvider(

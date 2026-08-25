@@ -306,7 +306,11 @@ mod tests {
             assert_eq!(serde_json::to_string(&product).expect("encode"), wire);
         }
         // The retired classes are not part of the contract in either direction.
-        for retired in ["\"desktopAnnual\"", "\"desktopLifetime\"", "\"companySeat\""] {
+        for retired in [
+            "\"desktopAnnual\"",
+            "\"desktopLifetime\"",
+            "\"companySeat\"",
+        ] {
             assert!(serde_json::from_str::<LicenseProduct>(retired).is_err());
         }
     }

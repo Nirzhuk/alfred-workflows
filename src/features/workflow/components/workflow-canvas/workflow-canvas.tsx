@@ -12,13 +12,14 @@ import {
   type SettingsSectionId,
 } from "../../../settings/components/settings-sidebar";
 import { SchedulesPage } from "../schedules-page";
+import { SidebarFolderContext } from "../sidebar-folder-context";
 import { SidebarBottomBar } from "../sidebar-bottom-bar";
 import { SidebarNav, type SidebarView } from "../sidebar-nav";
 import { AgentUsageBar } from "../agent-usage-bar";
 import { WorkflowContextMenu } from "../workflow-context-menu";
 import { WorkflowFolderContextMenu } from "../workflow-folder-context-menu";
 import { WorkflowFolderModal } from "../workflow-folder-modal";
-import { WorkflowList } from "../workflow-list";
+import { WorkflowList, type ScrolledFolder } from "../workflow-list";
 import { FlowEditor } from "../flow-editor";
 import { MemoriesInspector } from "../memories-inspector";
 import { OutputModal } from "../output-modal";
@@ -224,6 +225,9 @@ export function WorkflowCanvas() {
   const [settingsSection, setSettingsSection] =
     useState<SettingsSectionId>("general");
   const [schedulesTick, setSchedulesTick] = useState(0);
+  const [scrolledFolder, setScrolledFolder] = useState<ScrolledFolder | null>(
+    null,
+  );
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     try {
       return localStorage.getItem("alfred:sidebar-collapsed") === "1";
@@ -566,7 +570,10 @@ export function WorkflowCanvas() {
                 />
 
                 <div className="sidebar-header">
-                  <h2>Workflows</h2>
+                  <div className="sidebar-header-title">
+                    <h2>Workflows</h2>
+                    <SidebarFolderContext folder={scrolledFolder} />
+                  </div>
                   <div className="sidebar-header-actions">
                     <button
                       type="button"
@@ -606,6 +613,7 @@ export function WorkflowCanvas() {
                         beforeWorkflowId,
                       )
                     }
+                    onScrolledFolderChange={setScrolledFolder}
                   />
                 </div>
               </>

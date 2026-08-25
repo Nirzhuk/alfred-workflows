@@ -8,7 +8,9 @@ pub mod gemini;
 pub mod github_copilot;
 pub mod grok;
 pub mod models;
+pub mod omp;
 pub mod opencode;
+pub mod pi;
 pub(crate) mod process;
 pub mod usage;
 
@@ -32,6 +34,8 @@ pub enum AgentProvider {
     GithubCopilot,
     Gemini,
     Grok,
+    Pi,
+    Omp,
 }
 
 impl AgentProvider {
@@ -44,6 +48,8 @@ impl AgentProvider {
             Self::GithubCopilot => "github_copilot",
             Self::Gemini => "gemini",
             Self::Grok => "grok",
+            Self::Pi => "pi",
+            Self::Omp => "omp",
         }
     }
 
@@ -56,6 +62,8 @@ impl AgentProvider {
             Self::GithubCopilot => "GitHub Copilot",
             Self::Gemini => "Gemini",
             Self::Grok => "Grok",
+            Self::Pi => "Pi",
+            Self::Omp => "OMP",
         }
     }
 
@@ -68,6 +76,8 @@ impl AgentProvider {
             "github_copilot" => Some(Self::GithubCopilot),
             "gemini" => Some(Self::Gemini),
             "grok" => Some(Self::Grok),
+            "pi" => Some(Self::Pi),
+            "omp" => Some(Self::Omp),
             _ => None,
         }
     }
@@ -180,6 +190,8 @@ pub fn adapter_for(provider: AgentProvider) -> Box<dyn AgentAdapter> {
         AgentProvider::GithubCopilot => Box::new(github_copilot::GithubCopilotAdapter),
         AgentProvider::Gemini => Box::new(gemini::GeminiAdapter),
         AgentProvider::Grok => Box::new(grok::GrokAdapter),
+        AgentProvider::Pi => Box::new(pi::PiAdapter),
+        AgentProvider::Omp => Box::new(omp::OmpAdapter),
     }
 }
 
@@ -192,6 +204,8 @@ pub fn list_providers() -> Vec<serde_json::Value> {
         AgentProvider::GithubCopilot,
         AgentProvider::Gemini,
         AgentProvider::Grok,
+        AgentProvider::Pi,
+        AgentProvider::Omp,
     ]
     .into_iter()
     .map(|p| {

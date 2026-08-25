@@ -76,6 +76,8 @@ export const ADD_STEP_GROUPS: AddStepGroup[] = [
       },
       { kind: "agent", label: "Gemini", provider: "gemini" },
       { kind: "agent", label: "Grok", provider: "grok" },
+      { kind: "agent", label: "Pi", provider: "pi" },
+      { kind: "agent", label: "OMP", provider: "omp" },
       {
         kind: "step",
         label: "Custom",

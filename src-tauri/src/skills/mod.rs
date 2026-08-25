@@ -129,6 +129,8 @@ fn project_skill_dirs(root: &Path) -> Vec<SkillDirectory> {
         ),
         skill_dir(root.join(".gemini/skills"), Some(AgentProvider::Gemini)),
         skill_dir(root.join(".grok/skills"), Some(AgentProvider::Grok)),
+        skill_dir(root.join(".pi/skills"), Some(AgentProvider::Pi)),
+        skill_dir(root.join(".omp/skills"), Some(AgentProvider::Omp)),
         skill_dir(root.join(".agents/skills"), None),
         skill_dir(root.join(".opencode/skills"), Some(AgentProvider::Opencode)),
     ]
@@ -144,6 +146,8 @@ fn user_skill_dirs(home: &Path) -> Vec<SkillDirectory> {
         ),
         skill_dir(home.join(".gemini/skills"), Some(AgentProvider::Gemini)),
         skill_dir(home.join(".grok/skills"), Some(AgentProvider::Grok)),
+        skill_dir(home.join(".pi/agent/skills"), Some(AgentProvider::Pi)),
+        skill_dir(home.join(".omp/agent/skills"), Some(AgentProvider::Omp)),
         skill_dir(
             home.join(".cursor/skills-cursor"),
             Some(AgentProvider::Cursor),
@@ -207,6 +211,8 @@ fn collect_skills_from_dir(
                 AgentProvider::GithubCopilot.as_str().to_string(),
                 AgentProvider::Gemini.as_str().to_string(),
                 AgentProvider::Grok.as_str().to_string(),
+                AgentProvider::Pi.as_str().to_string(),
+                AgentProvider::Omp.as_str().to_string(),
             ],
         });
     }
@@ -339,7 +345,9 @@ mod tests {
                 "opencode",
                 "github_copilot",
                 "gemini",
-                "grok"
+                "grok",
+                "pi",
+                "omp"
             ]
         );
     }
@@ -366,6 +374,8 @@ mod tests {
                 (Path::new("/project/.github/skills"), Some("github_copilot")),
                 (Path::new("/project/.gemini/skills"), Some("gemini")),
                 (Path::new("/project/.grok/skills"), Some("grok")),
+                (Path::new("/project/.pi/skills"), Some("pi")),
+                (Path::new("/project/.omp/skills"), Some("omp")),
                 (Path::new("/project/.agents/skills"), None),
                 (Path::new("/project/.opencode/skills"), Some("opencode")),
             ]

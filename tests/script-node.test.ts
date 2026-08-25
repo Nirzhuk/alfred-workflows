@@ -84,8 +84,10 @@ describe("add step palette", () => {
       "github_copilot",
       "gemini",
       "grok",
+      "pi",
+      "omp",
     ]);
-    for (const provider of ["github_copilot", "gemini", "grok"]) {
+    for (const provider of ["github_copilot", "gemini", "grok", "pi", "omp"]) {
       expect(
         FALLBACK_PROVIDER_MODELS.find((catalog) => catalog.provider === provider)
           ?.models.length,

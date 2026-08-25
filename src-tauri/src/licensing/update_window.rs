@@ -85,7 +85,10 @@ mod tests {
         assert!(is_in_update_window(Some("   "), Some(DEADLINE)));
         // A malformed baked value fails open for the same reason.
         assert!(is_in_update_window(Some("15/01/2027"), Some(DEADLINE)));
-        assert!(is_in_update_window(Some("2027-01-15T00:00:00Z"), Some(DEADLINE)));
+        assert!(is_in_update_window(
+            Some("2027-01-15T00:00:00Z"),
+            Some(DEADLINE)
+        ));
     }
 
     #[test]

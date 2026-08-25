@@ -19,11 +19,11 @@ You may:
 
 You must not:
 
-- imply that a fork, modified binary, service, or paid offering is maintained,
-  sponsored, signed, or endorsed by Alfred's maintainers;
+- imply that a fork, modified binary, or service is maintained, sponsored,
+  signed, or endorsed by Alfred's maintainers;
 - reuse official signing identities or updater channels; or
-- present a modified public build in a way likely to be confused with the
-  official paid download.
+- present a modified public build in a way likely to be confused with an
+  official release published on this repository.
 
 Publicly distributed modified builds should use a distinct product name,
 bundle identifier, icon, update endpoint, and support channel. They may state

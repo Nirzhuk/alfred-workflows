@@ -250,9 +250,11 @@ mod tests {
         assert_eq!(config.product_for_benefit(TEAMS), None);
 
         // A blank value in `.env` is the same as absent.
-        assert!(bound([Some("sandbox"), Some(ORG), Some(INDIVIDUAL), Some("  ")])
-            .expect("blank seat binding")
-            .is_some());
+        assert!(
+            bound([Some("sandbox"), Some(ORG), Some(INDIVIDUAL), Some("  ")])
+                .expect("blank seat binding")
+                .is_some()
+        );
 
         // The other three stay required.
         assert_eq!(

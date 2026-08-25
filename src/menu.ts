@@ -33,7 +33,7 @@ export async function installAppMenu(
             version: "0.5.0",
             copyright: "Local multi-agent workflow automations",
             comments:
-              "Build automations across Claude Code, Cursor, Codex, OpenCode, GitHub Copilot, Gemini, and Grok.",
+              "Build automations across Claude Code, Cursor, Codex, OpenCode, GitHub Copilot, Gemini, Grok, Pi, and OMP.",
           },
         },
       }),
@@ -155,7 +155,7 @@ export async function installAppMenu(
         text: "What is Alfred?",
         action: () => {
           window.alert(
-            "Alfred builds local automations across Claude Code, Cursor, Codex, OpenCode, GitHub Copilot, Gemini, and Grok — prompts, skills, models, and runnable workflows on your machine.",
+            "Alfred builds local automations across Claude Code, Cursor, Codex, OpenCode, GitHub Copilot, Gemini, Grok, Pi, and OMP — prompts, skills, models, and runnable workflows on your machine.",
           );
         },
       }),

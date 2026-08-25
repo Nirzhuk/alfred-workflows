@@ -229,7 +229,10 @@ async fn connect_private_with_service(
             organization_name.clone().unwrap_or_default(),
         ),
         ("viewer_id".into(), viewer_id.clone()),
-        ("viewer_name".into(), viewer_name.clone().unwrap_or_default()),
+        (
+            "viewer_name".into(),
+            viewer_name.clone().unwrap_or_default(),
+        ),
         ("auth_mode".into(), "personal_token".into()),
         ("webhook_delivery".into(), "relay_required".into()),
     ]);
@@ -282,9 +285,19 @@ fn action_descriptors() -> Vec<ActionDescriptor> {
             label: "Create Linear issue".into(),
             description: "Create an issue in a team of the connected Linear workspace.".into(),
             fields: vec![
-                resource_field("team", "Team", "A team in the connected Linear workspace.", "teams"),
+                resource_field(
+                    "team",
+                    "Team",
+                    "A team in the connected Linear workspace.",
+                    "teams",
+                ),
                 text_field("title", "Title", "Issue title.", true),
-                textarea_field("description", "Description", "Issue description in Linear Markdown.", false),
+                textarea_field(
+                    "description",
+                    "Description",
+                    "Issue description in Linear Markdown.",
+                    false,
+                ),
                 enum_field(
                     "priority",
                     "Priority",
@@ -321,7 +334,12 @@ fn action_descriptors() -> Vec<ActionDescriptor> {
             label: "Comment on Linear issue".into(),
             description: "Add a comment to an issue in the connected Linear workspace.".into(),
             fields: vec![
-                resource_field("issue", "Issue", "An issue in the connected workspace.", "issues"),
+                resource_field(
+                    "issue",
+                    "Issue",
+                    "An issue in the connected workspace.",
+                    "issues",
+                ),
                 textarea_field("body", "Comment", "Comment in Linear Markdown.", true),
             ],
             required_scopes: vec![SCOPE_ISSUES_READ.into(), SCOPE_COMMENTS_WRITE.into()],
@@ -334,7 +352,12 @@ fn action_descriptors() -> Vec<ActionDescriptor> {
             label: "Update Linear issue status".into(),
             description: "Move an issue to another workflow state of its team.".into(),
             fields: vec![
-                resource_field("issue", "Issue", "An issue in the connected workspace.", "issues"),
+                resource_field(
+                    "issue",
+                    "Issue",
+                    "An issue in the connected workspace.",
+                    "issues",
+                ),
                 resource_field(
                     "status",
                     "Status",
@@ -399,7 +422,12 @@ fn text_field(key: &str, label: &str, description: &str, required: bool) -> Acti
     }
 }
 
-fn textarea_field(key: &str, label: &str, description: &str, required: bool) -> ActionFieldDescriptor {
+fn textarea_field(
+    key: &str,
+    label: &str,
+    description: &str,
+    required: bool,
+) -> ActionFieldDescriptor {
     ActionFieldDescriptor {
         key: key.into(),
         label: label.into(),
@@ -522,7 +550,8 @@ impl ActionExecutor for LinearService {
                 }
                 "linear.comment_on_issue" => {
                     let issue_id = required_linear_id(&request.input, "issue")?;
-                    let body = required_bounded_text(&request.input, "body", LINEAR_MAX_TEXT_CHARS)?;
+                    let body =
+                        required_bounded_text(&request.input, "body", LINEAR_MAX_TEXT_CHARS)?;
                     let variables = serde_json::json!({
                         "input": {
                             "issueId": issue_id.clone(),
@@ -687,18 +716,22 @@ impl ActionExecutor for LinearService {
                 None => None,
             };
             let page = match source {
-                "teams" => self
-                    .list_teams(token.as_str(), query, cursor.as_deref())
-                    .await?,
-                "assignees" => self
-                    .list_users(token.as_str(), query, cursor.as_deref())
-                    .await?,
-                "states" => self
-                    .list_states(token.as_str(), query, cursor.as_deref())
-                    .await?,
-                "issues" => self
-                    .list_issues(token.as_str(), query, cursor.as_deref())
-                    .await?,
+                "teams" => {
+                    self.list_teams(token.as_str(), query, cursor.as_deref())
+                        .await?
+                }
+                "assignees" => {
+                    self.list_users(token.as_str(), query, cursor.as_deref())
+                        .await?
+                }
+                "states" => {
+                    self.list_states(token.as_str(), query, cursor.as_deref())
+                        .await?
+                }
+                "issues" => {
+                    self.list_issues(token.as_str(), query, cursor.as_deref())
+                        .await?
+                }
                 _ => return Err(ActionError::new(ActionErrorCode::InvalidInput)),
             };
             let next_page_token = page
@@ -778,7 +811,8 @@ const ISSUE_GET_QUERY: &str = "query LinearIssue($id: String!) { issue(id: $id) 
 
 const TEAM_ISSUES_QUERY: &str = "query LinearTeamIssues($first: Int!, $filter: IssueFilter) { issues(first: $first, orderBy: updatedAt, filter: $filter) { nodes { id identifier title description url createdAt updatedAt state { name } team { id } project { id name } assignee { name } } pageInfo { hasNextPage } } }";
 
-const TEAM_LABELS_QUERY: &str = "query LinearTeamLabels($id: String!) { team(id: $id) { labels { nodes { id name } } } }";
+const TEAM_LABELS_QUERY: &str =
+    "query LinearTeamLabels($id: String!) { team(id: $id) { labels { nodes { id name } } } }";
 
 impl LinearService {
     async fn list_teams(
@@ -802,7 +836,11 @@ impl LinearService {
             .into_iter()
             .filter_map(|node| {
                 Some(AppEventResourceItem {
-                    id: node.get("id")?.as_str().filter(|id| valid_linear_id(id))?.to_owned(),
+                    id: node
+                        .get("id")?
+                        .as_str()
+                        .filter(|id| valid_linear_id(id))?
+                        .to_owned(),
                     label: node
                         .get("name")
                         .and_then(Value::as_str)
@@ -838,7 +876,11 @@ impl LinearService {
             .into_iter()
             .filter_map(|node| {
                 Some(AppEventResourceItem {
-                    id: node.get("id")?.as_str().filter(|id| valid_linear_id(id))?.to_owned(),
+                    id: node
+                        .get("id")?
+                        .as_str()
+                        .filter(|id| valid_linear_id(id))?
+                        .to_owned(),
                     label: node
                         .get("name")
                         .and_then(Value::as_str)
@@ -859,8 +901,7 @@ impl LinearService {
         query: &str,
         cursor: Option<&str>,
     ) -> Result<LinearResourcePage, ActionError> {
-        let variables =
-            serde_json::json!({ "first": LINEAR_PAGE_SIZE, "after": cursor });
+        let variables = serde_json::json!({ "first": LINEAR_PAGE_SIZE, "after": cursor });
         let response = self
             .graphql(token, STATES_QUERY, Some(&variables), false)
             .await?;
@@ -1009,7 +1050,10 @@ impl LinearService {
     }
 }
 
-fn paginated_nodes<'a>(response: &'a Value, collection: &str) -> Result<Vec<&'a Value>, ActionError> {
+fn paginated_nodes<'a>(
+    response: &'a Value,
+    collection: &str,
+) -> Result<Vec<&'a Value>, ActionError> {
     response
         .get("data")
         .and_then(|data| data.get(collection))
@@ -1020,10 +1064,7 @@ fn paginated_nodes<'a>(response: &'a Value, collection: &str) -> Result<Vec<&'a 
 }
 
 fn paginated_end_cursor(response: &Value, collection: &str) -> Option<String> {
-    let page_info = response
-        .get("data")?
-        .get(collection)?
-        .get("pageInfo")?;
+    let page_info = response.get("data")?.get(collection)?.get("pageInfo")?;
     let has_more = page_info.get("hasNextPage")?.as_bool()?;
     if !has_more {
         return None;
@@ -1034,12 +1075,16 @@ fn paginated_end_cursor(response: &Value, collection: &str) -> Option<String> {
         .filter(|cursor| {
             !cursor.is_empty()
                 && cursor.len() <= 512
-                && !cursor.bytes().any(|byte| byte.is_ascii_control() || byte == b'\0')
+                && !cursor
+                    .bytes()
+                    .any(|byte| byte.is_ascii_control() || byte == b'\0')
         })
         .map(str::to_owned)
 }
 
-fn issue_summary(issue: &serde_json::Map<String, Value>) -> Result<(String, String, String, String), ActionError> {
+fn issue_summary(
+    issue: &serde_json::Map<String, Value>,
+) -> Result<(String, String, String, String), ActionError> {
     let id = issue
         .get("id")
         .and_then(Value::as_str)
@@ -1082,7 +1127,9 @@ struct LinearIssueContext {
     updated_at: String,
 }
 
-fn linear_issue_context(issue: &serde_json::Map<String, Value>) -> Result<LinearIssueContext, ActionError> {
+fn linear_issue_context(
+    issue: &serde_json::Map<String, Value>,
+) -> Result<LinearIssueContext, ActionError> {
     let (id, identifier, url, state) = issue_summary(issue)?;
     let title = issue
         .get("title")
@@ -1353,7 +1400,8 @@ impl AppEventAdapter for LinearService {
                 {
                     continue;
                 }
-                if let Some(event) = normalize_linear_issue(config, team_id.as_str(), &issue, action)?
+                if let Some(event) =
+                    normalize_linear_issue(config, team_id.as_str(), &issue, action)?
                 {
                     normalized.push(event);
                 }
@@ -1429,8 +1477,7 @@ fn valid_event_cursor(cursor: &LinearEventCursor) -> bool {
     DateTime::parse_from_rfc3339(&cursor.watermark).is_ok()
         && cursor.recent.len() <= LINEAR_MAX_ISSUES_RECENT
         && cursor.recent.iter().all(|entry| {
-            valid_linear_id(&entry.id)
-                && DateTime::parse_from_rfc3339(&entry.updated_at).is_ok()
+            valid_linear_id(&entry.id) && DateTime::parse_from_rfc3339(&entry.updated_at).is_ok()
         })
 }
 
@@ -1441,10 +1488,7 @@ fn valid_poll_issue(issue: &LinearPollIssue) -> bool {
         && issue.title.chars().count() <= 512
         && DateTime::parse_from_rfc3339(&issue.created_at).is_ok()
         && DateTime::parse_from_rfc3339(&issue.updated_at).is_ok()
-        && issue
-            .url
-            .as_deref()
-            .is_none_or(valid_linear_url)
+        && issue.url.as_deref().is_none_or(valid_linear_url)
         && issue
             .team
             .as_ref()
@@ -1479,10 +1523,7 @@ fn normalize_linear_issue(
         .filter(|status| !status.is_empty());
     let mut attributes = BTreeMap::from([
         ("teamId".into(), Value::String(team_id.to_owned())),
-        (
-            "identifier".into(),
-            Value::String(issue.identifier.clone()),
-        ),
+        ("identifier".into(), Value::String(issue.identifier.clone())),
         ("action".into(), Value::String(action.into())),
     ]);
     if let Some(status) = status {
@@ -1507,10 +1548,7 @@ fn normalize_linear_issue(
         occurred_at: issue.updated_at.clone(),
         subject: Some(bounded(&issue.title, 512)),
         actor,
-        resource_url: issue
-            .url
-            .clone()
-            .filter(|url| valid_linear_url(url)),
+        resource_url: issue.url.clone().filter(|url| valid_linear_url(url)),
         preview: None,
         attributes,
     }))
@@ -1537,7 +1575,10 @@ fn required_linear_id(input: &BTreeMap<String, Value>, key: &str) -> Result<Stri
         .ok_or_else(|| ActionError::new(ActionErrorCode::InvalidInput))
 }
 
-fn optional_linear_id(input: &BTreeMap<String, Value>, key: &str) -> Result<Option<String>, ActionError> {
+fn optional_linear_id(
+    input: &BTreeMap<String, Value>,
+    key: &str,
+) -> Result<Option<String>, ActionError> {
     let Some(value) = input.get(key) else {
         return Ok(None);
     };
@@ -1908,14 +1949,15 @@ mod tests {
             .iter()
             .flat_map(|descriptor| descriptor.fields.iter())
             .all(|field| !field.secret));
-        assert!(descriptors.iter().all(|descriptor| descriptor
-            .action_id
-            .starts_with("linear.")));
-        assert!(descriptors.iter().any(|descriptor| descriptor.action_id
-            == "linear.create_issue"
-            && descriptor.fields.iter().any(|field| {
-                field.key == "team" && field.option_source.as_deref() == Some("teams")
-            })));
+        assert!(descriptors
+            .iter()
+            .all(|descriptor| descriptor.action_id.starts_with("linear.")));
+        assert!(descriptors
+            .iter()
+            .any(|descriptor| descriptor.action_id == "linear.create_issue"
+                && descriptor.fields.iter().any(|field| {
+                    field.key == "team" && field.option_source.as_deref() == Some("teams")
+                })));
         let events = event_descriptors();
         assert_eq!(events.len(), 1);
         assert_eq!(
@@ -1968,8 +2010,14 @@ mod tests {
     #[test]
     fn action_inputs_validate_ids_priority_and_bounded_text() {
         let mut input = BTreeMap::from([
-            ("team".into(), Value::String("9cfb482a-81e3-4154-b5b9-2c805e70a02d".into())),
-            ("issue".into(), Value::String("9cfb482a-81e3-4154-b5b9-2c805e70a02d".into())),
+            (
+                "team".into(),
+                Value::String("9cfb482a-81e3-4154-b5b9-2c805e70a02d".into()),
+            ),
+            (
+                "issue".into(),
+                Value::String("9cfb482a-81e3-4154-b5b9-2c805e70a02d".into()),
+            ),
             ("priority".into(), Value::String("high".into())),
             ("title".into(), Value::String("Release blocker".into())),
         ]);
@@ -2100,10 +2148,7 @@ mod tests {
             let request = server.recv().expect("mutation request");
             let mut body = String::new();
             let mut cloned = request;
-            cloned
-                .as_reader()
-                .read_to_string(&mut body)
-                .expect("body");
+            cloned.as_reader().read_to_string(&mut body).expect("body");
             assert!(body.contains("LinearCommentCreate"));
             cloned.respond(TinyResponse::empty(502)).expect("respond");
         });
@@ -2148,12 +2193,22 @@ mod tests {
         });
         let service = test_service(format!("http://127.0.0.1:{port}"));
         let rate = service
-            .graphql("lin_secret_fixture", TEAMS_QUERY, Some(&serde_json::json!({"first": 50, "after": null, "filter": null})), false)
+            .graphql(
+                "lin_secret_fixture",
+                TEAMS_QUERY,
+                Some(&serde_json::json!({"first": 50, "after": null, "filter": null})),
+                false,
+            )
             .await
             .expect_err("rate limited");
         assert_eq!(rate.code, ActionErrorCode::RateLimited);
         let permission = service
-            .graphql("lin_secret_fixture", TEAMS_QUERY, Some(&serde_json::json!({"first": 50, "after": null, "filter": null})), false)
+            .graphql(
+                "lin_secret_fixture",
+                TEAMS_QUERY,
+                Some(&serde_json::json!({"first": 50, "after": null, "filter": null})),
+                false,
+            )
             .await
             .expect_err("scope missing");
         responder.join().expect("responder");
@@ -2227,7 +2282,10 @@ mod tests {
             .expect("next poll");
         responder.join().expect("responder");
         assert_eq!(next.events.len(), 1);
-        assert_eq!(next.events[0].external_event_id, "9cfb482a-81e3-4154-b5b9-2c805e70a02f@2099-01-01T10:00:00Z");
+        assert_eq!(
+            next.events[0].external_event_id,
+            "9cfb482a-81e3-4154-b5b9-2c805e70a02f@2099-01-01T10:00:00Z"
+        );
         assert_eq!(
             next.events[0]
                 .attributes
@@ -2296,10 +2354,7 @@ mod tests {
                 .and_then(Value::as_str),
             Some("updated")
         );
-        assert_eq!(
-            batch.events[0].actor.as_deref(),
-            Some("Grace")
-        );
+        assert_eq!(batch.events[0].actor.as_deref(), Some("Grace"));
         assert_eq!(
             batch.events[0]
                 .attributes
@@ -2354,15 +2409,19 @@ mod tests {
             let request = server.recv().expect("request");
             request
                 .respond(
-                    TinyResponse::empty(429).with_header(
-                        Header::from_bytes("Retry-After", "30").expect("retry after"),
-                    ),
+                    TinyResponse::empty(429)
+                        .with_header(Header::from_bytes("Retry-After", "30").expect("retry after")),
                 )
                 .expect("respond");
         });
         let service = test_service(format!("http://127.0.0.1:{port}"));
         let error = service
-            .graphql("lin_secret_fixture", TEAMS_QUERY, Some(&serde_json::json!({"first": 50, "after": null, "filter": null})), false)
+            .graphql(
+                "lin_secret_fixture",
+                TEAMS_QUERY,
+                Some(&serde_json::json!({"first": 50, "after": null, "filter": null})),
+                false,
+            )
             .await
             .expect_err("rate limited");
         responder.join().expect("responder");

@@ -354,3 +354,85 @@ Plan 028 writes through all three.
 - Rejected for this track: one giant unbounded `MEMORY.md`, injecting all past
   runs, remote-only vector search, silent cross-provider review, hidden token
   spend, direct model writes, and auto-approval.
+---
+
+## Track I — Dual CLI and Alfred-native agent harnesses
+
+This track keeps every existing provider CLI as a first-class harness while
+adding an Alfred-owned native harness. The two dimensions remain separate:
+provider identity (Codex, Claude, Cursor, OpenCode, GitHub Copilot, Gemini,
+Grok) and harness (`cli` or `alfred`).
+
+### Product and architecture decisions
+
+- `cli` is supported, not legacy. Existing users keep the provider's own
+  harness, account, plugins, configuration, and behavior.
+- `alfred` is additive. Existing graphs without a `harness` field default to
+  `cli`; migration never silently switches billing, credentials, or runtime.
+- Native credentials use a dedicated agent-account store. Alfred never scrapes
+  provider CLI keychains, auth files, local databases, or private bundles.
+- Native provider capabilities are declared per provider, auth method,
+  platform, and runtime version. Unsupported capabilities are visible rather
+  than emulated silently.
+- ChatGPT/Codex is the first native target because the official Codex
+  app-server exposes ChatGPT OAuth, account/rate-limit methods, threads, turns,
+  events, approvals, and interruption. The packaged-runtime/license gate must
+  pass before release.
+- Claude, Cursor, OpenCode, GitHub Copilot, Gemini, and Grok each require an
+  official API/SDK/runtime decision. Consumer subscription OAuth is never
+  inferred from CLI login or API-key access.
+- Native failure never falls through to CLI automatically. The user chooses
+  the account and harness explicitly.
+
+| Plan | Title | Priority | Effort | Depends on | Status |
+|------|-------|----------|--------|------------|--------|
+| 030 | Make CLI and Alfred harnesses first-class | P0 | L | — | TODO |
+| 031 | Add secure native-agent accounts and credential lifecycle | P0 | L | 030 | TODO |
+| 032 | Define the native harness compatibility contract | P0 | L | 030, 031 | TODO |
+| 033 | Run Codex through Alfred with ChatGPT OAuth | P0 | XL | 030–032 | TODO |
+| 034 | Add a native Claude harness without weakening CLI support | P1 | XL | 030–032 | TODO |
+| 035 | Add a native Cursor harness | P1 | XL | 030–032 | TODO |
+| 036 | Add an Alfred-managed OpenCode runtime | P1 | XL | 030–032 | TODO |
+| 037 | Add a native GitHub Copilot harness | P1 | XL | 030–032 | TODO |
+| 038 | Add a native Gemini harness | P1 | L–XL | 030–032 | TODO |
+| 039 | Add a native Grok harness | P2 | L–XL | 030–032 | TODO |
+| 040 | Release and roll out the dual-harness system | P0 | XL | 030–039 | TODO |
+
+### Required execution order
+
+1. **030 — stable workflow contract:** add `harness: cli|alfred`, preserve old
+   graphs, and route native-unavailable states explicitly.
+2. **031 — credential boundary:** add agent-specific account metadata,
+   secure storage, authorization attempts, refresh, revoke, and redaction.
+3. **032 — runtime contract:** freeze normalized events, tools, permissions,
+   sessions, capability declarations, and conformance fixtures.
+4. **033 — Codex first:** use the documented app-server/auth surface and
+   package or embed the runtime so users need no Codex CLI installation.
+5. **034–039 — provider gates:** run each provider's policy/runtime decision
+   independently. A blocked provider does not block CLI support or other native
+   providers.
+6. **040 — rollout:** enable native modes per provider/platform only after
+   packaged smoke, account recovery, redaction, and no-fallback gates pass.
+
+### Parallel execution boundaries
+
+- Plans 034–039 may run in parallel after Plans 030–032 freeze their contracts.
+- Each provider owns its runtime/auth/usage adapter and provider fixtures.
+- No provider plan may edit the core runner's semantics or account schema
+  independently; use the registered runtime and account seams.
+- Plan 033's packaged-runtime decision is a release dependency for Codex only,
+  not a reason to install Codex CLI or block the other providers.
+- Plan 040 is serialized after the provider slices and owns final integration,
+  packaging, capability manifest, and release gates.
+
+### Explicitly deferred or rejected
+
+- Rejected: renaming current CLIs to `legacy`, removing them, or hiding them.
+- Rejected: one universal OAuth token/account across providers.
+- Rejected: importing or scraping CLI credential files/keychains.
+- Rejected: silently retrying a failed Alfred-native turn through a CLI.
+- Deferred: cloud execution of Alfred workflows and remote token custody.
+- Deferred: consumer subscription OAuth for any provider without an official
+  external-client contract and policy approval.
+- Deferred: full native parity for provider-specific plugins, subagents, MCP,
+  cloud agents, and proprietary UI features until each provider passes Plan 032.

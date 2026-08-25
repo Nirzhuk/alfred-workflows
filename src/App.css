@@ -106,6 +106,8 @@
   --agent-github-copilot-color: #8256d0;
   --agent-gemini-color: #4f7cff;
   --agent-grok-color: #111111;
+  --agent-pi-color: #111111;
+  --agent-omp-color: #f97316;
   --bottom-dock-height: 2.7rem;
   /* Typography: Infer is preferred; bundled Geist keeps releases offline-safe. */
   --font-sans: "Infer", "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -301,6 +303,7 @@
   --agent-github-copilot-color: #b89aff;
   --agent-gemini-color: #8ca8ff;
   --agent-grok-color: #f2f5f3;
+  --agent-pi-color: #f2f5f3;
 }
 
 html[data-platform="macos"] {
@@ -1726,6 +1729,14 @@ button:disabled svg {
 
 .agent-usage-item-grok .agent-usage-fill {
   background: var(--agent-grok-color);
+}
+
+.agent-usage-item-pi .agent-usage-fill {
+  background: var(--agent-pi-color);
+}
+
+.agent-usage-item-omp .agent-usage-fill {
+  background: var(--agent-omp-color);
 }
 
 .agent-usage-percent {
@@ -3945,6 +3956,88 @@ html[data-platform="macos"] .settings-sidebar-item.is-active:hover:not(:disabled
   color: var(--sidebar-section-color);
 }
 
+/* The section title plus the folder you are currently scrolling through. The
+   folder name lives up here in the chrome instead of pinning the folder row
+   inside the list, which would have to paint a band over the rows sliding
+   beneath it. */
+.sidebar-header-title {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* Both labels share one grid cell, so a swap overlaps in place instead of
+   widening the header while the outgoing name is still on screen. */
+.sidebar-header-context {
+  min-width: 0;
+  display: inline-grid;
+  align-items: center;
+}
+
+.sidebar-header-context-label {
+  grid-area: 1 / 1;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--sidebar-section-color);
+  font-size: var(--sidebar-item-font-size);
+  font-weight: var(--sidebar-item-font-weight);
+  /* The label mounts only while it is the current folder, so the entrance runs
+     on mount and never re-runs. Both directions travel the same path, so a
+     folder that rose into place leaves back down the way it came. */
+  animation: sidebar-context-in var(--duration-standard) var(--ease-emphasized)
+    both;
+}
+
+.sidebar-header-context-label.is-leaving {
+  animation: sidebar-context-out var(--duration-fast) var(--ease-emphasized)
+    both;
+}
+
+.sidebar-header-context-label::before {
+  content: "/";
+  color: var(--ink-mid);
+}
+
+.sidebar-header-context-count {
+  flex-shrink: 0;
+  color: var(--ink-ghost);
+  font-size: var(--text-xs);
+}
+
+@keyframes sidebar-context-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--space-1));
+  }
+}
+
+@keyframes sidebar-context-out {
+  to {
+    opacity: 0;
+    transform: translateY(var(--space-1));
+  }
+}
+
+/* Reduced motion keeps the crossfade — it is what makes the swap legible — and
+   drops the travel. */
+@keyframes sidebar-context-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes sidebar-context-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
 .sidebar-header-icon {
   width: var(--control-height-compact);
   height: var(--control-height-compact);
@@ -4213,7 +4306,7 @@ body.is-workflow-reordering {
 }
 
 .workflow-drag-ghost .workflow-card-button {
-  background: var(--surface-raised);
+  background: var(--surface);
   border-color: var(--accent-border-loud);
   box-shadow: inset 0 0 0 1px var(--accent-glow);
 }
@@ -4228,7 +4321,7 @@ body.is-workflow-reordering {
   padding: var(--space-2);
   border-radius: var(--radius-lg);
   border: 1px solid var(--line);
-  background: var(--surface-card);
+  background: var(--surface-raised);
   min-width: 0;
   cursor: grab;
   touch-action: none;
@@ -4259,7 +4352,21 @@ body.is-workflow-reordering {
 
 .workflow-card.is-active .workflow-card-button {
   border-color: var(--accent-border-loud);
-  background: var(--surface-raised);
+  background: var(--surface);
+}
+
+/* On macOS the sidebar is a translucent material, so an opaque card fill paints
+   a tile that punches the vibrancy out of its own rectangle. Rows switch to the
+   quiet ink scale the nav items already use there — same kind of surface,
+   stronger, so a workflow still reads as a card and not as the panel. Scoped to
+   the sidebar: the drag ghost floats over the canvas and stays opaque. */
+html[data-platform="macos"] .sidebar .workflow-card-button {
+  background: var(--surface-selected);
+}
+
+html[data-platform="macos"] .sidebar .workflow-card-button:hover,
+html[data-platform="macos"] .sidebar .workflow-card.is-active .workflow-card-button {
+  background: var(--surface-pressed);
 }
 
 .workflow-card.is-dirty .workflow-card-button,
@@ -4533,6 +4640,16 @@ body.is-workflow-reordering {
 
   .workflow-card-schedule-text.is-outgoing {
     animation-name: workflow-schedule-label-fade-out;
+  }
+
+  .sidebar-header-context-label {
+    animation-name: sidebar-context-fade-in;
+    animation-duration: var(--duration-fast);
+  }
+
+  .sidebar-header-context-label.is-leaving {
+    animation-name: sidebar-context-fade-out;
+    animation-duration: var(--duration-fast);
   }
 
   .workflow-folder-content,

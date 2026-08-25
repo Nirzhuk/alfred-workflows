@@ -625,9 +625,7 @@ fn confirmed_state(result: &PolarLicenseResult, now: DateTime<Utc>) -> LicenseSt
     match result.status {
         PolarLicenseState::Revoked => LicenseStatus::Revoked,
         PolarLicenseState::Disabled => LicenseStatus::Disabled,
-        PolarLicenseState::Granted
-            if result.expires_at.is_some_and(|expires| now >= expires) =>
-        {
+        PolarLicenseState::Granted if result.expires_at.is_some_and(|expires| now >= expires) => {
             LicenseStatus::Expired
         }
         PolarLicenseState::Granted => LicenseStatus::Active,

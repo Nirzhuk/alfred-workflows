@@ -1,8 +1,9 @@
 # Build Alfred from source
 
-You can compile and run Alfred from this repository without buying the
-official binary. Source builds use the same checked-in application code but are
-unsigned unless you configure your own platform signing identity.
+You can compile and run Alfred from this repository instead of downloading an
+official binary — both routes are free and both have every feature. Source
+builds use the same checked-in application code but are unsigned unless you
+configure your own platform signing identity.
 
 ## 1. Install prerequisites
 

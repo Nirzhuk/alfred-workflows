@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS workflows (
 
 CREATE TABLE IF NOT EXISTS agents (
   id TEXT PRIMARY KEY NOT NULL,
-  provider TEXT NOT NULL CHECK (provider IN ('claude_code', 'cursor', 'codex', 'opencode', 'github_copilot', 'gemini', 'grok')),
+  provider TEXT NOT NULL CHECK (provider IN ('claude_code', 'cursor', 'codex', 'opencode', 'github_copilot', 'gemini', 'grok', 'pi', 'omp')),
   name TEXT NOT NULL,
   config_json TEXT NOT NULL DEFAULT '{}',
   created_at TEXT NOT NULL,

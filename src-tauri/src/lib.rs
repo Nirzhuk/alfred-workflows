@@ -6,9 +6,9 @@ mod db;
 mod integrations;
 mod licensing;
 #[cfg(target_os = "macos")]
-mod native_window_material;
-#[cfg(target_os = "macos")]
 mod macos_titlebar;
+#[cfg(target_os = "macos")]
+mod native_window_material;
 mod notifications;
 mod quick_access;
 mod runner;

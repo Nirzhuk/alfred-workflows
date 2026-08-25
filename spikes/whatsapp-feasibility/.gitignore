@@ -1,5 +1,0 @@
-
-# Plan 023 WhatsApp feasibility spike (disposable, non-shipping)
-spikes/*/target
-spikes/**/spike-session.db*
-spikes/**/*.log

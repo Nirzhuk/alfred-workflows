@@ -38,7 +38,28 @@ type Props = {
     folderId: string | null,
     beforeWorkflowId?: string,
   ) => void;
+  /** The folder whose rows are crossing the top of the sidebar scroller. */
+  onScrolledFolderChange?: (folder: ScrolledFolder | null) => void;
 };
+
+export type ScrolledFolder = { name: string; count: number };
+
+/**
+ * The folder you are reading: the last group that starts at or above `edge`.
+ * Groups are stacked in document order, so once the next group's top crosses
+ * the edge it takes over — and in the gap between two groups the previous one
+ * stays, which is what "stick until this folder is done" means.
+ */
+export function folderAtEdge(
+  bands: readonly { key: string; top: number }[],
+  edge: number,
+): string | null {
+  let current: string | null = null;
+  for (const band of bands) {
+    if (band.top <= edge + 1) current = band.key;
+  }
+  return current;
+}
 
 type DragGhost = {
   id: string;
@@ -127,6 +148,7 @@ export function WorkflowList({
   onOpenMenu,
   onOpenFolderMenu,
   onMoveToFolder,
+  onScrolledFolderChange,
 }: Props) {
   const [collapsedFolders, setCollapsedFolders] = useState(loadCollapsedFolders);
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -134,6 +156,7 @@ export function WorkflowList({
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null);
   const dropTargetRef = useRef<DropTarget | null>(null);
   const suppressClickRef = useRef(false);
+  const groupsRef = useRef<HTMLDivElement | null>(null);
 
   const scheduleLabels = useMemo(
     () =>
@@ -185,6 +208,47 @@ export function WorkflowList({
       /* ignore */
     }
   }, [collapsedFolders]);
+
+  /**
+   * Reports which folder's rows are crossing the top of the sidebar scroller so
+   * the sidebar header can name it. The alternative — pinning the folder row
+   * itself — has to paint an occluding fill over the rows sliding under it, and
+   * that band is exactly what this replaces.
+   */
+  useEffect(() => {
+    if (!onScrolledFolderChange) return;
+    const container = groupsRef.current;
+    const root = container?.closest<HTMLElement>(".sidebar-scroll");
+    if (!container || !root) return;
+
+    let frame = 0;
+    const measure = () => {
+      frame = 0;
+      const edge = root.getBoundingClientRect().top;
+      const bands = [...container.querySelectorAll<HTMLElement>(
+        ".workflow-folder-group",
+      )].map((section) => ({
+        key: section.dataset.folderKey ?? "",
+        top: section.getBoundingClientRect().top,
+      }));
+      const key = folderAtEdge(bands, edge);
+      const group = groups.find((candidate) => candidate.key === key);
+      onScrolledFolderChange(
+        group ? { name: group.folder?.name ?? "Unfiled", count: group.workflows.length } : null,
+      );
+    };
+    const schedule = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(measure);
+    };
+
+    measure();
+    root.addEventListener("scroll", schedule, { passive: true });
+    return () => {
+      root.removeEventListener("scroll", schedule);
+      if (frame) cancelAnimationFrame(frame);
+    };
+  }, [groups, onScrolledFolderChange]);
 
   if (workflows.length === 0 && folders.length === 0) {
     return <p className="workflow-list-empty muted">Create a workflow to start.</p>;
@@ -338,7 +402,10 @@ export function WorkflowList({
   };
 
   return (
-    <div className={draggingId ? "workflow-groups is-reordering" : "workflow-groups"}>
+    <div
+      ref={groupsRef}
+      className={draggingId ? "workflow-groups is-reordering" : "workflow-groups"}
+    >
       {folders.length === 0 ? (
         <section
           className={[

@@ -319,7 +319,11 @@ fn expand_agent_provider_check(conn: &Connection) -> Result<(), DbError> {
 
     let Some(sql) = sql else { return Ok(()) };
     if !sql.contains("CHECK (provider")
-        || (sql.contains("github_copilot") && sql.contains("gemini") && sql.contains("grok"))
+        || (sql.contains("github_copilot")
+            && sql.contains("gemini")
+            && sql.contains("grok")
+            && sql.contains("'pi'")
+            && sql.contains("'omp'"))
     {
         return Ok(());
     }
@@ -329,7 +333,7 @@ fn expand_agent_provider_check(conn: &Connection) -> Result<(), DbError> {
          BEGIN;
          CREATE TABLE agents_migrated (
            id TEXT PRIMARY KEY NOT NULL,
-           provider TEXT NOT NULL CHECK (provider IN ('claude_code', 'cursor', 'codex', 'opencode', 'github_copilot', 'gemini', 'grok')),
+           provider TEXT NOT NULL CHECK (provider IN ('claude_code', 'cursor', 'codex', 'opencode', 'github_copilot', 'gemini', 'grok', 'pi', 'omp')),
            name TEXT NOT NULL,
            config_json TEXT NOT NULL DEFAULT '{}',
            created_at TEXT NOT NULL,

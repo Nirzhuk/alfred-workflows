@@ -22,10 +22,10 @@ use super::offline::{
     evaluate_cached_state, state_after_transient_failure, OFFLINE_GRACE_DAYS, REFRESH_AFTER_DAYS,
 };
 use super::service::{LicenseClock, LicenseService};
-use super::update_window::is_in_update_window;
 use super::store::{
     InMemoryLicenseCredentialStore, LicenseCredentialEnvelope, LicenseCredentialStore,
 };
+use super::update_window::is_in_update_window;
 
 const KEY: &str = "TEST-LICENSE-KEY-SECRET";
 const ACTIVATION: &str = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -222,11 +222,7 @@ fn every_transient_failure_class_yields_offline_grace_through_day_thirty() {
         for prior in [LicenseStatus::Active, LicenseStatus::OfflineGrace] {
             for offset in [0, 1, 7, 8, 29, OFFLINE_GRACE_DAYS] {
                 assert_eq!(
-                    state_after_transient_failure(
-                                    prior,
-                        Some(offline_deadline()),
-                        day(offset)
-                    ),
+                    state_after_transient_failure(prior, Some(offline_deadline()), day(offset)),
                     LicenseStatus::OfflineGrace,
                     "{error:?} from {prior:?} on day {offset}"
                 );
@@ -249,7 +245,7 @@ fn offline_grace_ends_exactly_after_day_thirty() {
     ] {
         assert_eq!(
             state_after_transient_failure(
-                    LicenseStatus::OfflineGrace,
+                LicenseStatus::OfflineGrace,
                 Some(offline_deadline()),
                 moment,
             ),
@@ -301,11 +297,7 @@ fn a_key_that_was_never_validated_receives_no_offline_grace() {
         for deadline in [None, Some(offline_deadline())] {
             for offset in [0, 1, 7, 29, OFFLINE_GRACE_DAYS, 31] {
                 assert_eq!(
-                    state_after_transient_failure(
-                                    prior,
-                        deadline,
-                        day(offset),
-                    ),
+                    state_after_transient_failure(prior, deadline, day(offset),),
                     prior,
                     "{prior:?} on day {offset} must not gain grace"
                 );
@@ -313,7 +305,7 @@ fn a_key_that_was_never_validated_receives_no_offline_grace() {
         }
         assert_eq!(
             evaluate_cached_state(
-                    prior,
+                prior,
                 None,
                 Some(refresh_due()),
                 Some(offline_deadline()),

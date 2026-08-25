@@ -36,11 +36,7 @@ Thumbs.db
 # Rust / Tauri (also covered by src-tauri/.gitignore)
 src-tauri/target
 src-tauri/gen/schemas
-
-# Plan 023 WhatsApp feasibility spike (disposable, non-shipping)
-spikes/*/target
-spikes/**/spike-session.db*
-spikes/**/*.log
+**/target/
 
 # OS / tooling noise
 *.pem
@@ -49,3 +45,4 @@ spikes/**/*.log
 .tmp-*.iconset/
 .turbo
 .cache
+graphify-out

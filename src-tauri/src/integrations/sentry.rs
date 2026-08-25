@@ -224,9 +224,7 @@ async fn connect_private_with_service(
         .take(SENTRY_MAX_ORGS + 1)
         .filter_map(|organization| {
             let id = organization.id.filter(|id| valid_sentry_id(id))?;
-            let slug = organization
-                .slug
-                .filter(|slug| valid_sentry_slug(slug))?;
+            let slug = organization.slug.filter(|slug| valid_sentry_slug(slug))?;
             let name = organization
                 .name
                 .map(|name| bounded(&name, 200))
@@ -237,16 +235,14 @@ async fn connect_private_with_service(
     if organizations.is_empty() || organizations.len() > SENTRY_MAX_ORGS {
         return Err(sentry_identity_error());
     }
-    let user = root
-        .user
-        .and_then(|user| {
-            Some((
-                user.id.filter(|id| valid_sentry_id(id))?,
-                user.name
-                    .map(|name| bounded(&name, 200))
-                    .filter(|name| !name.is_empty()),
-            ))
-        });
+    let user = root.user.and_then(|user| {
+        Some((
+            user.id.filter(|id| valid_sentry_id(id))?,
+            user.name
+                .map(|name| bounded(&name, 200))
+                .filter(|name| !name.is_empty()),
+        ))
+    });
     let mut scopes = HashSet::new();
     for organization in &organizations {
         let detail_value = service
@@ -282,19 +278,15 @@ async fn connect_private_with_service(
     if metadata_organizations.len() > SENTRY_MAX_ORG_METADATA_BYTES {
         return Err(sentry_identity_error());
     }
-    let identity_parts = user
-        .as_ref()
-        .map(|(id, _)| id.clone())
-        .unwrap_or_else(|| {
-            let mut ids = organizations
-                .iter()
-                .map(|organization| organization.id.clone())
-                .collect::<Vec<_>>();
-            ids.sort();
-            ids.join(",")
-        });
-    let identity_key =
-        canonical_identity_key("sentry", "auth_token", &[&identity_parts]);
+    let identity_parts = user.as_ref().map(|(id, _)| id.clone()).unwrap_or_else(|| {
+        let mut ids = organizations
+            .iter()
+            .map(|organization| organization.id.clone())
+            .collect::<Vec<_>>();
+        ids.sort();
+        ids.join(",")
+    });
+    let identity_key = canonical_identity_key("sentry", "auth_token", &[&identity_parts]);
     let existing = db
         .get_app_connection_by_identity("sentry", "auth_token", &identity_key)
         .map_err(|_| sentry_store_error())?;
@@ -635,10 +627,7 @@ fn issue_summary(detail: SentryIssueDetail) -> Result<SentryIssueSummary, Action
         }
     }
     if let Some(project) = detail.project.as_ref() {
-        if project
-            .id
-            .as_deref()
-            .is_none_or(|id| !valid_sentry_id(id))
+        if project.id.as_deref().is_none_or(|id| !valid_sentry_id(id))
             || project
                 .slug
                 .as_deref()
@@ -742,11 +731,13 @@ impl ActionExecutor for SentryService {
                             "metadata": metadata,
                         }),
                         artifacts: artifact_uri
-                            .map(|uri| vec![ActionArtifact {
-                                kind: "url".into(),
-                                label: "Sentry issue".into(),
-                                uri,
-                            }])
+                            .map(|uri| {
+                                vec![ActionArtifact {
+                                    kind: "url".into(),
+                                    label: "Sentry issue".into(),
+                                    uri,
+                                }]
+                            })
                             .unwrap_or_default(),
                         provider_request_id: None,
                     })
@@ -802,11 +793,13 @@ impl ActionExecutor for SentryService {
                             "permalink": updated.permalink,
                         }),
                         artifacts: artifact_uri
-                            .map(|uri| vec![ActionArtifact {
-                                kind: "url".into(),
-                                label: format!("Sentry {short_id}"),
-                                uri,
-                            }])
+                            .map(|uri| {
+                                vec![ActionArtifact {
+                                    kind: "url".into(),
+                                    label: format!("Sentry {short_id}"),
+                                    uri,
+                                }]
+                            })
                             .unwrap_or_default(),
                         provider_request_id: None,
                     })
@@ -833,9 +826,7 @@ impl ActionExecutor for SentryService {
             let token = Zeroizing::new(
                 tokens.with_credential(|credential| credential.access_token.clone())?,
             );
-            let projects = self
-                .list_projects(token.as_str(), connection)
-                .await?;
+            let projects = self.list_projects(token.as_str(), connection).await?;
             let query = query.trim().to_ascii_lowercase();
             let items = projects
                 .into_iter()
@@ -894,13 +885,9 @@ impl SentryService {
             let issues = response
                 .as_array()
                 .ok_or_else(|| ActionError::new(ActionErrorCode::OutputInvalid))?;
-            let detail: SentryIssueDetail = serde_json::from_value(
-                issues
-                    .first()
-                    .cloned()
-                    .unwrap_or(Value::Null),
-            )
-            .map_err(|_| ActionError::new(ActionErrorCode::InvalidInput))?;
+            let detail: SentryIssueDetail =
+                serde_json::from_value(issues.first().cloned().unwrap_or(Value::Null))
+                    .map_err(|_| ActionError::new(ActionErrorCode::InvalidInput))?;
             issue_summary(detail)?
         } else {
             return Err(ActionError::new(ActionErrorCode::InvalidInput));
@@ -973,10 +960,7 @@ impl SentryService {
             let projects = self
                 .list_projects_for_org(token, &organization.slug)
                 .await?;
-            if projects
-                .iter()
-                .any(|project| project.id == project_id)
-            {
+            if projects.iter().any(|project| project.id == project_id) {
                 return Ok(organization.slug);
             }
         }
@@ -1050,13 +1034,15 @@ fn parse_projects(response: &Value) -> Vec<SentryProject> {
         .collect()
 }
 
-fn connection_organizations(connection: &AppConnection) -> Result<Vec<SentryOrganization>, ActionError> {
+fn connection_organizations(
+    connection: &AppConnection,
+) -> Result<Vec<SentryOrganization>, ActionError> {
     let raw = connection
         .provider_metadata
         .get("organizations")
         .ok_or_else(|| ActionError::new(ActionErrorCode::InvalidInput))?;
-    let organizations: Vec<SentryOrganization> = serde_json::from_str(raw)
-        .map_err(|_| ActionError::new(ActionErrorCode::InvalidInput))?;
+    let organizations: Vec<SentryOrganization> =
+        serde_json::from_str(raw).map_err(|_| ActionError::new(ActionErrorCode::InvalidInput))?;
     if organizations.is_empty() || organizations.len() > SENTRY_MAX_ORGS {
         return Err(ActionError::new(ActionErrorCode::InvalidInput));
     }
@@ -1490,9 +1476,9 @@ fn valid_sentry_status(value: &str) -> bool {
 fn valid_sentry_scope(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= 80
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b':' | b'_' | b'-'))
+        && value.bytes().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b':' | b'_' | b'-')
+        })
 }
 
 fn valid_sentry_url(value: &str) -> bool {
@@ -1506,9 +1492,9 @@ fn valid_sentry_url(value: &str) -> bool {
 }
 
 fn validate_auth_token(token: &str) -> Result<(), IntegrationCommandError> {
-    let prefix = token
-        .get(..7)
-        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("sntrys_") || prefix.eq_ignore_ascii_case("sntryu_"));
+    let prefix = token.get(..7).is_some_and(|prefix| {
+        prefix.eq_ignore_ascii_case("sntrys_") || prefix.eq_ignore_ascii_case("sntryu_")
+    });
     let valid = prefix
         && token.len() >= 40
         && token.len() <= 512
@@ -1874,10 +1860,8 @@ mod tests {
             .expect("root response");
             let org = server.recv().expect("org request");
             org.respond(
-                TinyResponse::from_string(
-                    r#"{"access":["org:read","project:read"]}"#,
-                )
-                .with_header(json_header()),
+                TinyResponse::from_string(r#"{"access":["org:read","project:read"]}"#)
+                    .with_header(json_header()),
             )
             .expect("org response");
         });
@@ -1913,9 +1897,7 @@ mod tests {
             let issue = server.recv().expect("issue request");
             assert_eq!(issue.url(), "/issues/12345/");
             issue
-                .respond(
-                    TinyResponse::from_string(issue_detail_json()).with_header(json_header()),
-                )
+                .respond(TinyResponse::from_string(issue_detail_json()).with_header(json_header()))
                 .expect("issue response");
         });
         let service = test_service(format!("http://127.0.0.1:{port}"));
@@ -2118,13 +2100,11 @@ mod tests {
         // unresolved and is now resolved.
         let prior = SentryEventCursor {
             watermark: "2099-01-01T12:00:00Z".into(),
-            recent: vec![
-                SentryRecentIssue {
-                    id: "12346".into(),
-                    status: "unresolved".into(),
-                    last_seen: "2099-01-01T09:00:00Z".into(),
-                },
-            ],
+            recent: vec![SentryRecentIssue {
+                id: "12346".into(),
+                status: "unresolved".into(),
+                last_seen: "2099-01-01T09:00:00Z".into(),
+            }],
         };
         let prior_cursor = encode_event_cursor(&prior).expect("prior cursor");
         let next = service
@@ -2234,9 +2214,8 @@ mod tests {
             let request = server.recv().expect("request");
             request
                 .respond(
-                    TinyResponse::empty(429).with_header(
-                        Header::from_bytes("Retry-After", "60").expect("retry after"),
-                    ),
+                    TinyResponse::empty(429)
+                        .with_header(Header::from_bytes("Retry-After", "60").expect("retry after")),
                 )
                 .expect("respond");
         });

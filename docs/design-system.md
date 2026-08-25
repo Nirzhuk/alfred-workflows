@@ -329,6 +329,44 @@ Settings pages carry no rule between the header and the body. The heading's
 type scale already separates them; a divider there re-adds the boxed-in look
 the rails are tuned to avoid.
 
+Folder rows stay in the flow and scroll away with their group. **Do not pin
+them.** A pinned row must occlude the rows sliding beneath it, and every way of
+softening that fill was tried and fails: no fill, blur alone, and a gradient
+dissolve all let row text read through the folder name, while an opaque strip
+paints a band across a translucent panel. The band is the artifact; the folder
+name is the requirement.
+
+So the sidebar header carries it. While the list is scrolled, the chrome row
+above the scroller reads `Workflows / <folder> <count>` — the folder whose rows
+are crossing the top of the scroller, resolved by `folderAtEdge` in
+`workflow-list.tsx` and reported upward on scroll. Nothing scrolls behind chrome,
+so nothing has to be painted over. The context uses the item scale in the
+section color, so it reads quieter than the title it follows, and it is rendered
+into the existing header row, which keeps its height whether the context is
+present or not.
+
+That context appears, leaves, and swaps rather than teleporting: it rises
+`var(--space-1)` while fading in over `--duration-standard` and leaves back down
+the same path over `--duration-fast`, both on `--ease-emphasized`. Both labels
+occupy one grid cell, so an overlapping swap cannot move the header, and the
+incoming label animates on mount because it exists only while it is current — a
+count change on the same folder updates in place and does not animate. Under
+reduced motion the crossfade stays and the travel is dropped. The outgoing label
+is unmounted on a timer that must stay equal to `--duration-fast`; a test pins
+the two together.
+
+Workflow rows follow the panel they sit on. Off macOS the panel is opaque, so
+they take container fills — `--surface-raised` at rest, `--surface` for hover,
+selection, and the drag ghost — ordered so rest sits below hover and selection
+is never dimmer than hover. On macOS the sidebar is a translucent material,
+where an opaque fill punches the vibrancy out of the row's own rectangle, so
+rows inside `.sidebar` take the same quiet ink scale the nav items use there:
+`--surface-selected` at rest and `--surface-pressed` for hover and selection —
+the same kind of surface as a selected nav item, several steps stronger, because
+a workflow row is a card and a nav item is not. The drag ghost is excluded: it
+floats over the canvas, not the panel, so it stays opaque. Selection stays
+identified by the loud accent border and the accent dot, not by a heavier fill.
+
 ### Menus
 
 - Menu items use 14px/400, 18px icons, 32px minimum height, and 8px radius.

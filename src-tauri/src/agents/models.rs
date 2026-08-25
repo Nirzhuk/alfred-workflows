@@ -9,7 +9,10 @@
 //! - GitHub Copilot, Gemini, and Grok: stable CLI model aliases after binary
 //!   detection; each CLI keeps its own model picker and does not expose a
 //!   reliable non-interactive catalog.
+//! - pi: `pi --list-models` (authenticated providers only)
+//! - OMP: `omp models --json`
 
+use super::pi;
 use super::AgentProvider;
 use directories::BaseDirs;
 use serde::{Deserialize, Serialize};
@@ -64,6 +67,9 @@ pub fn default_model(provider: AgentProvider) -> &'static str {
         AgentProvider::GithubCopilot => "claude-sonnet-4.5",
         AgentProvider::Gemini => "auto",
         AgentProvider::Grok => "grok-build",
+        // pi and OMP reach 15+ providers, so the only model id valid on every
+        // install is the one the user already configured.
+        AgentProvider::Pi | AgentProvider::Omp => pi::CLI_DEFAULT_MODEL,
     }
 }
 
@@ -119,6 +125,26 @@ pub fn fallback_models(provider: AgentProvider) -> ProviderModels {
             opt("grok-4.5", "Grok 4.5", "Grok CLI"),
             opt("grok-code-fast-1", "Grok Code Fast 1", "Grok CLI"),
         ],
+        AgentProvider::Pi => vec![
+            opt(
+                pi::CLI_DEFAULT_MODEL,
+                "CLI default",
+                "Model configured in pi",
+            ),
+            opt("anthropic/claude-sonnet-5", "Claude Sonnet 5", "pi"),
+            opt("openai/gpt-5.6-luna", "GPT-5.6 Luna", "pi"),
+            opt("google/gemini-3-pro-preview", "Gemini 3 Pro Preview", "pi"),
+        ],
+        AgentProvider::Omp => vec![
+            opt(
+                pi::CLI_DEFAULT_MODEL,
+                "CLI default",
+                "Model configured in OMP",
+            ),
+            opt("anthropic/claude-sonnet-5", "Claude Sonnet 5", "OMP"),
+            opt("openai/gpt-5.6-luna", "GPT-5.6 Luna", "OMP"),
+            opt("google/gemini-3-pro-preview", "Gemini 3 Pro Preview", "OMP"),
+        ],
     };
 
     ProviderModels {
@@ -142,6 +168,8 @@ pub fn discover_all() -> Vec<ProviderModels> {
         AgentProvider::GithubCopilot,
         AgentProvider::Gemini,
         AgentProvider::Grok,
+        AgentProvider::Pi,
+        AgentProvider::Omp,
     ]
     .into_iter()
     .map(discover_for)
@@ -163,6 +191,8 @@ fn discover_for(provider: AgentProvider) -> ProviderModels {
         }
         AgentProvider::Gemini => discover_static_cli(AgentProvider::Gemini, "gemini"),
         AgentProvider::Grok => discover_static_cli(AgentProvider::Grok, "grok"),
+        AgentProvider::Pi => discover_pi(),
+        AgentProvider::Omp => discover_omp(),
     };
 
     match result {
@@ -265,6 +295,108 @@ fn discover_opencode() -> Result<ProviderModels, String> {
         available: true,
         error: None,
     })
+}
+
+/// `pi --list-models` prints a padded table whose first row is the header and
+/// whose first two columns are `provider` and `model`. pi accepts the pair as
+/// `provider/id`, which stays unambiguous when two providers share a model.
+fn discover_pi() -> Result<ProviderModels, String> {
+    let bin = find_bin("pi").ok_or_else(|| "pi CLI not found on PATH".to_string())?;
+    let output = run_cmd(&bin, &["--list-models"], Duration::from_secs(30))?;
+    let models = parse_pi_model_table(&output.stdout);
+
+    if models.is_empty() {
+        return Err(format!(
+            "no models from pi (stderr: {})",
+            output.stderr.trim()
+        ));
+    }
+
+    Ok(pi_family_catalog(models))
+}
+
+fn parse_pi_model_table(stdout: &str) -> Vec<ModelOption> {
+    let mut models = Vec::new();
+    for line in stdout.lines() {
+        let mut columns = line.split_whitespace();
+        let (Some(provider), Some(id)) = (columns.next(), columns.next()) else {
+            continue;
+        };
+        if provider == "provider" || id == "model" {
+            continue;
+        }
+        let selector = format!("{provider}/{id}");
+        models.push(opt(
+            &selector,
+            &selector,
+            "Discovered via `pi --list-models`",
+        ));
+    }
+    models
+}
+
+/// `omp models --json` returns `{ "models": [{ selector, name, ... }] }`.
+fn discover_omp() -> Result<ProviderModels, String> {
+    let bin = find_bin("omp").ok_or_else(|| "omp CLI not found on PATH".to_string())?;
+    let output = run_cmd(&bin, &["models", "--json"], Duration::from_secs(30))?;
+    let models = parse_omp_model_json(&output.stdout)?;
+
+    if models.is_empty() {
+        return Err(format!(
+            "no models from omp (stderr: {})",
+            output.stderr.trim()
+        ));
+    }
+
+    Ok(pi_family_catalog(models))
+}
+
+fn parse_omp_model_json(stdout: &str) -> Result<Vec<ModelOption>, String> {
+    let value: serde_json::Value = serde_json::from_str(stdout.trim())
+        .map_err(|e| format!("invalid `omp models --json`: {e}"))?;
+    let list = value
+        .get("models")
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| "`omp models --json` missing models[]".to_string())?;
+
+    let mut models = Vec::new();
+    for item in list {
+        let Some(selector) = item.get("selector").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        let label = item
+            .get("name")
+            .and_then(|v| v.as_str())
+            .filter(|name| !name.trim().is_empty())
+            .unwrap_or(selector);
+        models.push(opt(
+            selector,
+            format!("{label} ({selector})"),
+            "Discovered via `omp models`",
+        ));
+    }
+    Ok(models)
+}
+
+/// Keep the "CLI default" entry first so a workflow can defer to whatever the
+/// user configured instead of pinning a provider they may not be logged into.
+fn pi_family_catalog(discovered: Vec<ModelOption>) -> ProviderModels {
+    let mut models = vec![opt(
+        pi::CLI_DEFAULT_MODEL,
+        "CLI default",
+        "Model configured in the CLI",
+    )];
+    models.extend(discovered);
+
+    ProviderModels {
+        provider: String::new(),
+        default_model: pi::CLI_DEFAULT_MODEL.into(),
+        models,
+        allow_custom: true,
+        source: String::new(),
+        available: true,
+        error: None,
+    }
 }
 
 fn discover_codex() -> Result<ProviderModels, String> {
@@ -799,4 +931,51 @@ fn find_bin(name: &str) -> Option<PathBuf> {
     candidates.push(PathBuf::from(format!("/usr/bin/{name}")));
 
     candidates.into_iter().find(|p| p.is_file())
+}
+
+#[cfg(test)]
+mod pi_family_tests {
+    use super::*;
+
+    #[test]
+    fn parses_the_pi_model_table_and_skips_its_header() {
+        let stdout = [
+            "provider   model              context  max-out  thinking  images",
+            "anthropic  claude-sonnet-5    1M       128K     yes       yes",
+            "openai     gpt-5.6-luna       272K     128K     yes       yes",
+        ]
+        .join("\n");
+
+        let models = parse_pi_model_table(&stdout);
+        let ids = models.iter().map(|m| m.id.as_str()).collect::<Vec<_>>();
+        assert_eq!(
+            ids,
+            vec!["anthropic/claude-sonnet-5", "openai/gpt-5.6-luna"]
+        );
+    }
+
+    #[test]
+    fn parses_omp_model_json_by_selector() {
+        let stdout = r#"{"models":[
+            {"provider":"anthropic","id":"claude-opus-5","selector":"anthropic/claude-opus-5","name":"Claude Opus 5"},
+            {"provider":"openai","id":"gpt-5.2","selector":"openai/gpt-5.2"},
+            {"provider":"broken","id":"no-selector"}
+        ]}"#;
+
+        let models = parse_omp_model_json(stdout).expect("valid json");
+        assert_eq!(models.len(), 2);
+        assert_eq!(models[0].id, "anthropic/claude-opus-5");
+        assert_eq!(models[0].label, "Claude Opus 5 (anthropic/claude-opus-5)");
+        // Missing `name` falls back to the selector on both sides.
+        assert_eq!(models[1].label, "openai/gpt-5.2 (openai/gpt-5.2)");
+        assert!(parse_omp_model_json("not json").is_err());
+    }
+
+    #[test]
+    fn catalogs_offer_the_cli_default_first() {
+        let catalog = pi_family_catalog(vec![opt("anthropic/x", "X", "")]);
+        assert_eq!(catalog.default_model, pi::CLI_DEFAULT_MODEL);
+        assert_eq!(catalog.models[0].id, pi::CLI_DEFAULT_MODEL);
+        assert!(catalog.allow_custom);
+    }
 }

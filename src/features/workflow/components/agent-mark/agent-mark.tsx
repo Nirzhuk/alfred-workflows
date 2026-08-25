@@ -7,6 +7,8 @@ import opencodeLogo from "../../../../assets/agents/opencode.svg";
 import githubCopilotLogo from "../../../../assets/agents/github-copilot.svg";
 import geminiLogo from "../../../../assets/agents/gemini.svg";
 import grokLogo from "../../../../assets/agents/grok.svg";
+import piLogo from "../../../../assets/agents/pi.svg";
+import ompLogo from "../../../../assets/agents/omp.svg";
 
 const LABELS: Record<AgentProviderId, string> = {
   claude_code: "Claude Code",
@@ -16,6 +18,8 @@ const LABELS: Record<AgentProviderId, string> = {
   github_copilot: "GitHub Copilot",
   gemini: "Gemini",
   grok: "Grok",
+  pi: "Pi",
+  omp: "OMP",
 };
 
 const LOGOS: Record<AgentProviderId, string> = {
@@ -26,6 +30,8 @@ const LOGOS: Record<AgentProviderId, string> = {
   github_copilot: githubCopilotLogo,
   gemini: geminiLogo,
   grok: grokLogo,
+  pi: piLogo,
+  omp: ompLogo,
 };
 
 type Props = {

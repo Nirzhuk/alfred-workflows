@@ -285,6 +285,90 @@ describe("shared component contracts", () => {
     }
   });
 
+  test("names the scrolled folder in the chrome instead of banding the list", () => {
+    // The folder row stays in the flow. A pinned row has to paint an occluding
+    // fill over the rows sliding beneath it — no fill, blur alone, or a gradient
+    // all let that text read through the folder name — and that band is the one
+    // thing this sidebar must not grow. The folder being read is named in the
+    // header chrome above the scroller instead, where nothing scrolls behind it.
+    const header = cssBlock(".workflow-folder-header");
+    expect(header).not.toContain("position: sticky");
+    expect(header).not.toContain("background");
+    expect(header).not.toContain("z-index");
+    expect(css).not.toContain("workflow-folder-sentinel");
+    expect(css).not.toContain(".workflow-folder-header.is-pinned");
+
+    // The context reads quieter than the section title it follows: item scale,
+    // section color, and no weight change.
+    const context = cssBlock(".sidebar-header-context-label");
+    expect(context).toContain("font-size: var(--sidebar-item-font-size)");
+    expect(context).toContain("font-weight: var(--sidebar-item-font-weight)");
+    expect(context).toContain("color: var(--sidebar-section-color)");
+    expect(cssBlock(".sidebar-header-title")).toContain("min-width: 0");
+
+    // Enter, leave, and swap: both labels share one grid cell so an overlapping
+    // swap cannot move the header, and both directions travel the same path —
+    // a folder that rose into place leaves back down the way it came. Transform
+    // and opacity only, one strong ease-out token, both sides under 300ms.
+    expect(cssBlock(".sidebar-header-context")).toContain(
+      "display: inline-grid",
+    );
+    expect(context).toContain("grid-area: 1 / 1");
+    expect(context).toContain(
+      "animation: sidebar-context-in var(--duration-standard) var(--ease-emphasized)",
+    );
+    expect(cssBlock(".sidebar-header-context-label.is-leaving")).toContain(
+      "animation: sidebar-context-out var(--duration-fast) var(--ease-emphasized)",
+    );
+    for (const frames of ["sidebar-context-in", "sidebar-context-out"]) {
+      const block = cssBlock(`@keyframes ${frames}`);
+      expect(block).toContain("opacity: 0");
+      expect(block).toContain("transform: translateY(var(--space-1))");
+    }
+    // Reduced motion keeps the crossfade that makes the swap legible and drops
+    // the travel — gentler, not absent.
+    for (const frames of [
+      "sidebar-context-fade-in",
+      "sidebar-context-fade-out",
+    ]) {
+      const block = cssBlock(`@keyframes ${frames}`);
+      expect(block).toContain("opacity: 0");
+      expect(block).not.toContain("transform");
+    }
+    expect(css).toContain(
+      "  .sidebar-header-context-label {\n    animation-name: sidebar-context-fade-in;",
+    );
+    expect(css).toContain(
+      "  .sidebar-header-context-label.is-leaving {\n    animation-name: sidebar-context-fade-out;",
+    );
+
+    // Off macOS the panel is opaque, so rows take container fills, ordered:
+    // rest below hover, selection never dimmer than hover.
+    expect(cssBlock(".workflow-card-button")).toContain(
+      "background: var(--surface-raised)",
+    );
+    for (const selector of [
+      ".workflow-card-button:hover",
+      ".workflow-card.is-active .workflow-card-button",
+      ".workflow-drag-ghost .workflow-card-button",
+    ]) {
+      expect(cssBlock(selector)).toContain("background: var(--surface)");
+    }
+
+    // On macOS the sidebar is a translucent material, so an opaque card fill
+    // punches the vibrancy out of its own rectangle. Rows there take the same
+    // quiet ink scale the nav items use, a few steps stronger — and the rule is
+    // scoped to .sidebar so the drag ghost over the canvas stays opaque.
+    expect(
+      cssBlock('html[data-platform="macos"] .sidebar .workflow-card-button'),
+    ).toContain("background: var(--surface-selected)");
+    expect(
+      cssBlock(
+        'html[data-platform="macos"] .sidebar .workflow-card-button:hover,\nhtml[data-platform="macos"] .sidebar .workflow-card.is-active .workflow-card-button',
+      ),
+    ).toContain("background: var(--surface-pressed)");
+  });
+
   test("quiet hover, pressed, and selected states share one neutral scale", () => {
     // The scale itself: transparent (tints the panel beneath rather than
     // painting an opaque tile) and mixed against --ink so it inverts by theme.

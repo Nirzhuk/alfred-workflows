@@ -1,1 +1,5 @@
-export { WorkflowList } from "./workflow-list";
+export {
+  WorkflowList,
+  folderAtEdge,
+  type ScrolledFolder,
+} from "./workflow-list";

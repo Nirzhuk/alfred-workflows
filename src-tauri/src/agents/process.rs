@@ -128,6 +128,7 @@ pub fn find_bin(name: &str) -> Option<PathBuf> {
     if let Some(base) = BaseDirs::new() {
         let home = base.home_dir();
         candidates.push(home.join(format!(".local/bin/{name}")));
+        candidates.push(home.join(format!(".bun/bin/{name}")));
         candidates.push(home.join(format!(".opencode/bin/{name}")));
         candidates.push(home.join(format!(".codex/bin/{name}")));
         candidates.push(home.join(format!(".cargo/bin/{name}")));
@@ -153,6 +154,7 @@ fn enrich_path(command: &mut Command) {
         let home = base.home_dir();
         let extras = [
             home.join(".local/bin"),
+            home.join(".bun/bin"),
             home.join(".opencode/bin"),
             home.join(".cargo/bin"),
             PathBuf::from("/opt/homebrew/bin"),

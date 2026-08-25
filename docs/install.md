@@ -4,32 +4,18 @@ Alfred is a **local desktop app**. It does not include AI models or agent
 subscriptions. It runs workflows by calling CLIs you already use on this
 machine.
 
-There are three supported ways to get it:
+There are two ways to get it, both free:
 
 | Option | Cost | Intended for |
 | --- | --- | --- |
-| **Alfred License** | **One-time**, one named user | People who want the maintainer-built/tested installers hosted by Polar |
-| **Alfred Teams seat** | **One-time, per claimed seat** | Teams; every claimed seat gets its own license key and its own Polar downloads. Bought on the Alfred website |
-| [Build from source](building-from-source.md) | **Free, forever, fully featured** | People comfortable installing Bun, Rust, and Tauri's platform prerequisites |
+| **[Official builds](https://github.com/Nirzhuk/alfred-workflows/releases/latest)** | **Free** | Most people — maintainer-built, CI-tested installers for macOS, Windows, and Linux |
+| [Build from source](building-from-source.md) | **Free** | People comfortable installing Bun, Rust, and Tauri's platform prerequisites |
 
-Both paid options are **one-time purchases** — no subscription, no annual
-renewal, no recurring charge. Each includes **one year of updates**: paying once
-unlocks every paid feature permanently, and the build you own keeps working
-exactly as it does today, forever. After the year, newer builds still install
-and run with all your data intact; only their paid features stay locked until
-you buy another year. A refunded or revoked license is different and does end
-access.
-
-[Polar](https://polar.sh) is the merchant of record for the paid options. Polar
-hosts checkout, the customer portal, license keys, seat management, and the
-installer downloads. Alfred runs no billing, account, license, webhook, email,
-or download backend of its own, and it never sends your workflows or workflow
-data anywhere.
-
-No Alfred purchase is needed to compile or run your own source build. A source
-build is **free, fully featured, and stays that way forever** — it is not a
-trial or a reduced edition. Paying never disables local workflows or your data. Agent provider
-subscriptions and usage charges remain separate. See the
+Both routes have **every feature**. There is no paid tier, no subscription,
+and no feature lock. Official macOS builds are Developer ID signed, notarized,
+and stapled; the Windows installer is an unsigned beta. Alfred runs no
+billing, account, or download backend of its own, and it never sends your
+workflows or workflow data anywhere. See the
 [open-source and distribution policy](open-source.md).
 
 ## Requirements
@@ -57,6 +43,8 @@ looks for these binaries on your `PATH` (and common install locations):
 | GitHub Copilot | `copilot` | `copilot --version` |
 | Gemini CLI | `gemini` | `gemini --version` |
 | Grok Build | `grok` | `grok --version` |
+| Pi | `pi` | `pi --version` |
+| OMP | `omp` | `omp --version` |
 
 Each CLI must already be logged in the same way you use it in a terminal.
 Alfred does not collect provider passwords or API keys; it reuses the
@@ -68,20 +56,13 @@ above works, then fully quit and reopen Alfred so it picks up an updated
 
 ## Install an official build
 
-Official installers are delivered through Polar's File Downloads benefit to an
-Alfred License holder or to a claimed Alfred Teams seat. This public source
-repository does not publish the maintainer-signed installers as public GitHub
-Release assets.
+Official installers are published as public assets on the
+[GitHub releases page](https://github.com/Nirzhuk/alfred-workflows/releases/latest).
 
-1. Open Polar's customer portal.
-   <!-- TODO(polar-url): publish the approved Polar customer-portal link here. -->
-2. Sign in with the email address you purchased with. Polar authenticates you by
-   email; there is no Alfred account or password.
-3. Download the file for your platform, then compare its SHA-256 checksum with
-   the checksum manifest published beside the downloads.
-
-Only treat a build as official when it came from Polar and its checksum matches
-the published manifest.
+1. Open the releases page and download the file for your platform.
+2. Compare its SHA-256 checksum against `SHA256SUMS.txt` attached to the same
+   release.
+3. Install it using the per-platform steps below.
 
 ### macOS
 
@@ -95,21 +76,19 @@ Settings → Privacy & Security.
 
 ### Windows — unsigned beta
 
-1. Download the **NSIS** `.exe` installer from Polar.
+1. Download the **NSIS** `.exe` installer from the release assets.
 2. Run the installer and follow the prompts.
 3. Launch **Alfred** from the Start menu.
 
 The Windows installer is an **unsigned beta**. It is not Authenticode signed.
 Windows will report an unknown publisher and SmartScreen will very likely warn
 you before it runs. That warning is expected — this is not a warning-free
-Windows release. Continue only if the file came from Polar and its published
-SHA-256 checksum matches.
+Windows release. Continue after comparing the SHA-256 checksum with
+`SHA256SUMS.txt`.
 
-### Linux — best effort
+### Linux
 
-Linux packages are **best effort**, not a supported paid download. Build from
-source if you need a supported path on Linux. When a package is offered, pick
-one:
+Linux packages ship with every release. Pick one:
 
 - **AppImage** — mark executable (`chmod +x …AppImage`) and run
 - **`.deb`** — `sudo dpkg -i …deb` (Debian/Ubuntu)
@@ -119,17 +98,11 @@ WebKitGTK is required for the UI (same family of libs other Tauri apps use).
 
 ### Updating
 
-**v0.5.0 official builds update manually.** Alfred has no automatic updater and
-does not download installers for you. In the app, **Help → Download Latest
-Version…** (also in the tray/menu-bar menu) opens Polar's customer portal in
-your browser; sign in by email and download the newer file, then install it over
-your existing copy. Your workflows, runs, schedules, and memories are local and
-survive an upgrade install.
-
-A license activates on at most **three devices**. It refreshes after 7 days when
-the network allows and keeps working for at most **30 days offline**; a
-confirmed revocation takes effect immediately. Use Polar's customer portal to
-free a device slot, change billing, or manage Teams seats.
+Alfred has no automatic updater and does not download installers for you. In
+the app, **Help → Download Latest Version…** (also in the tray/menu-bar menu)
+opens the GitHub releases page in your browser; download the newer file and
+install it over your existing copy. Your workflows, runs, schedules, and
+memories are local and survive an upgrade install.
 
 ## Build it yourself for free
 
@@ -180,6 +153,6 @@ binary support.
 ## Related docs
 
 - [Building from source](building-from-source.md) — complete platform setup
-- [Open-source policy](open-source.md) — what is free and what the paid build funds
-- [Releasing](releasing.md) — maintainer-only signing and Polar distribution
+- [Open-source policy](open-source.md) — the distribution policy
+- [Releasing](releasing.md) — how official binaries are built and published
 - [README](../README.md) — product overview and developer setup

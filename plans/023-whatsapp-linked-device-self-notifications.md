@@ -165,9 +165,10 @@ results in this plan before proceeding.
 
 #### Spike results (recorded 2026-08-18)
 
-Spike lives at `spikes/whatsapp-feasibility/` with its own committed
-`Cargo.lock`, pinned to `whatsapp-rust =0.7.0` (published 2026-08-07, MIT). It
-is outside the Tauri build graph. Its `README.md` holds the full evidence.
+The disposable `spikes/whatsapp-feasibility/` crate (pinned to
+`whatsapp-rust =0.7.0`, published 2026-08-07, MIT, own `Cargo.lock`, outside
+the Tauri build graph) answered these gates. It was deleted after the findings
+below were recorded; the shipping client is `src-tauri/src/integrations/whatsapp/`.
 
 | # | Gate | Result |
 |---|------|--------|

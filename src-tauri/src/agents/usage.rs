@@ -68,6 +68,8 @@ fn provider_usage(provider: AgentProvider) -> AgentUsageSnapshot {
         }
         AgentProvider::Gemini => cli_usage(AgentProvider::Gemini, "gemini", "Gemini"),
         AgentProvider::Grok => cli_usage(AgentProvider::Grok, "grok", "Grok"),
+        AgentProvider::Pi => cli_usage(AgentProvider::Pi, "pi", "Pi"),
+        AgentProvider::Omp => cli_usage(AgentProvider::Omp, "omp", "OMP"),
     }
 }
 
@@ -98,8 +100,8 @@ fn not_installed(provider: AgentProvider, command: &str) -> AgentUsageSnapshot {
     )
 }
 
-/// Copilot, Gemini, and Grok do not expose a stable local quota API through
-/// their CLIs. Still report binary availability so the usage rail can explain
+/// Copilot, Gemini, Grok, pi, and OMP do not expose a stable local quota API
+/// through their CLIs. Still report binary availability so the usage rail can explain
 /// why no subscription windows are shown instead of treating them as unknown
 /// providers.
 fn cli_usage(provider: AgentProvider, command: &str, label: &str) -> AgentUsageSnapshot {

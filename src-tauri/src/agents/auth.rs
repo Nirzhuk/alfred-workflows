@@ -36,8 +36,11 @@ pub fn auth_required(provider: AgentProvider, message: &str) -> Option<AgentAuth
         | AgentProvider::Opencode
         | AgentProvider::GithubCopilot
         | AgentProvider::Gemini
-        | AgentProvider::Grok => {
+        | AgentProvider::Grok
+        | AgentProvider::Pi
+        | AgentProvider::Omp => {
             normalized.contains("not logged in")
+                || normalized.contains("no api key found")
                 || normalized.contains("login required")
                 || normalized.contains("authentication required")
                 || (normalized.contains("401") && normalized.contains("unauthorized"))
@@ -66,6 +69,9 @@ fn hint_for_provider(provider: AgentProvider) -> AgentAuthRequired {
         AgentProvider::GithubCopilot => ("GitHub Copilot", "copilot"),
         AgentProvider::Gemini => ("Gemini", "gemini"),
         AgentProvider::Grok => ("Grok", "grok login"),
+        // pi and OMP log in from `/login` inside the TUI, not a subcommand.
+        AgentProvider::Pi => ("Pi", "pi"),
+        AgentProvider::Omp => ("OMP", "omp"),
     };
 
     AgentAuthRequired {
@@ -129,9 +135,12 @@ mod tests {
             AgentProvider::GithubCopilot,
             AgentProvider::Gemini,
             AgentProvider::Grok,
+            AgentProvider::Pi,
+            AgentProvider::Omp,
         ] {
             for message in [
                 "Not logged in",
+                "No API key found for the selected model.",
                 "Login required",
                 "Authentication required",
                 "HTTP 401: Unauthorized",
@@ -148,6 +157,8 @@ mod tests {
                         AgentProvider::GithubCopilot => "copilot",
                         AgentProvider::Gemini => "gemini",
                         AgentProvider::Grok => "grok login",
+                        AgentProvider::Pi => "pi",
+                        AgentProvider::Omp => "omp",
                         _ => unreachable!(),
                     },
                 );
@@ -185,6 +196,8 @@ mod tests {
             AgentProvider::GithubCopilot,
             AgentProvider::Gemini,
             AgentProvider::Grok,
+            AgentProvider::Pi,
+            AgentProvider::Omp,
         ] {
             for message in [
                 "Agent execution failed",

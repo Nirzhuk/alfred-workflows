@@ -1,35 +1,35 @@
-import {
-  PolarPublicLinkError,
-  polarPublicLinks,
-  type PolarPublicLinks,
-} from "./public-links";
+import { openUrl } from "@tauri-apps/plugin-opener";
 
 /**
- * Alfred has no automatic updater. This action only sends the customer to
- * Polar's hosted customer portal, where they authenticate by email and Polar
- * issues their personal download links. Alfred never resolves or fetches a
- * signed installer URL itself.
+ * Official Alfred builds are published as public GitHub Release assets.
+ * This action sends the user to the releases page; it never resolves or
+ * downloads an installer itself, and Alfred has no automatic updater.
  */
-export const DOWNLOAD_LATEST_PORTAL_MESSAGE = [
+export const LATEST_RELEASES_URL =
+  "https://github.com/Nirzhuk/alfred-workflows/releases/latest";
+
+export const DOWNLOAD_LATEST_RELEASES_MESSAGE = [
   "Download the latest Alfred",
   "",
   "Official builds update manually. Alfred does not install updates for you.",
   "",
-  "Your browser will open Polar's customer portal. Sign in with the email you",
-  "purchased with, and Polar shows the downloads your license covers.",
+  "Your browser will open the GitHub releases page, where you can grab the",
+  "latest installer for your platform.",
   "",
   "The macOS disk images are signed and notarized. The Windows installer is an",
   "unsigned beta, so Windows reports an unknown publisher and may show a",
   "SmartScreen warning.",
 ].join("\n");
 
-export const DOWNLOAD_LATEST_SOURCE_MESSAGE = [
+export const DOWNLOAD_LATEST_FAILED_MESSAGE = [
   "Download the latest Alfred",
   "",
-  "This build has no official download channel configured, so it is a source or",
-  "self-built copy. That build stays fully usable under GPL-3.0-or-later.",
+  "Alfred could not open your browser. Visit this page yourself to reach the",
+  "latest downloads:",
   "",
-  "To move it to the latest version, rebuild from source:",
+  `    ${LATEST_RELEASES_URL}`,
+  "",
+  "Alternatively, rebuild from source:",
   "",
   "    git pull",
   "    bun install --frozen-lockfile",
@@ -38,35 +38,21 @@ export const DOWNLOAD_LATEST_SOURCE_MESSAGE = [
   "See docs/building-from-source.md for the platform prerequisites.",
 ].join("\n");
 
-export const DOWNLOAD_LATEST_FAILED_MESSAGE = [
-  "Download the latest Alfred",
-  "",
-  "Alfred could not open your browser. Open Polar's customer portal yourself and",
-  "sign in with the email you purchased with to reach your downloads.",
-].join("\n");
+type ExternalOpener = (url: string) => Promise<void>;
 
 export type DownloadLatestDeps = {
-  links?: PolarPublicLinks;
   notify?: (message: string) => void;
+  open?: ExternalOpener;
 };
 
 export async function openLatestDownload({
-  links = polarPublicLinks,
   notify = (message) => window.alert(message),
+  open = openUrl,
 }: DownloadLatestDeps = {}): Promise<void> {
-  if (!links.isConfigured("customerPortal")) {
-    notify(DOWNLOAD_LATEST_SOURCE_MESSAGE);
-    return;
-  }
-
-  notify(DOWNLOAD_LATEST_PORTAL_MESSAGE);
+  notify(DOWNLOAD_LATEST_RELEASES_MESSAGE);
   try {
-    await links.open("customerPortal");
-  } catch (error) {
-    notify(
-      error instanceof PolarPublicLinkError
-        ? DOWNLOAD_LATEST_SOURCE_MESSAGE
-        : DOWNLOAD_LATEST_FAILED_MESSAGE,
-    );
+    await open(LATEST_RELEASES_URL);
+  } catch {
+    notify(DOWNLOAD_LATEST_FAILED_MESSAGE);
   }
 }

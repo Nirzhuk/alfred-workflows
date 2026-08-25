@@ -28,8 +28,8 @@ pub fn evaluate_cached_state(
         // A closed window is a settled fact, not a lapse: it neither consumes
         // grace nor decays into `NeedsOnline`. It keeps re-checking on the
         // ordinary cadence so a renewal is picked up on its own.
-        let should_refresh = state == LicenseStatus::Expired
-            && refresh_due_at.is_some_and(|due| now >= due);
+        let should_refresh =
+            state == LicenseStatus::Expired && refresh_due_at.is_some_and(|due| now >= due);
         return OfflineEvaluation {
             state,
             should_refresh,
@@ -44,9 +44,7 @@ pub fn evaluate_cached_state(
     }
 
     let should_refresh = refresh_due_at.is_some_and(|due| now >= due);
-    if state == LicenseStatus::Active
-        && update_deadline.is_some_and(|deadline| now >= deadline)
-    {
+    if state == LicenseStatus::Active && update_deadline.is_some_and(|deadline| now >= deadline) {
         return OfflineEvaluation {
             state: LicenseStatus::Expired,
             should_refresh,
@@ -115,7 +113,10 @@ mod tests {
         let start = origin();
         let deadline = start + Duration::days(OFFLINE_GRACE_DAYS);
         for (moment, expected) in [
-            (deadline - Duration::nanoseconds(1), LicenseStatus::OfflineGrace),
+            (
+                deadline - Duration::nanoseconds(1),
+                LicenseStatus::OfflineGrace,
+            ),
             (deadline, LicenseStatus::OfflineGrace),
             (
                 deadline + Duration::nanoseconds(1),
@@ -178,8 +179,11 @@ mod tests {
     fn a_closed_window_keeps_re_checking_so_a_renewal_is_picked_up() {
         let start = origin();
         let due = start + Duration::days(REFRESH_AFTER_DAYS);
-        for (moment, expected) in [(start, false), (due, true), (start + Duration::days(400), true)]
-        {
+        for (moment, expected) in [
+            (start, false),
+            (due, true),
+            (start + Duration::days(400), true),
+        ] {
             let evaluation = evaluate_cached_state(
                 LicenseStatus::Expired,
                 Some(start),

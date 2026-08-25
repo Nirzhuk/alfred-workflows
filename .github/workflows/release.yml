@@ -1,41 +1,45 @@
-# Build Alfred desktop installers into a private GitHub Release draft.
+# Build Alfred desktop installers and publish them on a public GitHub Release.
 #
-# Alfred's official binaries are paid. The public repository distributes
-# source, not maintainer-signed installers. After verification, maintainers
-# copy accepted draft assets to the paid download service. NEVER publish the
-# draft GitHub Release.
-#
-# Primary artifacts for distribution:
-#   - macOS: .dmg (also used by the Homebrew cask)
-#   - Windows: .exe (NSIS) and .msi
+# Alfred is free and open source under GPL-3.0-or-later. Official
+# maintainer-built binaries are distributed as public GitHub Release assets:
+#   - macOS: .dmg for Apple Silicon and Intel (Developer ID signed,
+#     notarized, stapled)
+#   - Windows: .exe (NSIS) and .msi — unsigned beta; SmartScreen warns
 #   - Linux: .AppImage, .deb, .rpm
 #
-# Triggers:
-#   - Manual only: Actions → release → Run workflow (workflow_dispatch)
-#     Pick the branch/ref to build from (usually main). Main stays free for
-#     day-to-day work; nothing builds or publishes on push.
-#
-# Signing: macOS Developer ID signing and notarization are required. Windows
-# Authenticode signing is explicitly waived for this release, so every Windows
-# artifact is an unsigned beta.
-#
-# There is no automatic updater. v0.5.0 customers download manually from Polar's
-# File Downloads benefit, so `uploadUpdaterJson` stays false and no updater
-# plugin, key, or manifest exists.
+# Flow:
+#   1. Pushing a tag `vX.Y.Z` (or a manual dispatch) builds every platform.
+#   2. Artifacts land on a DRAFT release first. Gates download the exact
+#      staged DMGs/EXE and exercise clean install, two launches, uninstall,
+#      signing, and notarization on native hosted runners.
+#   3. The publish-release job attaches SHA256SUMS.txt, uploads the
+#      acceptance manifest artifact, and only then flips the draft public.
 #
 # Gates:
-#   - verify-version rejects a version mismatch across package.json,
-#     src-tauri/Cargo.toml, and src-tauri/tauri.conf.json.
-#   - acceptance-manifest rejects a missing or duplicated required artifact and
-#     emits a text + JSON acceptance manifest (version, source commit,
-#     filenames, sizes, architectures, SHA-256). It never records a secret.
+#   - verify-version rejects version mismatch across package.json,
+#     src-tauri/Cargo.toml, and src-tauri/tauri.conf.json, and rejects a
+#     pushed tag that does not equal `v<version>`.
+#   - verify-*-installers fail the run before publication if an installer
+#     cannot be installed, launched twice, and (Windows) uninstalled.
 #
-# Repo settings required: Settings → Actions → General → Workflow permissions
-# → Read and write permissions (so the job can create/update the GitHub Release).
+# There is no automatic updater. `uploadUpdaterJson` stays false and no
+# updater plugin, key, or manifest exists. Users update manually via
+# Help -> Download Latest Version..., which opens this repository's
+# releases page.
+#
+# Signing: macOS Developer ID signing and notarization are required. Windows
+# Authenticode signing is explicitly waived, so every Windows artifact is an
+# unsigned beta.
+#
+# Repo settings required: Settings -> Actions -> General -> Workflow
+# permissions -> Read and write permissions.
 
 name: release
 
 on:
+  push:
+    tags:
+      - "v*"
   workflow_dispatch:
 
 concurrency:
@@ -67,8 +71,8 @@ jobs:
             }
           ' src-tauri/Cargo.toml)
 
-          echo "package.json          $package_version"
-          echo "src-tauri/Cargo.toml  $cargo_version"
+          echo "package.json             $package_version"
+          echo "src-tauri/Cargo.toml     $cargo_version"
           echo "src-tauri/tauri.conf.json $tauri_version"
 
           if [ -z "$cargo_version" ]; then
@@ -80,9 +84,18 @@ jobs:
             exit 1
           fi
 
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            tag="${GITHUB_REF#refs/tags/}"
+            if [ "$tag" != "v$package_version" ]; then
+              echo "::error::Pushed tag $tag does not match the release version v$package_version. Tag the commit again or fix the versions."
+              exit 1
+            fi
+          fi
+
           echo "version=$package_version" >> "$GITHUB_OUTPUT"
 
   publish-tauri:
+    name: Build ${{ matrix.name }}
     needs: verify-version
     permissions:
       contents: write
@@ -91,17 +104,21 @@ jobs:
       matrix:
         include:
           - platform: macos-latest
+            name: macOS Apple Silicon
             args: --target aarch64-apple-darwin
             target: aarch64-apple-darwin
             bundles: app,dmg
           - platform: macos-latest
+            name: macOS Intel
             args: --target x86_64-apple-darwin
             target: x86_64-apple-darwin
             bundles: app,dmg
           - platform: ubuntu-22.04
+            name: Linux
             args: ""
             bundles: deb,rpm,appimage
           - platform: windows-latest
+            name: Windows
             args: ""
             bundles: nsis,msi
 
@@ -184,7 +201,7 @@ jobs:
           fi
           echo "APPLE_SIGNING_IDENTITY=$CERT_ID" >> "$GITHUB_ENV"
 
-      - name: Build and upload to GitHub Release
+      - name: Build and stage on a draft GitHub Release
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -199,17 +216,17 @@ jobs:
           tagName: v__VERSION__
           releaseName: Alfred v__VERSION__
           releaseBody: |
-            PRIVATE STAGING DRAFT — DO NOT PUBLISH TO THE PUBLIC REPOSITORY.
+            Official Alfred builds for v__VERSION__. Free for everyone under GPL-3.0-or-later; the exact source for these binaries is the `v__VERSION__` tag in this repository.
 
-            Candidate official desktop installers for paid distribution:
+            **macOS:** `.dmg` disk images for Apple Silicon and Intel. Developer ID signed, notarized, and stapled — Gatekeeper opens them without warnings.
 
-            - **macOS:** `.dmg` for Apple Silicon and Intel
-            - **Windows beta:** unsigned `.exe` (NSIS) and `.msi`; Windows will report an unknown publisher and may show a SmartScreen warning
-            - **Linux:** `.AppImage`, `.deb`, and `.rpm`
+            **Windows:** `.exe` (NSIS) installer and `.msi`. These are **unsigned beta** builds: Windows reports an unknown publisher and SmartScreen may warn before running. Verify the SHA-256 checksum against `SHA256SUMS.txt` before continuing.
 
-            Alfred shells out to local agent CLIs (Claude Code, Cursor, Codex, OpenCode). Install and authenticate those on the machine before running workflows.
+            **Linux:** `.AppImage`, `.deb`, and `.rpm`.
 
-            Follow docs/releasing.md: test these exact assets, generate checksums, and upload accepted files to the paid download service. Never convert this draft into a public GitHub Release.
+            Alfred shells out to local agent CLIs (Claude Code, Cursor, Codex, OpenCode, GitHub Copilot, Gemini CLI, Grok Build). Install and authenticate those on the machine before running workflows.
+
+            Updates are manual: **Help -> Download Latest Version...** inside Alfred opens this releases page. Alfred never installs updates by itself.
           releaseDraft: true
           prerelease: false
           uploadUpdaterJson: false
@@ -247,7 +264,8 @@ jobs:
     name: Verify downloaded macOS installer (${{ matrix.arch }})
     needs: publish-tauri
     permissions:
-      # GitHub only exposes draft releases to tokens with push-level access.
+      # The release is still a draft here; reading draft assets needs
+      # push-level access.
       contents: write
     strategy:
       fail-fast: false
@@ -344,7 +362,8 @@ jobs:
     name: Verify downloaded unsigned Windows installer
     needs: publish-tauri
     permissions:
-      # GitHub only exposes draft releases to tokens with push-level access.
+      # The release is still a draft here; reading draft assets needs
+      # push-level access.
       contents: write
     runs-on: windows-latest
 
@@ -431,15 +450,14 @@ jobs:
             throw "Alfred executable remains after uninstall"
           }
 
-  acceptance-manifest:
-    name: Build the release acceptance manifest
+  publish-release:
+    name: Attach checksums and publish the release
     needs:
       - verify-version
       - publish-tauri
       - verify-macos-installers
       - verify-windows-installer
     permissions:
-      # GitHub only exposes draft releases to tokens with push-level access.
       contents: write
     runs-on: ubuntu-22.04
     env:
@@ -449,10 +467,10 @@ jobs:
       - name: Checkout release source
         uses: actions/checkout@v4
 
-      # The required paid artifacts for this release line. Linux packages and the
-      # Windows .msi stay best-effort: they are recorded but never required, so
-      # they cannot be silently promoted to a supported paid download.
-      - name: Download and hash the required draft artifacts
+      # Required artifacts gate publication: the release never goes public
+      # without exactly one copy of each advertised installer. Linux packages
+      # and the Windows .msi are recorded but not required.
+      - name: Download and hash the staged artifacts
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -477,6 +495,7 @@ jobs:
           Alfred_${VERSION}_x64.dmg|macos|x86_64|developer-id-signed-notarized-stapled
           Alfred_${VERSION}_x64-setup.exe|windows|x86_64|unsigned-beta"
 
+          : > "$work/sha256sums.txt"
           : > "$work/required.jsonl"
           failed=0
           while IFS='|' read -r name platform arch signing; do
@@ -510,6 +529,7 @@ jobs:
             fi
 
             checksum=$(sha256sum "$path" | cut -d' ' -f1)
+            echo "$checksum  $name" >> "$work/sha256sums.txt"
             jq -nc \
               --arg filename "$name" \
               --arg platform "$platform" \
@@ -547,21 +567,20 @@ jobs:
             --arg sourceRef "$GITHUB_REF" \
             --arg generatedAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             --arg workflowRun "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
-            --slurpfile requiredArtifacts "$WORK_DIR/required.json" \
+            --slurpfile req "$WORK_DIR/required.json" \
             --slurpfile bestEffortArtifacts "$WORK_DIR/best-effort.json" \
             '{
-              schemaVersion: 1,
+              schemaVersion: 2,
               kind: "alfred-release-acceptance-manifest",
               version: $version,
               sourceCommit: $sourceCommit,
               sourceRef: $sourceRef,
               generatedAt: $generatedAt,
               workflowRun: $workflowRun,
-              draftRelease: {tag: ("v" + $version), published: false},
-              distribution: "polar-file-downloads-manual",
+              distribution: "public-github-releases",
               automaticUpdates: false,
               uploadUpdaterJson: false,
-              requiredArtifacts: $requiredArtifacts[0],
+              requiredArtifacts: $req[0],
               bestEffortArtifacts: $bestEffortArtifacts[0]
             }' > "$out/acceptance-manifest.json"
 
@@ -572,16 +591,15 @@ jobs:
             echo "Source ref:    $GITHUB_REF"
             echo "Generated at:  $(jq -r '.generatedAt' "$out/acceptance-manifest.json")"
             echo "Workflow run:  $(jq -r '.workflowRun' "$out/acceptance-manifest.json")"
-            echo "Draft release: v$VERSION (never published)"
-            echo "Distribution:  Polar File Downloads, manual updates, no updater"
+            echo "Distribution:  public GitHub Release v$VERSION"
             echo
-            echo "Required paid artifacts"
-            echo "-----------------------"
+            echo "Required artifacts"
+            echo "------------------"
             jq -r '.requiredArtifacts[]
                    | "  \(.filename)\n    platform:     \(.platform)\n    architecture: \(.architecture)\n    signing:      \(.signing)\n    size:         \(.sizeBytes) bytes\n    sha256:       \(.sha256)\n"' \
               "$out/acceptance-manifest.json"
-            echo "Best-effort artifacts (not a supported paid download)"
-            echo "----------------------------------------------------"
+            echo "Best-effort artifacts"
+            echo "---------------------"
             jq -r 'if (.bestEffortArtifacts | length) == 0
                    then "  none"
                    else (.bestEffortArtifacts[] | "  \(.filename) — \(.sizeBytes) bytes")
@@ -590,17 +608,34 @@ jobs:
             echo
             echo "SHA-256 checksums"
             echo "-----------------"
-            jq -r '.requiredArtifacts[] | "\(.sha256)  \(.filename)"' \
-              "$out/acceptance-manifest.json"
+            cat "$WORK_DIR/sha256sums.txt"
           } > "$out/acceptance-manifest.txt"
 
           cat "$out/acceptance-manifest.txt"
           cat "$out/acceptance-manifest.txt" >> "$GITHUB_STEP_SUMMARY"
           echo "MANIFEST_DIR=$out" >> "$GITHUB_ENV"
 
-      - name: Upload the acceptance manifest
+      - name: Upload the acceptance manifest artifact
         uses: actions/upload-artifact@v4
         with:
           name: acceptance-manifest
           path: ${{ env.MANIFEST_DIR }}
           if-no-files-found: error
+
+      - name: Attach SHA256SUMS.txt to the draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "v${VERSION}" "$WORK_DIR/sha256sums.txt" \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release edit "v${VERSION}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --draft=false \
+            --latest
+          echo "Published https://github.com/$GITHUB_REPOSITORY/releases/tag/v${VERSION}"

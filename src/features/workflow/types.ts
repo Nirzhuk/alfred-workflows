@@ -8,7 +8,9 @@ export type AgentProviderId =
   | "opencode"
   | "github_copilot"
   | "gemini"
-  | "grok";
+  | "grok"
+  | "pi"
+  | "omp";
 
 export type SkillSource = "project" | "user";
 
