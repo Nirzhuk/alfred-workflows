@@ -495,6 +495,8 @@ pub fn retry_memory_review(
     run_id: String,
 ) -> Result<MemoryReviewJob, String> {
     let job = db.retry_memory_review(&run_id).map_err(|e| e.to_string())?;
+    // The reset job is pending; the runner machinery claims and executes it.
+    runner::spawn_retry_memory_review(&app, &run_id);
     emit_candidates_changed(&app, &db, &job.workflow_id);
     Ok(job)
 }

@@ -2,15 +2,11 @@
 //! job per run, and model-proposed memory candidates that never touch
 //! canonical memory until a user approves them.
 
-// Steps 2–3 build pure review-input/parse/validate seams that the background
-// runner (Plan 028 Step 4) consumes; the colocated tests exercise them until
-// then. Remove this allowance when the runner lands.
-#![allow(dead_code)]
 
-use super::history::RunHistoryDetail;
+use super::history::{index_memory, RunHistoryDetail};
 use super::memories::{
-    is_expired, normalize_body, validate_title, CreateMemoryInput, MemoryScopeType,
-    MemoryStatus, MemoryType, UpdateMemoryInput,
+    get_memory_conn, is_expired, normalize_body, validate_title, write_canonical_memory,
+    CanonicalMemoryRecord, MemoryContext, MemoryScopeType, MemoryStatus, MemoryType,
 };
 use super::memory_retrieval::MemoryRetrievalRequest;
 use super::DbError;
@@ -34,6 +30,9 @@ const CANDIDATE_RATIONALE_MAX_BYTES: usize = 500;
 const MAX_CANDIDATES_PER_REVIEW: usize = 5;
 const MODEL_FIELD_MAX_CHARS: usize = 200;
 /// Stable review error codes. Raw provider output is never persisted.
+pub const REVIEW_ERROR_AUTH_REQUIRED: &str = "auth_required";
+pub const REVIEW_ERROR_PROVIDER_UNAVAILABLE: &str = "provider_unavailable";
+pub const REVIEW_ERROR_TIMEOUT: &str = "timeout";
 pub const REVIEW_ERROR_INVALID_RESPONSE: &str = "invalid_response";
 pub const REVIEW_ERROR_INTERNAL: &str = "internal";
 
@@ -113,16 +112,6 @@ pub enum ReviewJobStatus {
 }
 
 impl ReviewJobStatus {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::Pending => "pending",
-            Self::Running => "running",
-            Self::Completed => "completed",
-            Self::Failed => "failed",
-            Self::Skipped => "skipped",
-        }
-    }
-
     fn from_db(value: &str) -> rusqlite::Result<Self> {
         match value {
             "pending" => Ok(Self::Pending),
@@ -505,117 +494,42 @@ impl super::Db {
     }
 
     /// Approve a pending candidate and apply it to canonical memory through
-    /// Plan 026's canonical API. Stale/conflicting candidates become `blocked`
-    /// with a stable code; canonical state is never silently adapted.
-    ///
-    /// Interim fidelity (Plan 028 Steps 1–3): revalidation and the canonical
-    /// write happen back-to-back but not inside one transaction across both
-    /// candidate and memory rows; the follow-on phase moves approval into a
-    /// single immediate transaction with FTS maintenance guarantees.
+    /// Plan 026's canonical API. Revalidation, the canonical write, FTS
+    /// maintenance, and the candidate decision all happen in ONE immediate
+    /// transaction: a stale or conflicting candidate becomes `blocked` with a
+    /// stable code and canonical state is never silently adapted or left
+    /// half-written.
     pub fn approve_memory_candidate(&self, id: &str) -> Result<MemoryCandidate, DbError> {
-        let candidate = self
+        let pending = self
             .get_memory_candidate(id)?
             .ok_or_else(|| DbError::Other("candidate_not_found".into()))?;
-        if candidate.status != CandidateStatus::Pending {
+        if pending.status != CandidateStatus::Pending {
             return Err(DbError::Other("candidate_not_pending".into()));
         }
-        let context = self.memory_context(&candidate.workflow_id)?;
-        let scope_key = resolve_scope_key(
-            candidate.scope_type,
-            &context.workflow_id,
-            context.working_directory.as_deref(),
-        )
-        .map_err(|code| DbError::Other(code.to_string()))?;
-        if scope_key != candidate.scope_key {
-            return self.block_candidate(&candidate, "target_scope_mismatch");
-        }
+        // Workflow context (scope resolution inputs) is read before the
+        // transaction; approval never mutates workflows.
+        let context = self.memory_context(&pending.workflow_id)?;
 
-        if candidate.operation == CandidateOperation::Create {
-            if candidate.target_memory_id.is_some() {
-                return self.block_candidate(&candidate, "target_forbidden");
-            }
-        } else {
-            let Some(target_id) = candidate.target_memory_id.as_deref() else {
-                return self.block_candidate(&candidate, "target_required");
+        self.with_conn(|conn| {
+            let tx = conn.unchecked_transaction()?;
+            // Reload under the transaction: another decision may have landed
+            // between the pre-check and now.
+            let Some(candidate) = get_candidate_conn(conn, id)? else {
+                return Err(DbError::Other("candidate_not_found".into()));
             };
-            let Some(target) = self.get_memory(target_id)? else {
-                return self.block_candidate(&candidate, "target_missing");
+            if candidate.status != CandidateStatus::Pending {
+                return Err(DbError::Other("candidate_not_pending".into()));
+            }
+
+            let decision = match apply_approved_candidate(conn, &context, &candidate)? {
+                Ok(()) => (CandidateStatus::Approved, None),
+                Err(blocked_code) => (CandidateStatus::Blocked, Some(blocked_code)),
             };
-            if target.status != MemoryStatus::Active || is_expired(&target) {
-                return self.block_candidate(&candidate, "target_inactive");
-            }
-            if target.scope_type != candidate.scope_type || target.scope_key != candidate.scope_key
-            {
-                return self.block_candidate(&candidate, "target_scope_mismatch");
-            }
-        }
+            mark_candidate_decided_conn(conn, id, decision.0, decision.1)?;
+            tx.commit()?;
+            Ok(())
+        })?;
 
-        // Exact-duplicate guard against live canonical memory at decision time.
-        let hash = candidate_content_hash(
-            &normalize_body(&candidate.body),
-            &candidate.scope_key,
-            candidate.memory_type,
-        );
-        if self.find_active_duplicate_hash(
-            candidate.scope_type,
-            &candidate.scope_key,
-            candidate.memory_type,
-            &hash,
-        )? {
-            return self.block_candidate(&candidate, "duplicate_content");
-        }
-
-        match candidate.operation {
-            CandidateOperation::Create | CandidateOperation::Supersede => {
-                self.create_memory(CreateMemoryInput {
-                    workflow_id: candidate.workflow_id.clone(),
-                    title: candidate.title.clone(),
-                    body: candidate.body.clone(),
-                    run_id: Some(candidate.review_run_id.clone()),
-                    node_id: candidate.source_node_id.clone(),
-                    kind: None,
-                    scope_type: Some(candidate.scope_type),
-                    memory_type: Some(candidate.memory_type),
-                    source: Some("review".into()),
-                    pinned: Some(false),
-                    confidence: Some(candidate.confidence),
-                    salience: Some(50),
-                    status: Some(MemoryStatus::Active),
-                    supersedes_id: if candidate.operation == CandidateOperation::Supersede {
-                        candidate.target_memory_id.clone()
-                    } else {
-                        None
-                    },
-                    last_confirmed_at: None,
-                    expires_at: None,
-                    id: None,
-                })?;
-            }
-            CandidateOperation::Retract => {
-                let target_id = candidate
-                    .target_memory_id
-                    .clone()
-                    .ok_or_else(|| DbError::Other("target_required".into()))?;
-                self.update_memory(UpdateMemoryInput {
-                    id: target_id,
-                    context_workflow_id: None,
-                    title: None,
-                    body: None,
-                    pinned: Some(false),
-                    kind: None,
-                    scope_type: None,
-                    memory_type: None,
-                    confidence: None,
-                    salience: None,
-                    status: Some(MemoryStatus::Retracted),
-                    supersedes_id: None,
-                    last_confirmed_at: None,
-                    expires_at: None,
-                })?;
-            }
-        }
-
-        self.mark_candidate_decided(id, CandidateStatus::Approved, None)?;
         self.get_memory_candidate(id)?
             .ok_or_else(|| DbError::Other("candidate_not_found".into()))
     }
@@ -650,8 +564,8 @@ impl super::Db {
 
     /// Manually retry a failed review. Requires valid configured settings and
     /// preserves the one-job-per-run invariant (the run_id primary key). The
-    /// background runner that claims `pending` rows lands in the next phase;
-    /// until then a retried job simply waits there.
+    /// caller then spawns the background runner, whose atomic claim guarantees
+    /// a retried job cannot overlap another execution or duplicate rows.
     pub fn retry_memory_review(&self, run_id: &str) -> Result<MemoryReviewJob, DbError> {
         let job = self
             .get_memory_review_job(run_id)?
@@ -686,15 +600,6 @@ impl super::Db {
             .ok_or_else(|| DbError::Other("review_not_found".into()))
     }
 
-    fn block_candidate(
-        &self,
-        candidate: &MemoryCandidate,
-        blocked_code: &'static str,
-    ) -> Result<MemoryCandidate, DbError> {
-        self.mark_candidate_decided(&candidate.id, CandidateStatus::Blocked, Some(blocked_code))?;
-        self.get_memory_candidate(&candidate.id)?
-            .ok_or_else(|| DbError::Other("candidate_not_found".into()))
-    }
 
     fn mark_candidate_decided(
         &self,
@@ -702,21 +607,9 @@ impl super::Db {
         status: CandidateStatus,
         blocked_code: Option<&str>,
     ) -> Result<(), DbError> {
-        let decided_at = now();
-        let changed = self.with_conn(|conn| {
-            let changed = conn.execute(
-                "UPDATE memory_candidates SET status = ?1, blocked_code = COALESCE(?2, blocked_code),
-                        decided_at = ?3
-                 WHERE id = ?4 AND status = 'pending'",
-                params![status.as_str(), blocked_code, decided_at, id],
-            )?;
-            Ok(changed)
-        })?;
-        if changed == 0 {
-            return Err(DbError::Other("candidate_not_pending".into()));
-        }
-        Ok(())
+        self.with_conn(|conn| mark_candidate_decided_conn(conn, id, status, blocked_code))
     }
+
 
     fn find_active_duplicate_hash(
         &self,
@@ -726,25 +619,10 @@ impl super::Db {
         content_hash: &str,
     ) -> Result<bool, DbError> {
         self.with_conn(|conn| {
-            let mut statement = conn.prepare(
-                "SELECT body FROM memories
-                 WHERE scope_type = ?1 AND scope_key = ?2 AND memory_type = ?3
-                   AND status = 'active'",
-            )?;
-            let bodies = statement
-                .query_map(params![scope_type.as_str(), scope_key, memory_type.as_str()], |row| {
-                    row.get::<_, String>(0)
-                })?
-                .collect::<Result<Vec<_>, _>>()?;
-            Ok(bodies.iter().any(|body| {
-                let normalized = normalize_body(body)
-                    .split_whitespace()
-                    .collect::<Vec<_>>()
-                    .join(" ");
-                candidate_content_hash(&normalized, scope_key, memory_type) == content_hash
-            }))
+            active_duplicate_hash_conn(conn, scope_type, scope_key, memory_type, content_hash)
         })
     }
+
 
     fn find_pending_candidate_hash(
         &self,
@@ -774,54 +652,32 @@ impl super::Db {
         })
     }
 
-    /// Insert validated candidates for a review job in one transaction and
-    /// record the resulting count on the job row. Used by the background
-    /// runner (next phase) and by tests.
+    /// Test seeding helper: insert validated candidate rows in one
+    /// transaction and record the count on the job row. Production review
+    /// completion uses [`Db::finalize_review_success`], which also flips the
+    /// job to `completed` inside the same transaction.
+    #[cfg(test)]
     pub(crate) fn insert_validated_candidates(
         &self,
         review_run_id: &str,
         workflow_id: &str,
         validated: &[ValidatedCandidate],
     ) -> Result<usize, DbError> {
-        let created_at = now();
         let inserted = self.with_conn(|conn| {
             let transaction = conn.unchecked_transaction()?;
-            let mut count = 0usize;
-            for candidate in validated {
-                let changed = transaction.execute(
-                    "INSERT OR IGNORE INTO memory_candidates
-                       (id, review_run_id, workflow_id, source_node_id, operation,
-                        target_memory_id, scope_type, scope_key, memory_type, title,
-                        body, confidence, rationale, content_hash, status, created_at)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14,
-                             'pending', ?15)",
-                    params![
-                        Uuid::new_v4().to_string(),
-                        review_run_id,
-                        workflow_id,
-                        candidate.source_node_id,
-                        candidate.operation.as_str(),
-                        candidate.target_memory_id,
-                        candidate.scope_type.as_str(),
-                        candidate.scope_key,
-                        candidate.memory_type.as_str(),
-                        candidate.title,
-                        candidate.body,
-                        candidate.confidence,
-                        candidate.rationale,
-                        candidate.content_hash,
-                        created_at,
-                    ],
-                )?;
-                count += changed;
-            }
+            let count = insert_candidates_conn(
+                &transaction,
+                review_run_id,
+                workflow_id,
+                validated,
+                &now(),
+            )?;
             transaction.commit()?;
             Ok(count)
         })?;
         self.with_conn(|conn| {
             conn.execute(
-                "UPDATE memory_reviews SET candidate_count = ?1
-                 WHERE run_id = ?2",
+                "UPDATE memory_reviews SET candidate_count = ?1 WHERE run_id = ?2",
                 params![inserted as i64, review_run_id],
             )?;
             Ok(())
@@ -829,9 +685,68 @@ impl super::Db {
         Ok(inserted)
     }
 
+    /// Final write of a successful background review, all in ONE transaction:
+    /// the validated candidate rows and the job's `completed` transition with
+    /// its candidate count.
+    pub(crate) fn finalize_review_success(
+        &self,
+        run_id: &str,
+        workflow_id: &str,
+        validated: &[ValidatedCandidate],
+    ) -> Result<usize, DbError> {
+        self.with_conn(|conn| {
+            let tx = conn.unchecked_transaction()?;
+            let inserted =
+                insert_candidates_conn(&tx, run_id, workflow_id, validated, &now())?;
+            let changed = tx.execute(
+                "UPDATE memory_reviews SET status = 'completed', candidate_count = ?1,
+                        finished_at = ?2
+                 WHERE run_id = ?3 AND status = 'running'",
+                params![inserted as i64, now(), run_id],
+            )?;
+            if changed == 0 {
+                return Err(DbError::Other("review_not_running".into()));
+            }
+            tx.commit()?;
+            Ok(inserted)
+        })
+    }
+
+    /// Mark a claimed (`running`) review failed with a stable error code.
+    /// Raw provider errors, prompts, and responses are never persisted.
+    pub(crate) fn fail_memory_review(&self, run_id: &str, error_code: &str) -> Result<(), DbError> {
+        let changed = self.with_conn(|conn| {
+            let changed = conn.execute(
+                "UPDATE memory_reviews SET status = 'failed', error_code = ?1,
+                        finished_at = ?2
+                 WHERE run_id = ?3 AND status = 'running'",
+                params![error_code, now(), run_id],
+            )?;
+            Ok(changed)
+        })?;
+        if changed == 0 {
+            return Err(DbError::Other("review_not_running".into()));
+        }
+        Ok(())
+    }
+
+    /// Atomically claim a pending review: exactly one caller wins; everyone
+    /// else sees zero affected rows and must exit without invoking the
+    /// provider.
+    pub(crate) fn claim_memory_review(&self, run_id: &str) -> Result<bool, DbError> {
+        let claimed = self.with_conn(|conn| {
+            let changed = conn.execute(
+                "UPDATE memory_reviews SET status = 'running', started_at = ?1
+                 WHERE run_id = ?2 AND status = 'pending'",
+                params![now(), run_id],
+            )?;
+            Ok(changed)
+        })?;
+        Ok(claimed > 0)
+    }
     /// Insert a review job row if the run does not already have one. Returns
-    /// whether this call created the row (exact-once claim support arrives
-    /// with the background runner phase).
+    /// whether this call created the row; the `ON CONFLICT` clause keeps the
+    /// one-job-per-run invariant (the `run_id` primary key) exact-once safe.
     pub(crate) fn ensure_memory_review_job(
         &self,
         run_id: &str,
@@ -866,6 +781,212 @@ fn map_review_job(row: &rusqlite::Row<'_>) -> rusqlite::Result<MemoryReviewJob> 
         finished_at: row.get(8)?,
         created_at: row.get(9)?,
     })
+}
+
+/// Conn-scoped candidate load for callers already inside a transaction.
+fn get_candidate_conn(
+    conn: &rusqlite::Connection,
+    id: &str,
+) -> Result<Option<MemoryCandidate>, DbError> {
+    Ok(conn
+        .query_row(
+            &format!("SELECT {CANDIDATE_COLS} FROM memory_candidates WHERE id = ?1"),
+            params![id],
+            map_candidate,
+        )
+        .optional()?)
+}
+
+/// Conn-scoped decision write: flips a pending candidate to its final status.
+fn mark_candidate_decided_conn(
+    conn: &rusqlite::Connection,
+    id: &str,
+    status: CandidateStatus,
+    blocked_code: Option<&str>,
+) -> Result<(), DbError> {
+    let decided_at = now();
+    let changed = conn.execute(
+        "UPDATE memory_candidates SET status = ?1, blocked_code = COALESCE(?2, blocked_code),
+                decided_at = ?3
+         WHERE id = ?4 AND status = 'pending'",
+        params![status.as_str(), blocked_code, decided_at, id],
+    )?;
+    if changed == 0 {
+        return Err(DbError::Other("candidate_not_pending".into()));
+    }
+    Ok(())
+}
+
+/// Conn-scoped duplicate scan over active canonical memories in one scope.
+fn active_duplicate_hash_conn(
+    conn: &rusqlite::Connection,
+    scope_type: MemoryScopeType,
+    scope_key: &str,
+    memory_type: MemoryType,
+    content_hash: &str,
+) -> Result<bool, DbError> {
+    let mut statement = conn.prepare(
+        "SELECT body FROM memories
+         WHERE scope_type = ?1 AND scope_key = ?2 AND memory_type = ?3
+           AND status = 'active'",
+    )?;
+    let bodies = statement
+        .query_map(params![scope_type.as_str(), scope_key, memory_type.as_str()], |row| {
+            row.get::<_, String>(0)
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(bodies.iter().any(|body| {
+        let normalized = normalize_body(body)
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+        candidate_content_hash(&normalized, scope_key, memory_type) == content_hash
+    }))
+}
+
+/// Conn-scoped insert of validated candidate rows (duplicates ignored).
+fn insert_candidates_conn(
+    conn: &rusqlite::Connection,
+    review_run_id: &str,
+    workflow_id: &str,
+    validated: &[ValidatedCandidate],
+    created_at: &str,
+) -> Result<usize, DbError> {
+    let mut count = 0usize;
+    for candidate in validated {
+        let changed = conn.execute(
+            "INSERT OR IGNORE INTO memory_candidates
+               (id, review_run_id, workflow_id, source_node_id, operation,
+                target_memory_id, scope_type, scope_key, memory_type, title,
+                body, confidence, rationale, content_hash, status, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14,
+                     'pending', ?15)",
+            params![
+                Uuid::new_v4().to_string(),
+                review_run_id,
+                workflow_id,
+                candidate.source_node_id,
+                candidate.operation.as_str(),
+                candidate.target_memory_id,
+                candidate.scope_type.as_str(),
+                candidate.scope_key,
+                candidate.memory_type.as_str(),
+                candidate.title,
+                candidate.body,
+                candidate.confidence,
+                candidate.rationale,
+                candidate.content_hash,
+                created_at,
+            ],
+        )?;
+        count += changed;
+    }
+    Ok(count)
+}
+
+/// Revalidate an approved candidate against live canonical memory and apply
+/// it — canonical insert/lifecycle transition plus FTS maintenance — on the
+/// open transaction connection.
+///
+/// `Ok(Ok(()))`: applied. `Ok(Err(blocked_code))`: the live state conflicts
+/// with what the reviewer saw; the caller marks the candidate `blocked` and
+/// canonical state stays untouched. `Err(DbError)`: an infrastructure
+/// failure — it propagates so the whole transaction rolls back and the
+/// candidate remains pending.
+fn apply_approved_candidate(
+    conn: &rusqlite::Connection,
+    context: &MemoryContext,
+    candidate: &MemoryCandidate,
+) -> Result<Result<(), &'static str>, DbError> {
+    let scope_key = resolve_scope_key(
+        candidate.scope_type,
+        &context.workflow_id,
+        context.working_directory.as_deref(),
+    )
+    .map_err(|code| DbError::Other(code.to_string()))?;
+    if scope_key != candidate.scope_key {
+        return Ok(Err("target_scope_mismatch"));
+    }
+
+    let target_memory_id = if candidate.operation == CandidateOperation::Create {
+        if candidate.target_memory_id.is_some() {
+            return Ok(Err("target_forbidden"));
+        }
+        None
+    } else {
+        let Some(target_id) = candidate.target_memory_id.as_deref() else {
+            return Ok(Err("target_required"));
+        };
+        let Some(target) = get_memory_conn(conn, target_id)? else {
+            return Ok(Err("target_missing"));
+        };
+        if target.status != MemoryStatus::Active || is_expired(&target) {
+            return Ok(Err("target_inactive"));
+        }
+        if target.scope_type != candidate.scope_type || target.scope_key != candidate.scope_key {
+            return Ok(Err("target_scope_mismatch"));
+        }
+        Some(target_id.to_string())
+    };
+
+    // Exact-duplicate guard against live canonical memory at decision time.
+    let hash = candidate_content_hash(&candidate.body, &candidate.scope_key, candidate.memory_type);
+    let duplicate = active_duplicate_hash_conn(
+        conn,
+        candidate.scope_type,
+        &candidate.scope_key,
+        candidate.memory_type,
+        &hash,
+    )
+    .map_err(DbError::from)?;
+    if duplicate {
+        return Ok(Err("duplicate_content"));
+    }
+
+    match candidate.operation {
+        CandidateOperation::Create | CandidateOperation::Supersede => {
+            // Review candidates are bounded well below the artifact spill
+            // threshold, so the canonical record never spills to disk here.
+            let record = CanonicalMemoryRecord {
+                id: Uuid::new_v4().to_string(),
+                workflow_id: Some(candidate.workflow_id.clone()),
+                run_id: Some(candidate.review_run_id.clone()),
+                node_id: candidate.source_node_id.clone(),
+                scope_type: candidate.scope_type,
+                scope_key: candidate.scope_key.clone(),
+                kind: "text".into(),
+                memory_type: candidate.memory_type,
+                source: "review".into(),
+                title: candidate.title.clone(),
+                body: candidate.body.clone(),
+                artifact_path: None,
+                pinned: false,
+                confidence: candidate.confidence,
+                salience: 50,
+                status: MemoryStatus::Active,
+                supersedes_id: if candidate.operation == CandidateOperation::Supersede {
+                    target_memory_id.clone()
+                } else {
+                    None
+                },
+                last_confirmed_at: None,
+                expires_at: None,
+                created_at: now(),
+            };
+            write_canonical_memory(conn, &record)?;
+        }
+        CandidateOperation::Retract => {
+            let updated_at = now();
+            conn.execute(
+                "UPDATE memories SET status = 'retracted', pinned = 0, updated_at = ?1
+                 WHERE id = ?2",
+                params![updated_at, target_memory_id],
+            )
+            .map_err(DbError::from)?;
+            index_memory(conn, target_memory_id.as_deref().unwrap_or_default())?;
+        }
+    }
+    Ok(Ok(()))
 }
 
 /// Resolve the concrete scope key a candidate must carry for its declared
@@ -1065,11 +1186,13 @@ fn strip_control_chars(value: &str) -> String {
 
 /// Existing-memory context for the reviewer, built with Plan 027's retrieval
 /// engine and capped at 12 items / 12 KiB (`retrieve_review_context`).
-pub fn candidate_existing_memory_context(db: &super::Db, request: &MemoryRetrievalRequest<'_>) -> String {
-    let result = db.retrieve_review_context(request);
-    debug_assert!(result.items.len() <= super::memory_retrieval::REVIEW_CONTEXT_MAX_ITEMS);
-    debug_assert!(result.rendered_bytes <= super::memory_retrieval::REVIEW_CONTEXT_MAX_BYTES);
-    result.markdown
+/// Returns the rendered untrusted block AND the exact memory IDs shown, so
+/// supersede/retract targets are validated against real reviewer visibility.
+pub fn candidate_existing_memory_context(
+    db: &super::Db,
+    request: &MemoryRetrievalRequest<'_>,
+) -> super::memory_retrieval::RetrievalResult {
+    db.retrieve_review_context(request)
 }
 
 const REVIEW_PROMPT_HEADER: &str = "\
@@ -1516,7 +1639,7 @@ pub(crate) fn is_instruction_language_body(body: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::{CreateWorkflowInput, Db};
+    use crate::db::{CreateMemoryInput, CreateWorkflowInput, Db, UpdateMemoryInput};
     use serde_json::json;
 
     fn db() -> Db {
@@ -2203,7 +2326,12 @@ mod tests {
                 query_text: "fact number",
                 exclude_ids: &[],
             });
-        assert_eq!(context_markdown, result.markdown);
+        assert_eq!(context_markdown.markdown, result.markdown);
+        assert_eq!(
+            context_markdown.items.len(),
+            result.items.len(),
+            "the helper exposes the exact reviewer-visible id set"
+        );
     }
 
     // ------------------------------------------------------------------
@@ -2559,5 +2687,316 @@ mod tests {
             validate_candidate_suggestion(&db, &ctx, &reworded).unwrap_err(),
             "duplicate_pending"
         );
+    }
+
+    // ------------------------------------------------------------------
+    // Step 5: transactional approvals (atomicity matrix)
+    // ------------------------------------------------------------------
+
+    mod approval_is_atomic {
+        use super::*;
+
+        fn pinned_canonical(db: &Db, id: &str, workflow_id: &str, body: &str) -> String {
+            db.create_memory(CreateMemoryInput {
+                workflow_id: workflow_id.into(),
+                title: format!("Canonical {id}"),
+                body: body.into(),
+                run_id: None,
+                node_id: None,
+                kind: None,
+                scope_type: Some(MemoryScopeType::Workflow),
+                memory_type: Some(MemoryType::Fact),
+                source: Some("manual".into()),
+                pinned: Some(true),
+                confidence: None,
+                salience: None,
+                status: None,
+                supersedes_id: None,
+                last_confirmed_at: None,
+                expires_at: None,
+                id: Some(id.into()),
+            })
+            .expect("create pinned canonical memory");
+            id.to_string()
+        }
+
+        fn fts_finds(db: &Db, workflow_id: &str, term: &str) -> Vec<String> {
+            db.retrieve_review_context(&MemoryRetrievalRequest {
+                workflow_id,
+                working_directory: Some("/tmp/curation-ws"),
+                run_id: "fts-probe",
+                node_id: "review",
+                query_text: term,
+                exclude_ids: &[],
+            })
+            .items
+            .into_iter()
+            .map(|item| item.memory_id)
+            .collect()
+        }
+
+        #[test]
+        fn create_applies_memory_fts_and_decision_together() {
+            let db = db();
+            let workflow_id = workflow(&db);
+            seed_run_and_job(&db, "run-1", &workflow_id);
+            let candidate = seed_candidate(
+                &db, &workflow_id, "run-1",
+                CandidateOperation::Create, None,
+                MemoryScopeType::Workflow, MemoryType::Preference,
+                "Deploy window", "Deploys happen on Sunday evenings", &HashSet::new(),
+            );
+
+            assert_eq!(
+                db.approve_memory_candidate(&candidate.id).expect("approve").status,
+                CandidateStatus::Approved
+            );
+
+            // Canonical row with full review provenance.
+            let memories = db
+                .list_memories_for_context(&db.memory_context(&workflow_id).unwrap(), false)
+                .unwrap();
+            let memory = memories
+                .iter()
+                .find(|item| item.memory.title == "Deploy window")
+                .expect("approved memory exists");
+            assert_eq!(memory.memory.source, "review");
+            assert_eq!(memory.memory.run_id.as_deref(), Some("run-1"));
+            assert_eq!(memory.memory.confidence, 0.8);
+            assert_eq!(memory.memory.salience, 50);
+            assert!(!memory.memory.pinned);
+
+            // FTS was maintained in the same transaction.
+            assert!(fts_finds(&db, &workflow_id, "Sunday evenings").contains(&memory.memory.id));
+        }
+
+        #[test]
+        fn supersede_replaces_pinned_target_and_syncs_fts() {
+            let db = db();
+            let workflow_id = workflow(&db);
+            let target_id = pinned_canonical(&db, "target-pin", &workflow_id, "Old deploy window");
+            seed_run_and_job(&db, "run-1", &workflow_id);
+            let mut visible = HashSet::new();
+            visible.insert(target_id.clone());
+            let candidate = seed_candidate(
+                &db, &workflow_id, "run-1",
+                CandidateOperation::Supersede, Some(target_id.clone()),
+                MemoryScopeType::Workflow, MemoryType::Fact,
+                "New deploy window", "Deploys moved to Saturday mornings", &visible,
+            );
+
+            db.approve_memory_candidate(&candidate.id).expect("approve");
+
+            let target = db.get_memory(&target_id).unwrap().unwrap();
+            assert_eq!(target.status, MemoryStatus::Superseded);
+            assert!(!target.pinned, "superseded targets must be unpinned");
+            let replacement = db
+                .list_memories_for_context(&db.memory_context(&workflow_id).unwrap(), false)
+                .unwrap()
+                .into_iter()
+                .find(|item| item.memory.supersedes_id.as_deref() == Some(target_id.as_str()))
+                .expect("replacement exists");
+            assert_eq!(replacement.memory.status, MemoryStatus::Active);
+
+            // FTS reflects both sides of the transition.
+            assert!(fts_finds(&db, &workflow_id, "Saturday mornings").contains(&replacement.memory.id));
+            assert!(
+                !fts_finds(&db, &workflow_id, "deploy window").contains(&target_id),
+                "the superseded target must leave the active FTS surface"
+            );
+        }
+
+        #[test]
+        fn retract_hides_target_from_fts_without_replacement_or_keeping_pin() {
+            let db = db();
+            let workflow_id = workflow(&db);
+            let target_id = pinned_canonical(&db, "target-retract", &workflow_id, "Stale deploy claim");
+            seed_run_and_job(&db, "run-1", &workflow_id);
+            let mut visible = HashSet::new();
+            visible.insert(target_id.clone());
+            let candidate = seed_candidate(
+                &db, &workflow_id, "run-1",
+                CandidateOperation::Retract, Some(target_id.clone()),
+                MemoryScopeType::Workflow, MemoryType::Fact,
+                "Retire stale claim", "The stale claim is no longer true", &visible,
+            );
+
+            db.approve_memory_candidate(&candidate.id).expect("approve");
+
+            let target = db.get_memory(&target_id).unwrap().unwrap();
+            assert_eq!(target.status, MemoryStatus::Retracted);
+            assert!(!target.pinned);
+            assert!(fts_finds(&db, &workflow_id, "stale claim").is_empty());
+            assert_eq!(
+                db.list_memories_for_context(&db.memory_context(&workflow_id).unwrap(), true)
+                    .unwrap()
+                    .len(),
+                1,
+                "retract creates no replacement memory"
+            );
+        }
+
+        #[test]
+        fn stale_scope_conflict_blocks_without_any_canonical_change() {
+            let db = db();
+            let workflow_id = workflow(&db);
+            let target_id = canonical_memory(&db, "target-scope", &workflow_id, "Scoped fact", MemoryType::Fact);
+            seed_run_and_job(&db, "run-1", &workflow_id);
+            let mut visible = HashSet::new();
+            visible.insert(target_id.clone());
+            let candidate = seed_candidate(
+                &db, &workflow_id, "run-1",
+                CandidateOperation::Supersede, Some(target_id.clone()),
+                MemoryScopeType::Workflow, MemoryType::Fact,
+                "Replacement", "Fresh replacement content for deploys", &visible,
+            );
+
+            // The target changed scope after the review ran.
+            db.update_memory(UpdateMemoryInput {
+                id: target_id.clone(),
+                context_workflow_id: Some(workflow_id.clone()),
+                title: None,
+                body: None,
+                pinned: None,
+                kind: None,
+                scope_type: Some(MemoryScopeType::User),
+                memory_type: None,
+                confidence: None,
+                salience: None,
+                status: None,
+                supersedes_id: None,
+                last_confirmed_at: None,
+                expires_at: None,
+            })
+            .expect("move target to user scope");
+
+            let blocked = db.approve_memory_candidate(&candidate.id).expect("decision");
+            assert_eq!(blocked.status, CandidateStatus::Blocked);
+            assert_eq!(blocked.blocked_code.as_deref(), Some("target_scope_mismatch"));
+            assert!(
+                !db.list_memories_for_context(&db.memory_context(&workflow_id).unwrap(), true)
+                    .unwrap()
+                    .iter()
+                    .any(|item| item.memory.title == "Replacement"),
+                "a blocked approval must not write canonical memory"
+            );
+        }
+        #[test]
+        fn disappeared_target_blocks_and_writes_nothing() {
+            let db = db();
+            let workflow_id = workflow(&db);
+            let target_id = canonical_memory(&db, "target-gone", &workflow_id, "Vanishing fact", MemoryType::Fact);
+            seed_run_and_job(&db, "run-1", &workflow_id);
+            let mut visible = HashSet::new();
+            visible.insert(target_id.clone());
+            let candidate = seed_candidate(
+                &db, &workflow_id, "run-1",
+                CandidateOperation::Supersede, Some(target_id),
+                MemoryScopeType::Workflow, MemoryType::Fact,
+                "Replacement", "Fresh replacement content for deploys", &visible,
+            );
+
+            // Deleting the target nulls the candidate's FK reference.
+            db.delete_memory("target-gone").expect("delete target");
+            let blocked = db.approve_memory_candidate(&candidate.id).expect("decision");
+            assert_eq!(blocked.status, CandidateStatus::Blocked);
+            assert_eq!(blocked.blocked_code.as_deref(), Some("target_required"));
+            assert!(
+                !db.list_memories_for_context(&db.memory_context(&workflow_id).unwrap(), true)
+                    .unwrap()
+                    .iter()
+                    .any(|item| item.memory.title == "Replacement")
+            );
+        }
+
+        #[test]
+        fn expired_target_blocks_instead_of_replacing() {
+            let db = db();
+            let workflow_id = workflow(&db);
+            canonical_memory(&db, "target-exp", &workflow_id, "Soon expiring fact", MemoryType::Fact);
+            seed_run_and_job(&db, "run-1", &workflow_id);
+            let mut visible = HashSet::new();
+            visible.insert("target-exp".into());
+            let candidate = seed_candidate(
+                &db, &workflow_id, "run-1",
+                CandidateOperation::Supersede, Some("target-exp".into()),
+                MemoryScopeType::Workflow, MemoryType::Fact,
+                "Replacement", "Fresh replacement content for deploys", &visible,
+            );
+
+            // The expiry lands only after the review ran.
+            db.with_conn(|conn| {
+                conn.execute(
+                    "UPDATE memories SET expires_at = '2026-01-01T00:00:00Z' WHERE id = 'target-exp'",
+                    [],
+                )?;
+                Ok(())
+            })
+            .unwrap();
+
+            let blocked = db.approve_memory_candidate(&candidate.id).expect("decision");
+            assert_eq!(blocked.status, CandidateStatus::Blocked);
+            assert_eq!(blocked.blocked_code.as_deref(), Some("target_inactive"));
+        }
+
+        #[test]
+        fn duplicate_race_blocks_before_any_write() {
+            let db = db();
+            let workflow_id = workflow(&db);
+            seed_run_and_job(&db, "run-1", &workflow_id);
+            let candidate = seed_candidate(
+                &db, &workflow_id, "run-1",
+                CandidateOperation::Create, None,
+                MemoryScopeType::Workflow, MemoryType::Fact,
+                "Race", "Someone saved this fact first", &HashSet::new(),
+            );
+            canonical_memory(&db, "race-1", &workflow_id, "Someone saved this fact first", MemoryType::Fact);
+
+            let blocked = db.approve_memory_candidate(&candidate.id).expect("decision");
+            assert_eq!(blocked.status, CandidateStatus::Blocked);
+            assert_eq!(blocked.blocked_code.as_deref(), Some("duplicate_content"));
+            // Exactly the raced manual duplicate exists; nothing else written.
+            let memories = db
+                .list_memories_for_context(&db.memory_context(&workflow_id).unwrap(), true)
+                .unwrap();
+            assert_eq!(memories.len(), 1);
+            assert_eq!(memories[0].memory.id, "race-1");
+        }
+
+        #[test]
+        fn infrastructure_failure_rolls_back_and_keeps_candidate_pending() {
+            let db = db();
+            let workflow_id = workflow(&db);
+            let target_id = canonical_memory(&db, "target-rb", &workflow_id, "Rollback fact", MemoryType::Fact);
+            seed_run_and_job(&db, "run-1", &workflow_id);
+            let mut visible = HashSet::new();
+            visible.insert(target_id.clone());
+            let candidate = seed_candidate(
+                &db, &workflow_id, "run-1",
+                CandidateOperation::Supersede, Some(target_id.clone()),
+                MemoryScopeType::Workflow, MemoryType::Fact,
+                "Rollback replacement", "Content that must never land partially", &visible,
+            );
+
+            // Sabotage FTS so the in-transaction index write fails mid-flight.
+            db.with_conn(|conn| {
+                conn.execute_batch("DROP TABLE memory_fts;")?;
+                Ok(())
+            })
+            .unwrap();
+            assert!(db.approve_memory_candidate(&candidate.id).is_err());
+
+            // Nothing from the aborted transaction survived.
+            assert_eq!(db.get_memory(&target_id).unwrap().unwrap().status, MemoryStatus::Active);
+            assert!(
+                !db.list_memories_for_context(&db.memory_context(&workflow_id).unwrap(), true)
+                    .unwrap()
+                    .iter()
+                    .any(|item| item.memory.title == "Rollback replacement")
+            );
+            let pending = db.get_memory_candidate(&candidate.id).unwrap().unwrap();
+            assert_eq!(pending.status, CandidateStatus::Pending);
+            assert!(pending.decided_at.is_none());
+        }
     }
 }

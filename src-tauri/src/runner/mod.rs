@@ -9,17 +9,22 @@ use crate::agents::process::{
 };
 use crate::agents::{
     adapter_for, auth_required, AgentActivity, AgentActivityKind, AgentActivityState,
-    AgentAuthRequired, AgentError, AgentProvider, AgentRequest, AgentRunHooks,
+    AgentAuthRequired, AgentError, AgentProvider, AgentRequest, AgentResponse, AgentRunHooks,
 };
 use crate::db::{
-    Db, FormattedMemoryContext, MemoryContext, MemoryRetrievalRequest, RetrievalReason,
-    RetrievedMemoryUse,
+    build_review_digest, build_review_prompt, candidate_existing_memory_context,
+    parse_reviewer_output, validate_candidate_suggestion, CandidateReviewContext, Db,
+    FormattedMemoryContext, MemoryContext, MemoryRetrievalRequest, RetrievalReason,
+    RetrievedMemoryUse, REVIEW_DIGEST_MAX_BYTES, REVIEW_ERROR_AUTH_REQUIRED,
+    REVIEW_ERROR_INTERNAL, REVIEW_ERROR_INVALID_RESPONSE, REVIEW_ERROR_PROVIDER_UNAVAILABLE,
+    REVIEW_ERROR_TIMEOUT,
 };
 use crate::integrations::actions::{
     ActionCancellation, ActionDescriptor, ActionErrorCode, ActionRequest, ActionResult,
 };
 use crate::integrations::IntegrationsState;
 use chrono::Utc;
+use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
@@ -1910,6 +1915,11 @@ pub fn execute_run(
         },
     )?;
 
+    // Plan 028: the asynchronous post-run review is scheduled strictly AFTER
+    // the run was marked completed and its completion event emitted, and it
+    // never blocks or alters this path.
+    schedule_memory_review(app, db, run_id, workflow_id);
+
     Ok(())
 }
 
@@ -1990,6 +2000,271 @@ fn topological_order(nodes: &[Value], edges: &[Value]) -> Vec<Value> {
     }
 
     ordered
+}
+
+// ---------------------------------------------------------------------------
+// Post-run memory review (Plan 028 Step 4)
+// ---------------------------------------------------------------------------
+
+/// Testable boundary between the run lifecycle and the reviewer CLI adapter.
+pub trait ReviewAgent: Send + Sync {
+    fn run_review(
+        &self,
+        provider: AgentProvider,
+        request: AgentRequest,
+    ) -> Result<AgentResponse, AgentError>;
+}
+
+/// Production reviewer: delegates to the provider's `AgentAdapter` with no
+/// live activity hook and no workflow cancellation token — a background
+/// review neither streams activity nor participates in run cancellation.
+struct AdapterReviewAgent;
+
+impl ReviewAgent for AdapterReviewAgent {
+    fn run_review(
+        &self,
+        provider: AgentProvider,
+        request: AgentRequest,
+    ) -> Result<AgentResponse, AgentError> {
+        adapter_for(provider).run(
+            request,
+            AgentRunHooks {
+                control: None,
+                on_activity: None,
+            },
+        )
+    }
+}
+
+/// Injected dependencies of the background review machinery.
+#[derive(Clone)]
+pub(crate) struct MemoryReviewContext {
+    pub agent: std::sync::Arc<dyn ReviewAgent>,
+    /// Emits `memory://candidates-changed { workflowId, pendingCount }`.
+    pub notify_candidates_changed: std::sync::Arc<dyn Fn(&str) + Send + Sync>,
+}
+
+fn production_review_context(app: &AppHandle) -> MemoryReviewContext {
+    let handle = app.clone();
+    MemoryReviewContext {
+        agent: std::sync::Arc::new(AdapterReviewAgent),
+        notify_candidates_changed: std::sync::Arc::new(move |workflow_id| {
+            emit_candidates_changed(&handle, workflow_id);
+        }),
+    }
+}
+
+/// Post-commit notification for the Suggestions queue. Carries only the
+/// workflow id and pending count — never candidate text or provider output.
+fn emit_candidates_changed(app: &AppHandle, workflow_id: &str) {
+    let Some(db) = app.try_state::<Db>() else {
+        return;
+    };
+    let pending = db.count_pending_memory_candidates(workflow_id).unwrap_or(0);
+    let _ = app.emit(
+        "memory://candidates-changed",
+        serde_json::json!({ "workflowId": workflow_id, "pendingCount": pending }),
+    );
+}
+
+/// Called from `execute_run` AFTER the run was marked completed and its
+/// completion event emitted. Reads settings, enqueues at most one job per
+/// run, and spawns the blocking background task — never blocking the run
+/// lifecycle. Review failure never changes run status or output.
+pub(crate) fn schedule_memory_review(app: &AppHandle, db: &Db, run_id: &str, workflow_id: &str) {
+    let ctx = production_review_context(app);
+    if !schedule_memory_review_with(db, run_id, workflow_id) {
+        return;
+    }
+    let handle = app.clone();
+    let run_id = run_id.to_string();
+    tauri::async_runtime::spawn_blocking(move || {
+        let Some(db) = handle.try_state::<Db>() else {
+            return;
+        };
+        execute_memory_review(db.inner(), &ctx, &run_id);
+    });
+}
+
+/// Spawns execution for a retried (reset-to-pending) review job after
+/// `Db::retry_memory_review` validated the settings. The atomic claim inside
+/// keeps one invocation at a time.
+pub(crate) fn spawn_retry_memory_review(app: &AppHandle, run_id: &str) {
+    let ctx = production_review_context(app);
+    let handle = app.clone();
+    let run_id = run_id.to_string();
+    tauri::async_runtime::spawn_blocking(move || {
+        let Some(db) = handle.try_state::<Db>() else {
+            return;
+        };
+        execute_memory_review(db.inner(), &ctx, &run_id);
+    });
+}
+
+/// Eligibility gate + job enqueue. Returns whether a background task should
+/// be spawned for this run. Disabled or unconfigured paths create no job and
+/// make zero adapter calls; failed/cancelled runs are never reviewed.
+pub(crate) fn schedule_memory_review_with(db: &Db, run_id: &str, workflow_id: &str) -> bool {
+    let Some((provider, model)) = eligible_review_settings(db, run_id, workflow_id) else {
+        return false;
+    };
+    // One row per run (`ON CONFLICT DO NOTHING`); an existing pending job
+    // from a manual retry stays authoritative and is claimed by whichever
+    // task wins the atomic claim inside the spawned execution.
+    let _ = db.ensure_memory_review_job(run_id, workflow_id, provider.as_str(), model.as_deref());
+    true
+}
+
+/// Global + workflow settings gate for reviewing one completed run:
+/// globally enabled with a supported provider AND explicitly enabled for the
+/// workflow, and the run itself must be `completed`.
+fn eligible_review_settings(
+    db: &Db,
+    run_id: &str,
+    workflow_id: &str,
+) -> Option<(AgentProvider, Option<String>)> {
+    let status: String = db
+        .with_conn(|conn| {
+            Ok(conn
+                .query_row(
+                    "SELECT status FROM runs WHERE id = ?1",
+                    rusqlite::params![run_id],
+                    |row| row.get(0),
+                )
+                .optional()?)
+        })
+        .ok()
+        .flatten()?;
+    if status != "completed" {
+        return None;
+    }
+    let settings = db.get_memory_review_settings().ok()?;
+    if !settings.enabled {
+        return None;
+    }
+    let provider = AgentProvider::from_str(settings.provider.as_deref()?)?;
+    let workflow_toggle = db.get_workflow_memory_review(workflow_id).ok()??;
+    if !workflow_toggle.enabled {
+        return None;
+    }
+    Some((provider, settings.model))
+}
+
+/// Synchronous body of one review job: atomically claim pending → running
+/// (exact-once), gather bounded inputs while releasing the DB between reads,
+/// invoke the selected provider ONCE without holding any lock, then parse,
+/// validate, insert candidates, and mark completion in one final
+/// transaction. Failures persist only stable codes.
+pub(crate) fn execute_memory_review(db: &Db, ctx: &MemoryReviewContext, run_id: &str) {
+    match db.claim_memory_review(run_id) {
+        Ok(true) => {}
+        _ => return, // not claimable: already running/decided or missing
+    }
+    match run_memory_review_job(db, ctx, run_id) {
+        Ok(()) => {}
+        Err(error_code) => {
+            let _ = db.fail_memory_review(run_id, error_code);
+        }
+    }
+}
+
+fn run_memory_review_job(db: &Db, ctx: &MemoryReviewContext, run_id: &str) -> Result<(), &'static str> {
+    // ---- Gather inputs (each read takes and releases the SQLite mutex) ----
+    let job = db
+        .get_memory_review_job(run_id)
+        .map_err(|_| REVIEW_ERROR_INTERNAL)?
+        .ok_or(REVIEW_ERROR_INTERNAL)?;
+    let provider = AgentProvider::from_str(&job.provider).ok_or(REVIEW_ERROR_INTERNAL)?;
+    let detail = db
+        .get_run_history(run_id)
+        .map_err(|_| REVIEW_ERROR_INTERNAL)?
+        .ok_or(REVIEW_ERROR_INTERNAL)?;
+    let context = db.memory_context(&job.workflow_id).map_err(|_| REVIEW_ERROR_INTERNAL)?;
+
+    // Bounded digest of canonical steps + existing-memory context, both later
+    // framed as untrusted data by the prompt contract.
+    let digest = build_review_digest(&detail, REVIEW_DIGEST_MAX_BYTES);
+    let retrieval = candidate_existing_memory_context(
+        db,
+        &MemoryRetrievalRequest {
+            workflow_id: &job.workflow_id,
+            working_directory: context.working_directory.as_deref(),
+            run_id,
+            node_id: "memory-review",
+            query_text: &digest,
+            exclude_ids: &[],
+        },
+    );
+    let visible_ids: HashSet<String> = retrieval
+        .items
+        .iter()
+        .map(|item| item.memory_id.clone())
+        .collect();
+
+    // ---- Invoke the provider once. NO database mutex is held here. ----
+    let prompt = build_review_prompt(&digest, &retrieval.markdown);
+    let request = AgentRequest {
+        prompt,
+        model: job.model.clone(),
+        skill: None,
+        skill_name: None,
+        skill_names: Vec::new(),
+        working_directory: context.working_directory.clone(),
+        extra: Value::Null,
+    };
+    let response = ctx.agent.run_review(provider, request).map_err(|error| {
+        log::debug!("memory review failed with a provider error");
+        stable_review_error_code(provider, &error)
+    })?;
+
+    // ---- Strict parse + central validation; no repair call ever happens. ----
+    let suggestions = parse_reviewer_output(&response.output)
+        .map_err(|_| REVIEW_ERROR_INVALID_RESPONSE)?;
+    let review_ctx = CandidateReviewContext {
+        workflow_id: &job.workflow_id,
+        working_directory: context.working_directory.as_deref(),
+        visible_memory_ids: &visible_ids,
+        skip_target_visibility: false,
+        exclude_pending_id: None,
+    };
+    let mut validated = Vec::new();
+    for suggestion in &suggestions {
+        // Individually invalid candidates are omitted, never repaired; only
+        // the aggregate count reaches debug logs, without any body text.
+        if let Ok(candidate) = validate_candidate_suggestion(db, &review_ctx, suggestion) {
+            validated.push(candidate);
+        }
+    }
+    let cap = db
+        .get_memory_review_settings()
+        .map(|settings| settings.max_candidates as usize)
+        .unwrap_or(validated.len());
+    validated.truncate(cap);
+
+    // ---- Final writes in ONE transaction, then notify the queue. ----
+    db.finalize_review_success(run_id, &job.workflow_id, &validated)
+        .map_err(|_| REVIEW_ERROR_INTERNAL)?;
+    (ctx.notify_candidates_changed)(&job.workflow_id);
+    Ok(())
+}
+
+/// Map an adapter failure onto a stable review error code. Raw provider
+/// error text is classified locally and never persisted.
+fn stable_review_error_code(provider: AgentProvider, error: &AgentError) -> &'static str {
+    match error {
+        AgentError::Cancelled => REVIEW_ERROR_INTERNAL,
+        AgentError::Message(message) => {
+            if auth_required(provider, message).is_some() {
+                REVIEW_ERROR_AUTH_REQUIRED
+            } else if message.contains("timed out") {
+                REVIEW_ERROR_TIMEOUT
+            } else if message.contains("CLI not found") || message.contains("failed to spawn") {
+                REVIEW_ERROR_PROVIDER_UNAVAILABLE
+            } else {
+                REVIEW_ERROR_INTERNAL
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -2424,6 +2699,462 @@ mod tests {
             }
             assert!(automatic_memory_eligible("agent"));
             assert!(automatic_memory_eligible("customAgent"));
+        }
+    }
+
+    mod background_memory_review {
+        use super::*;
+        use crate::db::UpdateMemoryReviewSettingsInput;
+        use std::sync::mpsc;
+        use std::time::{Duration, Instant};
+
+        type ReviewBehavior = std::sync::Arc<
+            dyn Fn() -> Result<AgentResponse, AgentError> + Send + Sync,
+        >;
+
+        /// Records every (provider, model) invocation; optionally blocks on a
+        /// gate so tests can observe the system while the provider call is in
+        /// flight; returns whatever behavior is configured.
+        struct FakeAgent {
+            calls: std::sync::Mutex<Vec<(AgentProvider, Option<String>)>>,
+            behavior: std::sync::Mutex<ReviewBehavior>,
+            gate: std::sync::Mutex<Option<mpsc::Receiver<()>>>,
+        }
+
+        impl FakeAgent {
+            fn ok_json(body: &str) -> Self {
+                let payload = body.to_string();
+                Self::behavior(move || {
+                    Ok(AgentResponse {
+                        output: payload.clone(),
+                        metadata: Value::Null,
+                    })
+                })
+            }
+
+            fn behavior(
+                f: impl Fn() -> Result<AgentResponse, AgentError> + Send + Sync + 'static,
+            ) -> Self {
+                Self {
+                    calls: std::sync::Mutex::new(Vec::new()),
+                    behavior: std::sync::Mutex::new(std::sync::Arc::new(f)),
+                    gate: std::sync::Mutex::new(None),
+                }
+            }
+
+            fn with_gate(mut self, receiver: mpsc::Receiver<()>) -> Self {
+                *self.gate.lock().unwrap() = Some(receiver);
+                self
+            }
+
+            fn error(message: &str) -> Self {
+                let message = message.to_string();
+                Self::behavior(move || Err(AgentError::Message(message.clone())))
+            }
+        }
+
+        impl ReviewAgent for FakeAgent {
+            fn run_review(
+                &self,
+                provider: AgentProvider,
+                request: AgentRequest,
+            ) -> Result<AgentResponse, AgentError> {
+                self.calls
+                    .lock()
+                    .unwrap()
+                    .push((provider, request.model.clone()));
+                if let Some(gate) = self.gate.lock().unwrap().take() {
+                    // Hold the "provider call" open until the test releases it.
+                    let _ = gate.recv_timeout(Duration::from_secs(10));
+                }
+                (self.behavior.lock().unwrap().clone())()
+            }
+        }
+
+        struct Fixture {
+            db: Db,
+            workflow_id: String,
+        }
+
+        fn fixture(run_status: &str) -> Fixture {
+            let db = Db::open_in_memory().expect("open database");
+            let workflow = db
+                .create_workflow(crate::db::CreateWorkflowInput {
+                    name: "Review".into(),
+                    description: String::new(),
+                    working_directory: "/projects/alfred".into(),
+                    folder_id: None,
+                    graph: json!({ "nodes": [], "edges": [] }),
+                })
+                .expect("create workflow");
+            db.with_conn(|conn| {
+                conn.execute(
+                    "INSERT INTO runs (id, workflow_id, status, created_at)
+                     VALUES ('run', ?1, ?2, '2026-08-25T10:00:00Z')",
+                    rusqlite::params![workflow.id, run_status],
+                )?;
+                Ok(())
+            })
+            .expect("insert run");
+            db.update_memory_review_settings(UpdateMemoryReviewSettingsInput {
+                enabled: true,
+                provider: Some("claude_code".into()),
+                model: Some("sonnet".into()),
+                max_candidates: None,
+            })
+            .expect("enable review");
+            db.set_workflow_memory_review(&workflow.id, true)
+                .expect("enable workflow review");
+            Fixture {
+                db,
+                workflow_id: workflow.id,
+            }
+        }
+
+        fn ctx(
+            agent: std::sync::Arc<FakeAgent>,
+            events: mpsc::Sender<String>,
+        ) -> MemoryReviewContext {
+            MemoryReviewContext {
+                agent,
+                notify_candidates_changed: std::sync::Arc::new(move |workflow_id| {
+                    let _ = events.send(workflow_id.to_string());
+                }),
+            }
+        }
+
+        const ONE_CREATE: &str = r#"{"candidates":[{"operation":"create","scopeType":"user","memoryType":"preference","title":"Editor","body":"Uses Neovim daily","confidence":0.7,"rationale":"stated twice"}]}"#;
+
+        fn job_status(db: &Db) -> Option<(String, Option<String>, i64)> {
+            db.with_conn(|conn| {
+                Ok(conn
+                    .query_row(
+                        "SELECT status, error_code, candidate_count FROM memory_reviews
+                         WHERE run_id = 'run'",
+                        [],
+                        |row| {
+                            Ok((
+                                row.get::<_, String>(0)?,
+                                row.get::<_, Option<String>>(1)?,
+                                row.get::<_, i64>(2)?,
+                            ))
+                        },
+                    )
+                    .optional()?)
+            })
+            .expect("job row")
+        }
+
+        fn wait_for(predicate: impl Fn() -> bool) {
+            let deadline = Instant::now() + Duration::from_secs(5);
+            while !predicate() {
+                assert!(Instant::now() < deadline, "condition not reached in time");
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        }
+
+        #[test]
+        fn disabled_paths_make_zero_adapter_calls_and_create_no_job() {
+            // Global off.
+            let mut fx = fixture("completed");
+            fx.db
+                .update_memory_review_settings(UpdateMemoryReviewSettingsInput {
+                    enabled: false,
+                    provider: Some("claude_code".into()),
+                    model: None,
+                    max_candidates: None,
+                })
+                .unwrap();
+            let agent = std::sync::Arc::new(FakeAgent::ok_json(ONE_CREATE));
+            assert!(!schedule_memory_review_with(
+                &fx.db,
+                "run",
+                &fx.workflow_id
+            ));
+            assert!(job_status(&fx.db).is_none(), "no job may be created");
+            assert!(agent.calls.lock().unwrap().is_empty());
+
+            // Workflow toggle off.
+            let mut fx = fixture("completed");
+            fx.db
+                .set_workflow_memory_review(&fx.workflow_id, false)
+                .unwrap();
+            assert!(!schedule_memory_review_with(
+                &fx.db,
+                "run",
+                &fx.workflow_id
+            ));
+            assert!(job_status(&fx.db).is_none());
+
+            // Enabled but provider missing (raw SQL to bypass the command guard).
+            let fx = fixture("completed");
+            fx.db
+                .with_conn(|conn| {
+                    conn.execute("UPDATE memory_review_settings SET provider = NULL", [])?;
+                    Ok(())
+                })
+                .unwrap();
+            assert!(!schedule_memory_review_with(
+                &fx.db,
+                "run",
+                &fx.workflow_id
+            ));
+            assert!(job_status(&fx.db).is_none());
+        }
+
+        #[test]
+        fn failed_and_cancelled_runs_are_never_reviewed() {
+            for status in ["failed", "cancelled", "pending", "running"] {
+                let fx = fixture(status);
+                assert!(
+                    !schedule_memory_review_with(&fx.db, "run", &fx.workflow_id),
+                    "{status} runs must not be scheduled"
+                );
+                assert!(job_status(&fx.db).is_none());
+            }
+        }
+
+        #[test]
+        fn completion_path_returns_before_slow_review_finishes() {
+            let fx = fixture("completed");
+            let (gate_tx, gate_rx) = mpsc::channel();
+            let agent = std::sync::Arc::new(FakeAgent::ok_json(ONE_CREATE).with_gate(gate_rx));
+            let (events_tx, _events) = mpsc::channel();
+            let context = ctx(agent.clone(), events_tx);
+
+            // The scheduling step (production: right after the completed event)
+            // must return immediately — never wait for the provider call.
+            assert!(schedule_memory_review_with(&fx.db, "run", &fx.workflow_id));
+            let started = Instant::now();
+            let db = std::sync::Arc::new(fx.db);
+            let worker_db = db.clone();
+            let worker_context = context.clone();
+            let worker = std::thread::spawn(move || {
+                execute_memory_review(&worker_db, &worker_context, "run");
+            });
+            assert!(started.elapsed() < Duration::from_secs(5));
+
+            // While the fake review is still blocked, the scheduling path has
+            // long returned; the job is claimed but nothing completed yet.
+            wait_for(|| !agent.calls.lock().unwrap().is_empty());
+            assert_eq!(job_status(&db).unwrap().0, "running");
+            drop(gate_tx);
+            worker.join().expect("review thread");
+            assert_eq!(job_status(&db).unwrap().0, "completed");
+        }
+
+        #[test]
+        fn database_mutex_is_free_while_fake_review_blocks() {
+            let fx = fixture("completed");
+            let (gate_tx, gate_rx) = mpsc::channel();
+            let agent = std::sync::Arc::new(FakeAgent::ok_json(ONE_CREATE).with_gate(gate_rx));
+            let (events_tx, _events) = mpsc::channel();
+            let context = ctx(agent.clone(), events_tx);
+
+            schedule_memory_review_with(&fx.db, "run", &fx.workflow_id);
+            let db = std::sync::Arc::new(fx.db);
+            let db_for_worker = db.clone();
+            let worker_context = context.clone();
+            let worker = std::thread::spawn(move || {
+                execute_memory_review(&db_for_worker, &worker_context, "run");
+            });
+            wait_for(|| !agent.calls.lock().unwrap().is_empty());
+
+            // The provider call is still parked on the gate; the DB mutex must
+            // nevertheless be acquirable right now.
+            let acquired = db.with_conn(|conn| {
+                Ok(conn.query_row("SELECT COUNT(*) FROM runs", [], |row| row.get::<_, i64>(0))?)
+            });
+            assert!(acquired.is_ok(), "DB mutex must stay free during the call");
+            drop(gate_tx);
+            worker.join().expect("review thread");
+        }
+
+        #[test]
+        fn success_passes_provider_and_model_once_inserts_candidates_and_notifies() {
+            let fx = fixture("completed");
+            let agent = std::sync::Arc::new(FakeAgent::ok_json(ONE_CREATE));
+            let (events_tx, events) = mpsc::channel();
+            let context = ctx(agent.clone(), events_tx);
+
+            schedule_memory_review_with(&fx.db, "run", &fx.workflow_id);
+            execute_memory_review(&fx.db, &context, "run");
+
+            // Provider/model passed exactly once, exactly as configured.
+            let calls = agent.calls.lock().unwrap().clone();
+            assert_eq!(
+                calls,
+                vec![(AgentProvider::ClaudeCode, Some("sonnet".into()))]
+            );
+
+            let (status, error_code, count) = job_status(&fx.db).unwrap();
+            assert_eq!(status, "completed");
+            assert_eq!(error_code, None);
+            assert_eq!(count, 1);
+            let candidates = fx
+                .db
+                .list_memory_candidates(crate::db::ListMemoryCandidatesInput {
+                    workflow_id: fx.workflow_id.clone(),
+                    status: None,
+                })
+                .unwrap();
+            assert_eq!(candidates.len(), 1);
+            assert_eq!(candidates[0].review_run_id, "run");
+
+            // candidates-changed carries the workflow id + pending count only.
+            let event = events.recv_timeout(Duration::from_secs(1)).unwrap();
+            assert_eq!(event, fx.workflow_id);
+        }
+
+        #[test]
+        fn failures_persist_only_stable_codes() {
+            let cases: Vec<(&'static str, Box<dyn Fn() -> FakeAgent + Send>)> = vec![
+                (
+                    crate::db::REVIEW_ERROR_AUTH_REQUIRED,
+                    Box::new(|| {
+                        FakeAgent::error("claude failed to authenticate: oauth token expired")
+                    }),
+                ),
+                (
+                    crate::db::REVIEW_ERROR_PROVIDER_UNAVAILABLE,
+                    Box::new(|| FakeAgent::error("claude CLI not found. Install it.")),
+                ),
+                (
+                    crate::db::REVIEW_ERROR_TIMEOUT,
+                    Box::new(|| FakeAgent::error("claude timed out after 120s")),
+                ),
+                (
+                    crate::db::REVIEW_ERROR_INVALID_RESPONSE,
+                    Box::new(|| {
+                        FakeAgent::behavior(|| {
+                            Ok(AgentResponse {
+                                output: "Here are your suggestions!".into(),
+                                metadata: Value::Null,
+                            })
+                        })
+                    }),
+                ),
+                (
+                    crate::db::REVIEW_ERROR_INTERNAL,
+                    Box::new(|| FakeAgent::error("something completely unexpected happened")),
+                ),
+            ];
+            for (expected_code, make_agent) in cases {
+                let fx = fixture("completed");
+                let agent = std::sync::Arc::new(make_agent());
+                let (events_tx, _events) = mpsc::channel();
+                let context = ctx(agent, events_tx);
+                schedule_memory_review_with(&fx.db, "run", &fx.workflow_id);
+                execute_memory_review(&fx.db, &context, "run");
+                let (status, error_code, count) = job_status(&fx.db).unwrap();
+                assert_eq!(status, "failed", "case {expected_code}");
+                assert_eq!(
+                    error_code.as_deref(),
+                    Some(expected_code),
+                    "case {expected_code}"
+                );
+                assert_eq!(count, 0, "no raw error text or candidates persisted");
+            }
+        }
+
+        #[test]
+        fn exact_once_claim_runs_the_provider_only_once_under_contention() {
+            let fx = fixture("completed");
+            let payload = ONE_CREATE.to_string();
+            let agent = std::sync::Arc::new(FakeAgent::behavior(move || {
+                std::thread::sleep(Duration::from_millis(50));
+                Ok(AgentResponse {
+                    output: payload.clone(),
+                    metadata: Value::Null,
+                })
+            }));
+            let (events_tx, _events) = mpsc::channel();
+            let context = ctx(agent.clone(), events_tx);
+            schedule_memory_review_with(&fx.db, "run", &fx.workflow_id);
+
+            let barrier = std::sync::Arc::new(std::sync::Barrier::new(4));
+            let db = std::sync::Arc::new(fx.db);
+            let workers: Vec<_> = (0..4)
+                .map(|_| {
+                    let db = db.clone();
+                    let context = context.clone();
+                    let barrier = barrier.clone();
+                    std::thread::spawn(move || {
+                        barrier.wait();
+                        execute_memory_review(&db, &context, "run");
+                    })
+                })
+                .collect();
+            for worker in workers {
+                worker.join().expect("worker");
+            }
+            assert_eq!(agent.calls.lock().unwrap().len(), 1);
+            assert_eq!(job_status(&db).unwrap().0, "completed");
+        }
+
+        #[test]
+        fn retry_executes_reset_job_and_cannot_overlap_or_duplicate() {
+            let fx = fixture("completed");
+            // First execution fails.
+            let failing = std::sync::Arc::new(FakeAgent::error("claude CLI not found"));
+            let (events_tx, _events) = mpsc::channel();
+            schedule_memory_review_with(&fx.db, "run", &fx.workflow_id);
+            execute_memory_review(&fx.db, &ctx(failing, events_tx.clone()), "run");
+            assert_eq!(job_status(&fx.db).unwrap().0, "failed");
+
+            // Manual retry resets exactly one row to pending…
+            let retried = fx.db.retry_memory_review("run").expect("retry allowed");
+            assert_eq!(
+                retried.status,
+                crate::db::ReviewJobStatus::Pending
+            );
+            assert!(
+                fx.db.retry_memory_review("run").is_err(),
+                "a second retry of a pending job must be rejected"
+            );
+
+            // …and the spawned machinery actually claims and executes it.
+            let payload = ONE_CREATE.to_string();
+            let succeeding: std::sync::Arc<FakeAgent> =
+                std::sync::Arc::new(FakeAgent::behavior(move || {
+                    Ok(AgentResponse {
+                        output: payload.clone(),
+                        metadata: Value::Null,
+                    })
+                }));
+            execute_memory_review(&fx.db, &ctx(succeeding.clone(), events_tx), "run");
+            assert_eq!(succeeding.calls.lock().unwrap().len(), 1);
+            assert_eq!(job_status(&fx.db).unwrap().0, "completed");
+
+            // One job per run invariant: ensure is idempotent.
+            assert!(
+                !fx.db
+                    .ensure_memory_review_job("run", &fx.workflow_id, "claude_code", None)
+                    .unwrap(),
+                "no second review row may ever be created"
+            );
+        }
+
+        #[test]
+        fn retry_is_rejected_while_a_review_is_running() {
+            let fx = fixture("completed");
+            let (gate_tx, gate_rx) = mpsc::channel();
+            let agent = std::sync::Arc::new(FakeAgent::ok_json(ONE_CREATE).with_gate(gate_rx));
+            let (events_tx, _events) = mpsc::channel();
+            let context = ctx(agent.clone(), events_tx);
+            schedule_memory_review_with(&fx.db, "run", &fx.workflow_id);
+            let db = std::sync::Arc::new(fx.db);
+            let worker_db = db.clone();
+            let worker = std::thread::spawn(move || {
+                execute_memory_review(&worker_db, &context, "run");
+            });
+            wait_for(|| job_status(&db).unwrap().0 == "running");
+            assert!(
+                db.retry_memory_review("run").is_err(),
+                "running reviews cannot overlap via retry"
+            );
+            drop(gate_tx);
+            worker.join().expect("worker");
         }
     }
 }

@@ -507,6 +507,154 @@ const SELECT_COLS_M: &str = "m.id, m.workflow_id, m.run_id, m.node_id, m.scope_t
      m.kind, m.memory_type, m.source, m.title, m.body, m.artifact_path, m.pinned, m.confidence,
      m.salience, m.status, m.supersedes_id, m.last_confirmed_at, m.expires_at, m.created_at, m.updated_at";
 
+/// Conn-scoped single-memory load for callers already inside a transaction.
+pub(crate) fn get_memory_conn(
+    conn: &rusqlite::Connection,
+    id: &str,
+) -> Result<Option<Memory>, DbError> {
+    Ok(conn
+        .query_row(
+            &format!("SELECT {SELECT_COLS} FROM memories WHERE id = ?1"),
+            params![id],
+            map_memory,
+        )
+        .optional()?)
+}
+
+/// Everything needed to write one canonical memory row (Plan 026). Computed
+/// by validation, then applied — INSERT, supersede transition, FTS index —
+/// inside one transaction by [`write_canonical_memory`].
+pub(crate) struct CanonicalMemoryRecord {
+    pub id: String,
+    pub workflow_id: Option<String>,
+    pub run_id: Option<String>,
+    pub node_id: Option<String>,
+    pub scope_type: MemoryScopeType,
+    pub scope_key: String,
+    pub kind: String,
+    pub memory_type: MemoryType,
+    pub source: String,
+    pub title: String,
+    /// Stored body (post artifact preview); spill decisions belong to the caller.
+    pub body: String,
+    pub artifact_path: Option<String>,
+    pub pinned: bool,
+    pub confidence: f64,
+    pub salience: i64,
+    pub status: MemoryStatus,
+    pub supersedes_id: Option<String>,
+    pub last_confirmed_at: Option<String>,
+    pub expires_at: Option<String>,
+    pub created_at: String,
+}
+
+/// Write one canonical memory row plus its FTS index; when superseding, also
+/// flip the target to `superseded`, unpin it, and re-index it. Runs on an
+/// open transaction connection so callers compose it with other writes.
+pub(crate) fn write_canonical_memory(
+    conn: &rusqlite::Connection,
+    record: &CanonicalMemoryRecord,
+) -> Result<(), DbError> {
+    conn.execute(
+        "INSERT INTO memories
+         (id, workflow_id, run_id, node_id, scope_type, scope_key, kind,
+          memory_type, source, title, body, artifact_path, pinned, confidence,
+          salience, status, supersedes_id, last_confirmed_at, expires_at,
+          created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12,
+                 ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?20)",
+        params![
+            record.id,
+            record.workflow_id,
+            record.run_id,
+            record.node_id,
+            record.scope_type.as_str(),
+            record.scope_key,
+            record.kind,
+            record.memory_type.as_str(),
+            record.source,
+            record.title,
+            record.body,
+            record.artifact_path,
+            if record.pinned { 1 } else { 0 },
+            record.confidence,
+            record.salience,
+            record.status.as_str(),
+            record.supersedes_id,
+            record.last_confirmed_at,
+            record.expires_at,
+            record.created_at,
+        ],
+    )?;
+    if let Some(target_id) = record.supersedes_id.as_deref() {
+        conn.execute(
+            "UPDATE memories SET status = 'superseded', pinned = 0, updated_at = ?1
+             WHERE id = ?2",
+            params![record.created_at, target_id],
+        )?;
+        index_memory(conn, target_id)?;
+    }
+    index_memory(conn, &record.id)?;
+    Ok(())
+}
+
+/// A validated canonical insert that has not touched the database or the
+/// artifact directory yet. [`CanonicalInsertPlan::record`] finalizes storage
+/// details once duplicate checks and artifact spill decisions are made.
+pub(crate) struct CanonicalInsertPlan {
+    pub id: String,
+    pub workflow_id: Option<String>,
+    pub run_id: Option<String>,
+    pub node_id: Option<String>,
+    pub scope_type: MemoryScopeType,
+    pub scope_key: String,
+    pub kind: String,
+    pub memory_type: MemoryType,
+    pub source: String,
+    pub title: String,
+    pub body: String,
+    pub spill: bool,
+    pub pinned: bool,
+    pub confidence: f64,
+    pub salience: i64,
+    pub status: MemoryStatus,
+    pub supersedes_id: Option<String>,
+    pub last_confirmed_at: Option<String>,
+    pub expires_at: Option<String>,
+}
+
+impl CanonicalInsertPlan {
+    fn record(&self, artifact_path: Option<String>) -> CanonicalMemoryRecord {
+        let stored_body = if artifact_path.is_some() && self.body.len() > 2_000 {
+            preview_body(&self.body, 2_000)
+        } else {
+            self.body.clone()
+        };
+        CanonicalMemoryRecord {
+            id: self.id.clone(),
+            workflow_id: self.workflow_id.clone(),
+            run_id: self.run_id.clone(),
+            node_id: self.node_id.clone(),
+            scope_type: self.scope_type,
+            scope_key: self.scope_key.clone(),
+            kind: self.kind.clone(),
+            memory_type: self.memory_type,
+            source: self.source.clone(),
+            title: self.title.clone(),
+            body: stored_body,
+            artifact_path,
+            pinned: self.pinned,
+            confidence: self.confidence,
+            salience: self.salience,
+            status: self.status,
+            supersedes_id: self.supersedes_id.clone(),
+            last_confirmed_at: self.last_confirmed_at.clone(),
+            expires_at: self.expires_at.clone(),
+            created_at: now(),
+        }
+    }
+}
+
 impl Db {
     pub fn memory_context(&self, workflow_id: &str) -> Result<MemoryContext, DbError> {
         let workflow = self
@@ -540,15 +688,7 @@ impl Db {
     }
 
     pub fn get_memory(&self, id: &str) -> Result<Option<Memory>, DbError> {
-        self.with_conn(|conn| {
-            Ok(conn
-                .query_row(
-                    &format!("SELECT {SELECT_COLS} FROM memories WHERE id = ?1"),
-                    params![id],
-                    map_memory,
-                )
-                .optional()?)
-        })
+        self.with_conn(|conn| get_memory_conn(conn, id))
     }
 
     pub fn list_memories_for_context(
@@ -650,6 +790,47 @@ impl Db {
     }
 
     pub fn create_memory(&self, input: CreateMemoryInput) -> Result<Memory, DbError> {
+        let plan = self.plan_canonical_insert(input)?;
+        if let Some(existing) = self.find_exact_duplicate(
+            plan.scope_type,
+            &plan.scope_key,
+            plan.memory_type,
+            &plan.body,
+        )? {
+            return Ok(existing);
+        }
+
+        let artifact_path = if plan.spill {
+            let workflow_id = plan
+                .workflow_id
+                .clone()
+                .ok_or_else(|| DbError::Other("memory requires a workflow".into()))?;
+            Some(write_artifact(&workflow_id, &plan.id, &plan.body)?)
+        } else {
+            None
+        };
+
+        let write = self.with_conn(|conn| {
+            let transaction = conn.unchecked_transaction()?;
+            write_canonical_memory(&transaction, &plan.record(artifact_path.clone()))?;
+            transaction.commit()?;
+            Ok(())
+        });
+        if let Err(error) = write {
+            remove_artifact(artifact_path.as_deref());
+            return Err(error);
+        }
+        self.get_memory(&plan.id)?
+            .ok_or_else(|| DbError::Other("failed to load created memory".into()))
+    }
+
+    /// Validate a canonical insert and resolve everything that needs database
+    /// reads (scope resolution, supersede-target checks). Pure planning: no
+    /// rows are written and no artifact files are created.
+    fn plan_canonical_insert(
+        &self,
+        input: CreateMemoryInput,
+    ) -> Result<CanonicalInsertPlan, DbError> {
         let id = input.id.unwrap_or_else(|| Uuid::new_v4().to_string());
         let title = validate_title(&input.title)?;
         let source = normalize_source(input.source.as_deref())?;
@@ -683,80 +864,33 @@ impl Db {
             }
         });
         self.validate_supersedes(input.supersedes_id.as_deref(), &id, scope_type, &scope_key)?;
-        if let Some(existing) =
-            self.find_exact_duplicate(scope_type, &scope_key, memory_type, &input.body)?
-        {
-            return Ok(existing);
-        }
-
         let spill = input.body.len() >= ARTIFACT_BODY_THRESHOLD
             || input.kind.as_deref() == Some("artifact");
-        let artifact_path = if spill {
-            Some(write_artifact(&input.workflow_id, &id, &input.body)?)
-        } else {
-            None
-        };
-        let stored_body = if artifact_path.is_some() && input.body.len() > 2_000 {
-            preview_body(&input.body, 2_000)
-        } else {
-            input.body.clone()
-        };
         let mut kind = normalize_kind(input.kind.as_deref(), input.body.len(), spill);
         if source == "manual" && input.kind.is_none() && kind == "text" {
             kind = "note".into();
         }
-        let created_at = now();
-        let write = self.with_conn(|conn| {
-            let transaction = conn.unchecked_transaction()?;
-            transaction.execute(
-                "INSERT INTO memories
-                 (id, workflow_id, run_id, node_id, scope_type, scope_key, kind,
-                  memory_type, source, title, body, artifact_path, pinned, confidence,
-                  salience, status, supersedes_id, last_confirmed_at, expires_at,
-                  created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12,
-                         ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?20)",
-                params![
-                    id,
-                    workflow_id,
-                    input.run_id,
-                    input.node_id,
-                    scope_type.as_str(),
-                    scope_key,
-                    kind,
-                    memory_type.as_str(),
-                    source,
-                    title,
-                    stored_body,
-                    artifact_path,
-                    if pinned { 1 } else { 0 },
-                    confidence,
-                    salience,
-                    status.as_str(),
-                    input.supersedes_id,
-                    input.last_confirmed_at,
-                    input.expires_at,
-                    created_at,
-                ],
-            )?;
-            if let Some(target_id) = input.supersedes_id.as_deref() {
-                transaction.execute(
-                    "UPDATE memories SET status = 'superseded', pinned = 0, updated_at = ?1
-                     WHERE id = ?2",
-                    params![created_at, target_id],
-                )?;
-                index_memory(&transaction, target_id)?;
-            }
-            index_memory(&transaction, &id)?;
-            transaction.commit()?;
-            Ok(())
-        });
-        if let Err(error) = write {
-            remove_artifact(artifact_path.as_deref());
-            return Err(error);
-        }
-        self.get_memory(&id)?
-            .ok_or_else(|| DbError::Other("failed to load created memory".into()))
+        Ok(CanonicalInsertPlan {
+            id,
+            workflow_id,
+            run_id: input.run_id,
+            node_id: input.node_id,
+            scope_type,
+            scope_key,
+            kind,
+            memory_type,
+            source,
+            title,
+            body: input.body,
+            spill,
+            pinned,
+            confidence,
+            salience,
+            status,
+            supersedes_id: input.supersedes_id,
+            last_confirmed_at: input.last_confirmed_at,
+            expires_at: input.expires_at,
+        })
     }
 
     pub fn update_memory(&self, input: UpdateMemoryInput) -> Result<Memory, DbError> {
