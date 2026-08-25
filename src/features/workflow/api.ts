@@ -8,7 +8,11 @@ import type {
   AppTriggerStatus,
   HistorySearchHit,
   HistorySearchInput,
+  MemoryCandidate,
+  MemoryCandidateStatus,
   MemoryKind,
+  MemoryReviewJob,
+  MemoryReviewSettings,
   MemoryScopeType,
   MemorySource,
   MemoryStatus,
@@ -25,6 +29,7 @@ import type {
   Workflow,
   WorkflowFolder,
   WorkflowGraph,
+  WorkflowMemoryReview,
 } from "./types";
 
 export async function listWorkflows(): Promise<Workflow[]> {
@@ -312,4 +317,58 @@ export async function deleteMemory(
 
 export async function clearMemories(workflowId: string): Promise<number> {
   return invoke("clear_memories", { workflowId });
+}
+
+// ---------------------------------------------------------------------------
+// Post-run memory review (Plan 028)
+// ---------------------------------------------------------------------------
+
+export async function getMemoryReviewSettings(): Promise<MemoryReviewSettings> {
+  return invoke("get_memory_review_settings");
+}
+
+export async function updateMemoryReviewSettings(input: {
+  enabled: boolean;
+  provider: string | null;
+  model?: string | null;
+  maxCandidates?: number;
+}): Promise<MemoryReviewSettings> {
+  return invoke("update_memory_review_settings", { input });
+}
+
+export async function setWorkflowMemoryReview(
+  workflowId: string,
+  enabled: boolean,
+): Promise<WorkflowMemoryReview> {
+  return invoke("set_workflow_memory_review", { workflowId, enabled });
+}
+
+export async function listMemoryCandidates(input: {
+  workflowId: string;
+  status?: MemoryCandidateStatus;
+}): Promise<MemoryCandidate[]> {
+  return invoke("list_memory_candidates", { input });
+}
+
+/** Pending candidates only may be edited; decided ones are final. */
+export async function updateMemoryCandidate(input: {
+  id: string;
+  title?: string;
+  body?: string;
+  scopeType?: MemoryScopeType;
+  memoryType?: MemoryType;
+}): Promise<MemoryCandidate> {
+  return invoke("update_memory_candidate", { input });
+}
+
+export async function approveMemoryCandidate(id: string): Promise<MemoryCandidate> {
+  return invoke("approve_memory_candidate", { id });
+}
+
+export async function rejectMemoryCandidate(id: string): Promise<MemoryCandidate> {
+  return invoke("reject_memory_candidate", { id });
+}
+
+export async function retryMemoryReview(runId: string): Promise<MemoryReviewJob> {
+  return invoke("retry_memory_review", { runId });
 }

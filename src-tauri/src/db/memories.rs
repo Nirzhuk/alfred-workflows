@@ -31,7 +31,7 @@ impl MemoryScopeType {
         }
     }
 
-    fn from_db(value: &str) -> rusqlite::Result<Self> {
+    pub(crate) fn from_db(value: &str) -> rusqlite::Result<Self> {
         match value {
             "user" => Ok(Self::User),
             "workspace" => Ok(Self::Workspace),
@@ -76,7 +76,7 @@ impl MemoryType {
         }
     }
 
-    fn from_db(value: &str) -> rusqlite::Result<Self> {
+    pub(crate) fn from_db(value: &str) -> rusqlite::Result<Self> {
         match value {
             "preference" => Ok(Self::Preference),
             "fact" => Ok(Self::Fact),
@@ -359,7 +359,7 @@ fn preview_body(body: &str, max: usize) -> String {
     format!("{}\n\n… [full content stored as artifact]", &body[..end])
 }
 
-fn validate_title(title: &str) -> Result<String, DbError> {
+pub(crate) fn validate_title(title: &str) -> Result<String, DbError> {
     let title = title.trim().to_string();
     if title.is_empty() {
         return Err(DbError::Other("memory title cannot be empty".into()));
@@ -380,7 +380,7 @@ fn validate_timestamp(value: Option<&str>, field: &str) -> Result<(), DbError> {
     Ok(())
 }
 
-fn normalize_body(body: &str) -> String {
+pub(crate) fn normalize_body(body: &str) -> String {
     body.replace("\r\n", "\n").trim().to_string()
 }
 

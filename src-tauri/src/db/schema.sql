@@ -227,6 +227,74 @@ CREATE TABLE IF NOT EXISTS app_event_queue (
   UNIQUE (trigger_id, external_event_id)
 );
 
+-- Post-run memory review: explicit opt-in settings (singleton), one review job
+-- per run, and model-proposed memory candidates that never touch canonical
+-- memories until a user approves them.
+CREATE TABLE IF NOT EXISTS memory_review_settings (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  enabled INTEGER NOT NULL DEFAULT 0,
+  provider TEXT,
+  model TEXT,
+  max_candidates INTEGER NOT NULL DEFAULT 5 CHECK (max_candidates BETWEEN 1 AND 5),
+  updated_at TEXT NOT NULL
+);
+
+INSERT OR IGNORE INTO memory_review_settings (id, enabled, provider, model, max_candidates, updated_at)
+VALUES (1, 0, NULL, NULL, 5, '1970-01-01T00:00:00Z');
+
+CREATE TABLE IF NOT EXISTS workflow_memory_review (
+  workflow_id TEXT PRIMARY KEY REFERENCES workflows(id) ON DELETE CASCADE,
+  enabled INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL
+);
+
+-- Review job metadata only. Raw provider errors, prompts, responses, and run
+-- transcripts never enter this table; failures carry stable codes alone.
+CREATE TABLE IF NOT EXISTS memory_reviews (
+  run_id TEXT PRIMARY KEY REFERENCES runs(id) ON DELETE CASCADE,
+  workflow_id TEXT NOT NULL REFERENCES workflows(id) ON DELETE CASCADE,
+  status TEXT NOT NULL CHECK (
+    status IN ('pending','running','completed','failed','skipped')
+  ),
+  provider TEXT NOT NULL,
+  model TEXT,
+  error_code TEXT,
+  candidate_count INTEGER NOT NULL DEFAULT 0,
+  started_at TEXT,
+  finished_at TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS memory_candidates (
+  id TEXT PRIMARY KEY NOT NULL,
+  review_run_id TEXT NOT NULL REFERENCES memory_reviews(run_id) ON DELETE CASCADE,
+  workflow_id TEXT NOT NULL REFERENCES workflows(id) ON DELETE CASCADE,
+  source_node_id TEXT,
+  operation TEXT NOT NULL CHECK (operation IN ('create','supersede','retract')),
+  target_memory_id TEXT REFERENCES memories(id) ON DELETE SET NULL,
+  scope_type TEXT NOT NULL CHECK (scope_type IN ('user','workspace','workflow')),
+  scope_key TEXT NOT NULL,
+  memory_type TEXT NOT NULL,
+  title TEXT NOT NULL,
+  body TEXT NOT NULL,
+  confidence REAL NOT NULL CHECK (confidence >= 0 AND confidence <= 1),
+  rationale TEXT NOT NULL,
+  content_hash TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (
+    status IN ('pending','approved','rejected','blocked')
+  ),
+  blocked_code TEXT,
+  created_at TEXT NOT NULL,
+  decided_at TEXT,
+  UNIQUE (review_run_id, content_hash)
+);
+
+CREATE INDEX IF NOT EXISTS idx_memory_candidates_status_workflow
+  ON memory_candidates(status, workflow_id);
+CREATE INDEX IF NOT EXISTS idx_memory_candidates_created ON memory_candidates(created_at);
+CREATE INDEX IF NOT EXISTS idx_memory_reviews_status ON memory_reviews(status);
+CREATE INDEX IF NOT EXISTS idx_memory_reviews_created ON memory_reviews(created_at);
+
 -- Safe licensing snapshot only. The full key and Polar activation ID live
 -- together in the OS credential store under `credential_ref`.
 CREATE TABLE IF NOT EXISTS license_snapshot (

@@ -650,6 +650,70 @@ export type MemoryType =
   | "artifact";
 export type MemoryStatus = "active" | "superseded" | "retracted";
 
+export type MemoryCandidateOperation = "create" | "supersede" | "retract";
+export type MemoryCandidateStatus =
+  | "pending"
+  | "approved"
+  | "rejected"
+  | "blocked";
+export type MemoryReviewJobStatus =
+  | "pending"
+  | "running"
+  | "completed"
+  | "failed"
+  | "skipped";
+
+/** Global post-run memory review settings (SQLite-backed singleton). */
+export type MemoryReviewSettings = {
+  enabled: boolean;
+  provider: string | null;
+  model: string | null;
+  maxCandidates: number;
+  updatedAt: string;
+};
+
+/** Per-workflow review toggle. */
+export type WorkflowMemoryReview = {
+  workflowId: string;
+  enabled: boolean;
+  updatedAt: string;
+};
+
+/** Review job metadata — never carries raw provider errors or output. */
+export type MemoryReviewJob = {
+  runId: string;
+  workflowId: string;
+  status: MemoryReviewJobStatus;
+  provider: string;
+  model: string | null;
+  errorCode: string | null;
+  candidateCount: number;
+  startedAt: string | null;
+  finishedAt: string | null;
+  createdAt: string;
+};
+
+/** A model-proposed memory change awaiting user approval. */
+export type MemoryCandidate = {
+  id: string;
+  reviewRunId: string;
+  workflowId: string;
+  sourceNodeId: string | null;
+  operation: MemoryCandidateOperation;
+  targetMemoryId: string | null;
+  scopeType: MemoryScopeType;
+  scopeKey: string;
+  memoryType: MemoryType;
+  title: string;
+  body: string;
+  confidence: number;
+  rationale: string;
+  status: MemoryCandidateStatus;
+  blockedCode: string | null;
+  createdAt: string;
+  decidedAt: string | null;
+};
+
 /** Durable workflow memory — SQLite-backed, optionally pinned into agent prompts. */
 export type MemoryOrigin = "owned" | "linked" | "linkable" | "inherited";
 

@@ -2,9 +2,11 @@ pub mod integrations;
 
 use crate::agents;
 use crate::db::{
-    CreateMemoryInput, CreateWorkflowInput, Db, HistorySearchHit, HistorySearchInput, Memory,
+    CreateMemoryInput, CreateWorkflowInput, Db, HistorySearchHit, HistorySearchInput,
+    ListMemoryCandidatesInput, Memory, MemoryCandidate, MemoryReviewJob, MemoryReviewSettings,
     MemoryWithOrigin, RunHistoryDetail, RunHistoryItem, Schedule, ScheduleListItem, Trigger,
-    UpdateMemoryInput, UpdateWorkflowInput, UpsertTriggerInput, Workflow, WorkflowFolder,
+    UpdateMemoryCandidateInput, UpdateMemoryInput, UpdateMemoryReviewSettingsInput,
+    UpdateWorkflowInput, UpsertTriggerInput, Workflow, WorkflowFolder, WorkflowMemoryReview,
 };
 use crate::integrations::events::{
     AppTriggerConfig, NormalizedAppEvent, NORMALIZED_APP_EVENT_SCHEMA_VERSION,
@@ -421,4 +423,90 @@ pub fn delete_memory(
 #[tauri::command]
 pub fn clear_memories(db: State<'_, Db>, workflow_id: String) -> Result<usize, String> {
     db.clear_memories(&workflow_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_memory_review_settings(
+    db: State<'_, Db>,
+) -> Result<MemoryReviewSettings, String> {
+    db.get_memory_review_settings().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_memory_review_settings(
+    db: State<'_, Db>,
+    input: UpdateMemoryReviewSettingsInput,
+) -> Result<MemoryReviewSettings, String> {
+    db.update_memory_review_settings(input).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn set_workflow_memory_review(
+    db: State<'_, Db>,
+    workflow_id: String,
+    enabled: bool,
+) -> Result<WorkflowMemoryReview, String> {
+    db.set_workflow_memory_review(&workflow_id, enabled)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn list_memory_candidates(
+    db: State<'_, Db>,
+    input: ListMemoryCandidatesInput,
+) -> Result<Vec<MemoryCandidate>, String> {
+    db.list_memory_candidates(input).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_memory_candidate(
+    db: State<'_, Db>,
+    input: UpdateMemoryCandidateInput,
+) -> Result<MemoryCandidate, String> {
+    db.update_memory_candidate(input).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn approve_memory_candidate(
+    app: AppHandle,
+    db: State<'_, Db>,
+    id: String,
+) -> Result<MemoryCandidate, String> {
+    let candidate = db.approve_memory_candidate(&id).map_err(|e| e.to_string())?;
+    emit_candidates_changed(&app, &db, &candidate.workflow_id);
+    Ok(candidate)
+}
+
+#[tauri::command]
+pub fn reject_memory_candidate(
+    app: AppHandle,
+    db: State<'_, Db>,
+    id: String,
+) -> Result<MemoryCandidate, String> {
+    let candidate = db.reject_memory_candidate(&id).map_err(|e| e.to_string())?;
+    emit_candidates_changed(&app, &db, &candidate.workflow_id);
+    Ok(candidate)
+}
+
+#[tauri::command]
+pub fn retry_memory_review(
+    app: AppHandle,
+    db: State<'_, Db>,
+    run_id: String,
+) -> Result<MemoryReviewJob, String> {
+    let job = db.retry_memory_review(&run_id).map_err(|e| e.to_string())?;
+    emit_candidates_changed(&app, &db, &job.workflow_id);
+    Ok(job)
+}
+
+/// Post-commit notification for the Suggestions queue. Carries only the
+/// workflow id and pending count — never candidate text or provider output.
+fn emit_candidates_changed(app: &AppHandle, db: &State<'_, Db>, workflow_id: &str) {
+    let pending = db
+        .count_pending_memory_candidates(workflow_id)
+        .unwrap_or(0);
+    let _ = app.emit(
+        "memory://candidates-changed",
+        serde_json::json!({ "workflowId": workflow_id, "pendingCount": pending }),
+    );
 }

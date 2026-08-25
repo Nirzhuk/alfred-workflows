@@ -9,8 +9,14 @@ use uuid::Uuid;
 pub const RETRIEVAL_MAX_ITEMS: usize = 8;
 pub const RETRIEVAL_MAX_BYTES: usize = 6_000;
 pub const RETRIEVAL_ITEM_MAX_BYTES: usize = 1_200;
-pub const RETRIEVAL_QUERY_MAX_BYTES: usize = 8_000;
 pub const RETRIEVAL_UNAVAILABLE_CODE: &str = "memory_retrieval_unavailable";
+
+/// Post-run memory review sees more existing memories than live run recall,
+/// so the reviewer can propose supersede/retract against real targets. Still
+/// strictly bounded (Plan 028): at most 12 items / 12 KiB of rendered text.
+pub const REVIEW_CONTEXT_MAX_ITEMS: usize = 12;
+pub const REVIEW_CONTEXT_MAX_BYTES: usize = 12 * 1024;
+pub const RETRIEVAL_QUERY_MAX_BYTES: usize = 8_000;
 
 const FTS_VISIBLE_ID_CHUNK: usize = 400;
 const FTS_CANDIDATE_LIMIT: usize = 30;
@@ -319,7 +325,19 @@ fn item_heading(candidate: &RankedCandidate) -> String {
     )
 }
 
-fn render_candidates(db: &Db, candidates: Vec<RankedCandidate>) -> RetrievalResult {
+fn render_candidates(
+    db: &Db,
+    candidates: Vec<RankedCandidate>,
+) -> RetrievalResult {
+    render_candidates_bounded(db, candidates, RETRIEVAL_MAX_ITEMS, RETRIEVAL_MAX_BYTES)
+}
+
+fn render_candidates_bounded(
+    db: &Db,
+    candidates: Vec<RankedCandidate>,
+    max_items: usize,
+    max_bytes: usize,
+) -> RetrievalResult {
     if candidates.is_empty() {
         return RetrievalResult::default();
     }
@@ -328,12 +346,12 @@ fn render_candidates(db: &Db, candidates: Vec<RankedCandidate>) -> RetrievalResu
     let mut items = Vec::new();
 
     for candidate in candidates {
-        if items.len() >= RETRIEVAL_MAX_ITEMS {
+        if items.len() >= max_items {
             continue;
         }
         let heading = item_heading(&candidate);
         let fixed = heading.len() + 2;
-        let remaining = RETRIEVAL_MAX_BYTES.saturating_sub(markdown.len());
+        let remaining = max_bytes.saturating_sub(markdown.len());
         if fixed + MIN_BODY_BUDGET > RETRIEVAL_ITEM_MAX_BYTES || fixed + MIN_BODY_BUDGET > remaining
         {
             continue;
@@ -356,7 +374,7 @@ fn render_candidates(db: &Db, candidates: Vec<RankedCandidate>) -> RetrievalResu
         };
         let rendered = format!("{heading}{rendered_body}\n\n");
         if rendered.len() > RETRIEVAL_ITEM_MAX_BYTES
-            || markdown.len() + rendered.len() > RETRIEVAL_MAX_BYTES
+            || markdown.len() + rendered.len() > max_bytes
         {
             continue;
         }
@@ -392,6 +410,24 @@ impl Db {
     pub fn retrieve_memories(&self, request: &MemoryRetrievalRequest<'_>) -> RetrievalResult {
         match ranked_candidates(self, request, Utc::now()) {
             Ok(candidates) => render_candidates(self, candidates),
+            Err(_) => RetrievalResult::unavailable(),
+        }
+    }
+
+    /// Existing-memory context for post-run memory review (Plan 028). Same
+    /// ranking and rendering as live recall, but bounded at 12 items / 12 KiB
+    /// so the reviewer can propose supersede/retract against real targets.
+    pub fn retrieve_review_context(
+        &self,
+        request: &MemoryRetrievalRequest<'_>,
+    ) -> RetrievalResult {
+        match ranked_candidates(self, request, Utc::now()) {
+            Ok(candidates) => render_candidates_bounded(
+                self,
+                candidates,
+                REVIEW_CONTEXT_MAX_ITEMS,
+                REVIEW_CONTEXT_MAX_BYTES,
+            ),
             Err(_) => RetrievalResult::unavailable(),
         }
     }

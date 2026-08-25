@@ -74,6 +74,7 @@ pub fn apply_migrations(conn: &Connection) -> Result<(), DbError> {
     create_search_indexes(conn)?;
     migrate_scoped_memories(conn)?;
     create_memory_retrieval_schema(conn)?;
+    create_memory_curation_schema(conn)?;
     rebuild_search_indexes(conn)?;
     conn.execute_batch(
         "CREATE INDEX IF NOT EXISTS idx_triggers_workflow_id ON triggers(workflow_id);
@@ -186,6 +187,71 @@ fn create_memory_retrieval_schema(conn: &Connection) -> Result<(), DbError> {
            ON run_memory_uses(run_id, node_id, rank);
          CREATE INDEX IF NOT EXISTS idx_run_memory_uses_memory_id
            ON run_memory_uses(memory_id);",
+    )?;
+    Ok(())
+}
+
+fn create_memory_curation_schema(conn: &Connection) -> Result<(), DbError> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS memory_review_settings (
+           id INTEGER PRIMARY KEY CHECK (id = 1),
+           enabled INTEGER NOT NULL DEFAULT 0,
+           provider TEXT,
+           model TEXT,
+           max_candidates INTEGER NOT NULL DEFAULT 5 CHECK (max_candidates BETWEEN 1 AND 5),
+           updated_at TEXT NOT NULL
+         );
+         INSERT OR IGNORE INTO memory_review_settings
+           (id, enabled, provider, model, max_candidates, updated_at)
+         VALUES (1, 0, NULL, NULL, 5, '1970-01-01T00:00:00Z');
+         CREATE TABLE IF NOT EXISTS workflow_memory_review (
+           workflow_id TEXT PRIMARY KEY REFERENCES workflows(id) ON DELETE CASCADE,
+           enabled INTEGER NOT NULL DEFAULT 0,
+           updated_at TEXT NOT NULL
+         );
+         CREATE TABLE IF NOT EXISTS memory_reviews (
+           run_id TEXT PRIMARY KEY REFERENCES runs(id) ON DELETE CASCADE,
+           workflow_id TEXT NOT NULL REFERENCES workflows(id) ON DELETE CASCADE,
+           status TEXT NOT NULL CHECK (
+             status IN ('pending','running','completed','failed','skipped')
+           ),
+           provider TEXT NOT NULL,
+           model TEXT,
+           error_code TEXT,
+           candidate_count INTEGER NOT NULL DEFAULT 0,
+           started_at TEXT,
+           finished_at TEXT,
+           created_at TEXT NOT NULL
+         );
+         CREATE TABLE IF NOT EXISTS memory_candidates (
+           id TEXT PRIMARY KEY NOT NULL,
+           review_run_id TEXT NOT NULL REFERENCES memory_reviews(run_id) ON DELETE CASCADE,
+           workflow_id TEXT NOT NULL REFERENCES workflows(id) ON DELETE CASCADE,
+           source_node_id TEXT,
+           operation TEXT NOT NULL CHECK (operation IN ('create','supersede','retract')),
+           target_memory_id TEXT REFERENCES memories(id) ON DELETE SET NULL,
+           scope_type TEXT NOT NULL CHECK (scope_type IN ('user','workspace','workflow')),
+           scope_key TEXT NOT NULL,
+           memory_type TEXT NOT NULL,
+           title TEXT NOT NULL,
+           body TEXT NOT NULL,
+           confidence REAL NOT NULL CHECK (confidence >= 0 AND confidence <= 1),
+           rationale TEXT NOT NULL,
+           content_hash TEXT NOT NULL,
+           status TEXT NOT NULL CHECK (
+             status IN ('pending','approved','rejected','blocked')
+           ),
+           blocked_code TEXT,
+           created_at TEXT NOT NULL,
+           decided_at TEXT,
+           UNIQUE (review_run_id, content_hash)
+         );
+         CREATE INDEX IF NOT EXISTS idx_memory_candidates_status_workflow
+           ON memory_candidates(status, workflow_id);
+         CREATE INDEX IF NOT EXISTS idx_memory_candidates_created
+           ON memory_candidates(created_at);
+         CREATE INDEX IF NOT EXISTS idx_memory_reviews_status ON memory_reviews(status);
+         CREATE INDEX IF NOT EXISTS idx_memory_reviews_created ON memory_reviews(created_at);",
     )?;
     Ok(())
 }
@@ -1093,5 +1159,195 @@ mod tests {
             )
             .expect("load migration marker");
         assert_eq!(marker, "complete");
+    }
+
+    #[test]
+    fn initializes_memory_curation_tables_singleton_and_indexes() {
+        let conn = Connection::open_in_memory().expect("open database");
+        conn.execute_batch("PRAGMA foreign_keys = ON;")
+            .expect("enable foreign keys");
+        conn.execute_batch(include_str!("schema.sql"))
+            .expect("initialize schema");
+        apply_migrations(&conn).expect("apply migrations");
+
+        for expected in ["enabled", "provider", "model", "max_candidates", "updated_at"] {
+            assert!(
+                columns(&conn, "memory_review_settings").contains(&expected.to_owned()),
+                "missing settings column {expected}"
+            );
+        }
+        for expected in [
+            "run_id",
+            "workflow_id",
+            "status",
+            "provider",
+            "model",
+            "error_code",
+            "candidate_count",
+        ] {
+            assert!(
+                columns(&conn, "memory_reviews").contains(&expected.to_owned()),
+                "missing review column {expected}"
+            );
+        }
+
+        // Singleton defaults: disabled with null provider/model.
+        let (enabled, provider, model, max_candidates): (i64, Option<String>, Option<String>, i64) =
+            conn.query_row(
+                "SELECT enabled, provider, model, max_candidates FROM memory_review_settings
+                 WHERE id = 1",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .expect("load singleton settings");
+        assert_eq!((enabled, provider.as_deref(), model.as_deref(), max_candidates),
+                   (0, None, None, 5));
+        assert!(conn
+            .execute(
+                "INSERT INTO memory_review_settings (id, enabled, max_candidates, updated_at)
+                 VALUES (2, 0, 5, 'now')",
+                [],
+            )
+            .is_err());
+        assert!(conn
+            .execute(
+                "UPDATE memory_review_settings SET max_candidates = 9 WHERE id = 1",
+                [],
+            )
+            .is_err());
+
+        // Review status enum rejects unknown values.
+        conn.execute_batch(
+            "INSERT INTO workflows (id, name, description, graph_json, created_at, updated_at)
+             VALUES ('workflow-1', 'One', '', '{}', 'now', 'now');
+             INSERT INTO runs (id, workflow_id, created_at)
+             VALUES ('run-1', 'workflow-1', 'now');",
+        )
+        .expect("insert workflow and run");
+        assert!(conn
+            .execute(
+                "INSERT INTO memory_reviews
+                   (run_id, workflow_id, status, provider, created_at)
+                 VALUES ('run-1', 'workflow-1', 'queued', 'claude_code', 'now')",
+                [],
+            )
+            .is_err());
+
+        let indexes: Vec<String> = {
+            let mut statement = conn
+                .prepare("SELECT name FROM pragma_index_list('memory_candidates')")
+                .expect("prepare candidate index list");
+            statement
+                .query_map([], |row| row.get::<_, String>(0))
+                .expect("query candidate index list")
+                .collect::<Result<Vec<_>, _>>()
+                .expect("collect candidate indexes")
+        };
+        assert!(indexes.contains(&"sqlite_autoindex_memory_candidates_1".to_owned()));
+    }
+
+    #[test]
+    fn memory_curation_cascades_and_uniqueness_hold_on_fresh_schema() {
+        let conn = Connection::open_in_memory().expect("open database");
+        conn.execute_batch("PRAGMA foreign_keys = ON;")
+            .expect("enable foreign keys");
+        conn.execute_batch(include_str!("schema.sql"))
+            .expect("initialize schema");
+        apply_migrations(&conn).expect("apply migrations");
+        conn.execute_batch(
+            "INSERT INTO workflows
+               (id, name, description, working_directory, sort_order, graph_json, created_at, updated_at)
+             VALUES ('workflow-1', 'One', '', '/tmp/one', 0, '{}', 'now', 'now');
+             INSERT INTO runs (id, workflow_id, status, created_at)
+             VALUES ('run-1', 'workflow-1', 'completed', 'now');
+             INSERT INTO memories
+               (id, workflow_id, scope_type, scope_key, title, body, created_at, updated_at)
+             VALUES ('target-1', 'workflow-1', 'workflow', 'workflow-1',
+                     'Target', 'Body', 'now', 'now');
+             INSERT INTO memory_reviews
+               (run_id, workflow_id, status, provider, created_at)
+             VALUES ('run-1', 'workflow-1', 'completed', 'claude_code', 'now');
+             INSERT INTO memory_candidates
+               (id, review_run_id, workflow_id, operation, target_memory_id,
+                scope_type, scope_key, memory_type, title, body, confidence,
+                rationale, content_hash, status, created_at)
+             VALUES ('candidate-1', 'run-1', 'workflow-1', 'supersede', 'target-1',
+                     'workflow', 'workflow-1', 'fact', 'Title', 'Body', 0.8,
+                     'Rationale', 'hash-1', 'pending', 'now');",
+        )
+        .expect("insert curation fixtures");
+
+        // One candidate hash per review run.
+        assert!(conn
+            .execute(
+                "INSERT INTO memory_candidates
+                   (id, review_run_id, workflow_id, operation, scope_type, scope_key,
+                    memory_type, title, body, confidence, rationale, content_hash, status, created_at)
+                 VALUES ('candidate-2', 'run-1', 'workflow-1', 'create', 'workflow',
+                         'workflow-1', 'fact', 'Other', 'Other', 0.5, 'Why', 'hash-1', 'pending', 'now')",
+                [],
+            )
+            .is_err());
+
+        // Deleting the run cascades through reviews into candidates.
+        conn.execute("DELETE FROM runs WHERE id = 'run-1'", [])
+            .expect("delete reviewed run");
+        let candidates: i64 = conn
+            .query_row("SELECT COUNT(*) FROM memory_candidates", [], |row| row.get(0))
+            .expect("count candidates");
+        assert_eq!(candidates, 0);
+
+        // Deleting the workflow removes per-workflow toggles and job rows.
+        // The target memory goes first: its workflow_id is ON DELETE SET NULL,
+        // which would violate the scoped-memory CHECK if nulled implicitly.
+        conn.execute_batch(
+            "DELETE FROM memories WHERE id = 'target-1';
+             DELETE FROM workflows WHERE id = 'workflow-1';",
+        )
+        .expect("delete memory and workflow");
+        let leftovers: i64 = conn
+            .query_row(
+                "SELECT (SELECT COUNT(*) FROM workflow_memory_review)
+                       + (SELECT COUNT(*) FROM memory_reviews)",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count leftovers");
+        assert_eq!(leftovers, 0);
+    }
+
+    #[test]
+    fn upgrades_legacy_database_with_curation_tables() {
+        let conn = Connection::open_in_memory().expect("open database");
+        conn.execute_batch(include_str!("schema.sql"))
+            .expect("initialize legacy fixture");
+        conn.execute_batch(
+            "DROP TABLE memory_review_settings;
+             DROP TABLE workflow_memory_review;
+             DROP TABLE memory_candidates;
+             DROP TABLE memory_reviews;",
+        )
+        .expect("remove curation tables from fixture");
+        apply_migrations(&conn).expect("upgrade legacy fixture");
+
+        for table in [
+            "memory_review_settings",
+            "workflow_memory_review",
+            "memory_reviews",
+            "memory_candidates",
+        ] {
+            assert!(
+                !columns(&conn, table).is_empty(),
+                "missing migrated table {table}"
+            );
+        }
+        let enabled: i64 = conn
+            .query_row(
+                "SELECT enabled FROM memory_review_settings WHERE id = 1",
+                [],
+                |row| row.get(0),
+            )
+            .expect("load migrated singleton default");
+        assert_eq!(enabled, 0, "review must stay off after upgrade");
     }
 }
