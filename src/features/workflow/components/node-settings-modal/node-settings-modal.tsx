@@ -67,7 +67,7 @@ import {
   type Skill,
 } from "../../types";
 import { InputAttachmentList } from "../input-attachment-list";
-import { agentLabel } from "../agent-mark";
+import { agentLabel } from "../../../../components/agent-mark";
 import { SkillPicker } from "../skill-picker";
 import {
   CustomAgentSettings,

@@ -3,7 +3,7 @@ import {
   useState,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import { AgentMark } from "../agent-mark";
+import { AgentMark } from "../../../../components/agent-mark";
 import type { AgentProviderId, Workflow, WorkflowNode } from "../../types";
 
 type Props = {

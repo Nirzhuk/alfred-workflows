@@ -4,7 +4,7 @@ import { useWorkflowStore } from "../../store";
 import { isAgentNodeData, type OutputMemory } from "../../types";
 import { formatStats } from "../../format-stats";
 import { isMemoryPromptEligible } from "../../memories";
-import { AgentMark } from "../agent-mark";
+import { AgentMark } from "../../../../components/agent-mark";
 
 const FOLLOW_THRESHOLD_PX = 24;
 

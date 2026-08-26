@@ -7,7 +7,7 @@ import {
   MenuSubTrigger,
 } from "../../../components/menu";
 import { ADD_STEP_GROUPS, type AddStepItem } from "../add-step-items";
-import { AgentMark } from "./agent-mark";
+import { AgentMark } from "../../../components/agent-mark";
 import type { AgentProviderId, WorkflowNodeData } from "../types";
 
 export type AddStepMenuHandlers = {

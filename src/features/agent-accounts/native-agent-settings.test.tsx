@@ -47,6 +47,8 @@ test("shows gated providers and safe lifecycle actions separately from Connected
   expect(markup).toContain("Native agent accounts");
   expect(markup).toContain("Alfred harness");
   expect(markup).toContain("Native account support is gated");
+  expect(markup).toContain("agent-mark-codex");
+  expect(markup).toContain("agent-mark-glyph");
   expect(markup).not.toContain("Reconnect");
   expect(markup).not.toContain("Refresh");
   expect(markup).toContain("Disconnect");

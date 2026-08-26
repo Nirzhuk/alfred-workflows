@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import type { Skill } from "../../types";
-import { AgentMark } from "../agent-mark";
+import { AgentMark } from "../../../../components/agent-mark";
 
 type Props = {
   skills: Skill[];

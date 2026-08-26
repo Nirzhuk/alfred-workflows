@@ -1,7 +1,7 @@
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
 import { agentHarness, agentSkillNames, type AgentNodeData } from "../../types";
 import { useWorkflowStore } from "../../store";
-import { AgentMark, agentLabel } from "../agent-mark";
+import { AgentMark, agentLabel } from "../../../../components/agent-mark";
 import { NodeOutputPreview } from "../node-output-preview";
 
 type AlfredNode = Node<AgentNodeData, "agent">;

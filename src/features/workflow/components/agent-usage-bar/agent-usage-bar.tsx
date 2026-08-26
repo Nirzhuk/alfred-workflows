@@ -10,7 +10,7 @@ import {
   type RefObject,
 } from "react";
 import { createPortal } from "react-dom";
-import { AgentMark, agentLabel } from "../agent-mark";
+import { AgentMark, agentLabel } from "../../../../components/agent-mark";
 import type {
   AgentProviderId,
   AgentUsageSnapshot,

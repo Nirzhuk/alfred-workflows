@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { ConfirmDialog } from "../../components/confirm-dialog";
+import { AgentMark } from "../../components/agent-mark";
 import { CursorNativeDisclosure } from "./cursor-native-disclosure";
 import { GrokNativeDisclosure } from "./grok-native-disclosure";
 import {
@@ -154,7 +155,11 @@ export function NativeAgentSettings({ snapshot }: NativeAgentSettingsProps = {})
             >
               <div className="integration-provider-copy">
                 <span className="native-agent-provider-mark" aria-hidden>
-                  {provider.providerName.slice(0, 1)}
+                  <AgentMark
+                    provider={provider.providerId}
+                    label={provider.providerName}
+                    size={20}
+                  />
                 </span>
                 <div className="integration-provider-text">
                   <p className="settings-label">{provider.providerName}</p>
