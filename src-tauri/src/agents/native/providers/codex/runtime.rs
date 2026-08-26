@@ -1,5 +1,7 @@
 use super::{CODEX_APP_SERVER_TAG, CODEX_APP_SERVER_VERSION, CODEX_PROTOCOL_REVISION};
-use crate::agents::native::CapabilityReportStatus;
+use crate::agents::native::{
+    CapabilityReportStatus, NativeErrorCode, NativeRuntimeError, NativeRuntimeRegistry,
+};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::fs;
@@ -13,9 +15,16 @@ const OFFICIAL_RELEASE_BASE: &str =
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CodexArtifactSignature {
+    AppleDeveloperId,
+    WindowsAuthenticode,
     SigstoreBundle,
-    NotPublished,
 }
+
+pub const PRODUCTION_SUPPORT_BLOCKED_CODE: &str = "codex_app_server_production_unsupported";
+pub const SIGNATURE_VERIFICATION_BLOCKED_CODE: &str =
+    "codex_runtime_signature_verification_missing";
+pub const LICENSE_NOTICE_BLOCKED_CODE: &str = "codex_runtime_license_notice_packaging_missing";
+pub const PACKAGED_SMOKE_BLOCKED_CODE: &str = "codex_packaged_no_cli_smoke_missing";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -39,25 +48,25 @@ pub const CODEX_RUNTIME_ARTIFACTS: [CodexRuntimeArtifact; 6] = [
         target: "aarch64-apple-darwin",
         archive_name: "codex-app-server-aarch64-apple-darwin.tar.gz",
         sha256: "23500f566f25e675c11de5327c57a6ca9ba109ac213f4e1f9585588c060c9d88",
-        signature: CodexArtifactSignature::NotPublished,
+        signature: CodexArtifactSignature::AppleDeveloperId,
     },
     CodexRuntimeArtifact {
         target: "x86_64-apple-darwin",
         archive_name: "codex-app-server-x86_64-apple-darwin.tar.gz",
         sha256: "386aaf051f42094d1c00de6421979ccdd80bbc2dff6daf44d94393fbf37d94e7",
-        signature: CodexArtifactSignature::NotPublished,
+        signature: CodexArtifactSignature::AppleDeveloperId,
     },
     CodexRuntimeArtifact {
         target: "aarch64-pc-windows-msvc",
         archive_name: "codex-app-server-aarch64-pc-windows-msvc.exe.zip",
         sha256: "e81eaee21bcda8200382aa7ea76e859d2e6061840658741204386c1102cf79da",
-        signature: CodexArtifactSignature::NotPublished,
+        signature: CodexArtifactSignature::WindowsAuthenticode,
     },
     CodexRuntimeArtifact {
         target: "x86_64-pc-windows-msvc",
         archive_name: "codex-app-server-x86_64-pc-windows-msvc.exe.zip",
         sha256: "c808dc2d26473f20b0afdac24fcd219ed85bc64b3f3f5fade2bdcfdad7d2a513",
-        signature: CodexArtifactSignature::NotPublished,
+        signature: CodexArtifactSignature::WindowsAuthenticode,
     },
     CodexRuntimeArtifact {
         target: "aarch64-unknown-linux-musl",
@@ -109,14 +118,34 @@ pub fn codex_release_gates() -> Vec<CodexReleaseGateEntry> {
             evidence: "rust-v0.149.1 documents version-specific JSONL JSON-RPC schemas and stable auth/turn methods",
         },
         CodexReleaseGateEntry {
-            gate: "cross_platform_signing",
+            gate: "upstream_signing_inputs",
+            status: CapabilityReportStatus::Supported,
+            evidence: "OpenAI signs macOS app-server binaries with Developer ID, Windows binaries with Authenticode, and Linux binaries with Sigstore",
+        },
+        CodexReleaseGateEntry {
+            gate: "production_support",
             status: CapabilityReportStatus::Blocked,
-            evidence: "official rust-v0.149.1 app-server release publishes Sigstore bundles only for Linux targets",
+            evidence: PRODUCTION_SUPPORT_BLOCKED_CODE,
+        },
+        CodexReleaseGateEntry {
+            gate: "signature_verification",
+            status: CapabilityReportStatus::Blocked,
+            evidence: SIGNATURE_VERIFICATION_BLOCKED_CODE,
+        },
+        CodexReleaseGateEntry {
+            gate: "license_notice_packaging",
+            status: CapabilityReportStatus::Blocked,
+            evidence: LICENSE_NOTICE_BLOCKED_CODE,
+        },
+        CodexReleaseGateEntry {
+            gate: "packaged_no_cli_smoke",
+            status: CapabilityReportStatus::Blocked,
+            evidence: PACKAGED_SMOKE_BLOCKED_CODE,
         },
         CodexReleaseGateEntry {
             gate: "native_ready",
             status: CapabilityReportStatus::Blocked,
-            evidence: "runtime registration and release claims stay disabled until every packaged target has an approved signing verification route and packaged smoke evidence",
+            evidence: "runtime registration and release claims stay disabled while any production package gate is blocked",
         },
     ]
 }
@@ -125,6 +154,29 @@ pub fn codex_native_ready() -> bool {
     codex_release_gates()
         .iter()
         .all(|entry| entry.status != CapabilityReportStatus::Blocked)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CodexPackagedRuntimeDecision {
+    NoGo,
+}
+
+pub fn packaged_runtime_decision() -> CodexPackagedRuntimeDecision {
+    CodexPackagedRuntimeDecision::NoGo
+}
+
+/// Production registration is structurally fail-closed. The official app-server
+/// remains unsupported for production, and Alfred has not shipped or smoked the
+/// required signature and license/NOTICE checks on every desktop target.
+pub fn register(_registry: &NativeRuntimeRegistry) -> Result<(), NativeRuntimeError> {
+    Err(NativeRuntimeError::new(
+        NativeErrorCode::ProviderUnavailable,
+        format!(
+            "{PRODUCTION_SUPPORT_BLOCKED_CODE}; {SIGNATURE_VERIFICATION_BLOCKED_CODE}; {LICENSE_NOTICE_BLOCKED_CODE}; {PACKAGED_SMOKE_BLOCKED_CODE}"
+        ),
+        false,
+    ))
 }
 
 #[derive(Debug, Error)]
@@ -224,6 +276,7 @@ pub struct CodexRuntimeFreeze {
     pub runtime_version: &'static str,
     pub release_tag: &'static str,
     pub protocol_revision: &'static str,
+    pub packaged_runtime_decision: CodexPackagedRuntimeDecision,
     pub native_ready: bool,
 }
 
@@ -232,6 +285,7 @@ pub fn runtime_freeze() -> CodexRuntimeFreeze {
         runtime_version: CODEX_APP_SERVER_VERSION,
         release_tag: CODEX_APP_SERVER_TAG,
         protocol_revision: CODEX_PROTOCOL_REVISION,
+        packaged_runtime_decision: packaged_runtime_decision(),
         native_ready: codex_native_ready(),
     }
 }
@@ -277,8 +331,12 @@ mod tests {
     use std::time::Duration;
 
     #[test]
-    fn release_gate_is_honestly_blocked_and_artifacts_are_complete() {
+    fn release_gate_is_honestly_no_go_and_artifacts_are_complete() {
         assert!(!codex_native_ready());
+        assert_eq!(
+            packaged_runtime_decision(),
+            CodexPackagedRuntimeDecision::NoGo
+        );
         assert_eq!(runtime_freeze().runtime_version, "0.149.1");
         assert_eq!(CODEX_RUNTIME_ARTIFACTS.len(), 6);
         for target in [
@@ -292,6 +350,33 @@ mod tests {
             let artifact = artifact_for_target(target).unwrap();
             assert_eq!(artifact.sha256.len(), 64);
             assert!(artifact.url().starts_with("https://github.com/openai/codex/releases/"));
+        }
+        assert_eq!(
+            artifact_for_target("aarch64-apple-darwin")
+                .unwrap()
+                .signature,
+            CodexArtifactSignature::AppleDeveloperId
+        );
+        assert_eq!(
+            artifact_for_target("x86_64-pc-windows-msvc")
+                .unwrap()
+                .signature,
+            CodexArtifactSignature::WindowsAuthenticode
+        );
+        assert_eq!(
+            artifact_for_target("aarch64-unknown-linux-musl")
+                .unwrap()
+                .signature,
+            CodexArtifactSignature::SigstoreBundle
+        );
+        let error = register(&NativeRuntimeRegistry::default()).expect_err("registration blocked");
+        for gate in [
+            PRODUCTION_SUPPORT_BLOCKED_CODE,
+            SIGNATURE_VERIFICATION_BLOCKED_CODE,
+            LICENSE_NOTICE_BLOCKED_CODE,
+            PACKAGED_SMOKE_BLOCKED_CODE,
+        ] {
+            assert!(error.message.contains(gate));
         }
     }
 

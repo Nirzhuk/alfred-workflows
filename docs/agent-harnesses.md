@@ -49,7 +49,7 @@ CLI execution or one another:
 
 | Provider | Status | Exact external/release blocker |
 | --- | --- | --- |
-| Codex | Blocked | Cross-platform runtime signing and packaged no-CLI smoke evidence are missing for the pinned app-server 0.149.1 artifacts |
+| Codex | No-go | Official app-server production support, Alfred verification of upstream Developer ID/Authenticode/Sigstore signatures, license/NOTICE packaging, and packaged no-CLI smoke are missing for pinned app-server 0.149.1 |
 | Claude | Blocked | Approved non-React API-key intake and live API smoke are missing; Claude.ai subscription login also requires Anthropic approval not on record |
 | Cursor | Blocked | API-key custody, explicit repository consent persistence, and live end-to-end Cloud Agents validation are missing |
 | OpenCode | Blocked | Runtime artifact/checksum/signing/update ownership, upstream-secret intake, and a typed Alfred tool-result bridge are unresolved |

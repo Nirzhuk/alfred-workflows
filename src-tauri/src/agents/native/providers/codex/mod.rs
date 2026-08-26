@@ -1,10 +1,12 @@
 //! Codex app-server protocol support for the Alfred native harness.
 //!
 //! This module intentionally does not register a runtime yet. The pinned
-//! upstream artifacts do not provide a verifiable signing chain for every
-//! desktop target, so the release gate remains closed. The bounded protocol,
-//! account, event, and runtime-home primitives are kept usable by fake-server
-//! tests without consulting a user Codex installation or credential home.
+//! upstream artifacts have platform signing inputs, but Alfred does not have a
+//! production-supported app-server contract or verified package path carrying
+//! the required license/NOTICE files on every desktop target. The bounded
+//! protocol, account, event, and runtime-home primitives remain usable by
+//! fake-server tests without consulting a user Codex installation or
+//! credential home.
 
 mod account;
 mod events;

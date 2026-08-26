@@ -19,8 +19,69 @@
 - **Depends on**: Plans 030–032
 - **Category**: native provider / OAuth
 - **Planned at**: 2026-08-24
-- **Implementation**: BLOCKED (safe provider protocol/fixtures implemented;
-  native runtime registration and release claims remain disabled)
+- **Implementation**: BLOCKED / packaged-runtime **NO-GO** (safe provider
+  protocol/fixtures implemented; native runtime registration and release
+  claims remain disabled)
+
+## 2026-08-26 go-live re-check: packaged runtime NO-GO
+
+Decision: **NO-GO**. Alfred must not bundle or register Codex app-server for
+production in this release.
+
+The latest stable official release is still app-server `0.149.1` at
+[`rust-v0.149.1`](https://github.com/openai/codex/releases/tag/rust-v0.149.1),
+published 2026-08-24. Newer releases visible during this review were
+`0.150.0-alpha.*` prereleases, so the stable protocol freeze and six archive
+digests remain unchanged.
+
+The current first-party [Codex App Server documentation](https://learn.chatgpt.com/docs/app-server)
+now documents app-server as the integration interface for authentication,
+conversation history, approvals, and streaming. It also says the app-server
+command and WebSocket transport are experimental and unsupported for
+production workloads. Stdio remains the documented JSONL transport, but the
+production warning names the app-server command itself. That is a Plan 033 STOP
+condition for a shipping integration unless OpenAI documents a supported
+production contract or approves Alfred's use.
+
+The re-check corrected one earlier assumption about the release assets:
+
+- The extracted macOS arm64 app-server passed `codesign --verify --strict` and
+  carries `Developer ID Application: OpenAI OpCo, LLC (2DC432GLL2)`. The tagged
+  release workflow signs and notarizes both macOS app-server targets.
+- The extracted Windows x86_64 executable has an Authenticode security
+  directory and an OpenAI OpCo, LLC code-signing certificate issued through
+  Microsoft Identity Verification. The tagged Windows workflow sends every
+  app-server target through Azure Trusted Signing.
+- Linux release assets include Sigstore bundles. The inspected arm64 bundle
+  binds the extracted binary SHA-256
+  `8ef6f416012aae811595454de5004602ae73949980f9d4791d7a4497c0f86fe7`
+  to OpenAI's `rust-release.yml` at `rust-v0.149.1` through Rekor.
+- GitHub's release SHA-256 values were rechecked for the macOS arm64 archive,
+  Windows x86_64 zip, Linux arm64 archive, and macOS app-server package. No
+  separate GitHub artifact-attestation record was verified for these digests.
+
+Those upstream signing inputs do not clear Alfred's package gate. Alfred has no
+implemented pre-launch verification for Developer ID, Authenticode, and
+Sigstore across all six targets. The inspected official macOS app-server
+package archive also contains no `LICENSE` or `NOTICE`; the tagged source
+repository contains both, but `src-tauri/tauri.conf.json` does not package them
+or a Codex runtime. No signed Alfred package containing the runtime has passed
+the required macOS, Windows, and Linux no-CLI smoke matrix.
+
+The official auth API remains suitable for a future supported integration:
+`account/login/start` documents managed `chatgpt` browser OAuth and
+`chatgptDeviceCode`; Codex persists and refreshes those tokens. Alfred would
+still have to keep that custody inside its isolated account-scoped
+`CODEX_HOME`, and must never import ambient CLI state.
+
+Consequences of the NO-GO:
+
+- production registration remains fail-closed with stable block-reason codes;
+- no runtime resource, account provider, login UI, or native-ready claim is
+  added;
+- the existing explicit Codex CLI adapter remains unchanged;
+- the bounded protocol, fake app-server, event, approval, account, cleanup, and
+  runtime-home fixtures remain non-production evidence only.
 
 ## 2026-08-25 official-source freeze and gate decision
 
@@ -43,13 +104,15 @@ Official sources re-read on 2026-08-25:
 | Checksums | Supported as integrity inputs | The same official GitHub release exposes SHA-256 digests for every pinned app-server archive. The exact six digests are frozen in `src-tauri/src/agents/native/providers/codex/runtime.rs`; mismatches fail closed. |
 | License | Supported with notice obligations | The pinned [Apache License 2.0](https://github.com/openai/codex/blob/rust-v0.149.1/LICENSE) permits redistribution of object form subject to the license/notice and modification-notice conditions. The tagged repository includes an upstream [NOTICE](https://github.com/openai/codex/blob/rust-v0.149.1/NOTICE) attributing OpenAI Codex and Ratatui-derived MIT code; Alfred packaging must carry the license and this notice. |
 | Protocol | Supported, version-coupled | The pinned [app-server README](https://github.com/openai/codex/blob/rust-v0.149.1/codex-rs/app-server/README.md) documents bounded-backpressure JSONL JSON-RPC over stdio, initialize/initialized, account/model/rate-limit queries, thread/turn streaming, server-initiated approvals, and `turn/interrupt`. WebSocket transport is explicitly experimental/unsupported and is not used. |
-| Package signing | **Blocked** | The 0.149.1 official release publishes `.sigstore` bundles for Linux app-server binaries, but no corresponding Sigstore/signature artifacts for the macOS or Windows app-server assets. GitHub's SHA-256 asset digest establishes integrity, not publisher signing or Alfred package trust. No approved, implemented cross-platform signing verification and repackaging route exists in this repository as of 2026-08-25. |
+| Package signing | **Blocked** | The 0.149.1 release has embedded Developer ID signatures on macOS, embedded Authenticode signatures on Windows, and `.sigstore` bundles for Linux. Alfred still has no implemented, cross-platform verification and repackaging route; see the 2026-08-26 re-check above. |
 | Packaged smoke | **Blocked** | No signed Alfred packages containing the pinned runtime have passed the required macOS, Windows, and Linux no-CLI smoke matrix. |
 | Native-ready claim | **Blocked** | Runtime registration, account-provider enablement, and the native-ready UI claim stay off until signing verification, packaging, runtime-owned credential cleanup, and packaged smoke gates pass on every shipping desktop platform. |
 
-This is an inference from the official release asset set: absence of macOS and
-Windows signature/attestation assets means the Plan 033 cross-platform signing
-gate is unresolved; it does not mean Apache-2.0 forbids redistribution.
+The 2026-08-26 inspection corrects the earlier inference from release-asset
+names: macOS and Windows binaries carry embedded platform signatures, and
+Linux publishes Sigstore bundles. The unresolved gate is Alfred's missing
+cross-platform verification and repackaging path, not absent upstream
+signatures or an Apache-2.0 redistribution prohibition.
 
 Reachable artifacts delivered despite the release block:
 

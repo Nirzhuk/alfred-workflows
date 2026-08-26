@@ -389,7 +389,7 @@ Grok) and harness (`cli` or `alfred`).
 | 030 | Make CLI and Alfred harnesses first-class | P0 | L | — | DONE (reconciled 2026-08-26; graph compatibility and fail-closed routing verified below) |
 | 031 | Add secure native-agent accounts and credential lifecycle | P0 | L | 030 | DONE (reconciled 2026-08-26; dedicated Claude/Gemini/Grok API-key intake and credential boundaries verified below) |
 | 032 | Define the native harness compatibility contract | P0 | L | 030, 031 | DONE (reconciled 2026-08-26; versioned contracts and fake-runtime conformance verified below) |
-| 033 | Run Codex through Alfred with ChatGPT OAuth | P0 | XL | 030–032 | BLOCKED (cross-platform signing and packaged no-CLI smoke missing) |
+| 033 | Run Codex through Alfred with ChatGPT OAuth | P0 | XL | 030–032 | NO-GO (official app-server production support, Alfred signature verification, license/NOTICE packaging, and packaged no-CLI smoke are missing) |
 | 034 | Add a native Claude harness without weakening CLI support | P1 | XL | 030–032 | BLOCKED (live API-key smoke missing; subscription OAuth unapproved) |
 | 035 | Add a native Cursor harness | P1 | XL | 030–032 | BLOCKED (API-key intake, repository consent, and per-tool approval missing) |
 | 036 | Add an Alfred-managed OpenCode runtime | P1 | XL | 030–032 | BLOCKED (package signing, secret entry, and typed tool bridge missing) |
