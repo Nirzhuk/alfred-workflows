@@ -13,12 +13,15 @@ use super::models::{
 };
 use crate::agents::{AgentHarness, AgentProvider};
 use crate::db::Db;
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 use tokio::sync::{Mutex as AsyncMutex, OwnedMutexGuard};
+use zeroize::Zeroizing;
 
 /// Upper bound on retained per-account mutexes before idle ones are dropped.
 const MAX_TRACKED_ACCOUNT_LOCKS: usize = 64;
@@ -440,6 +443,149 @@ impl AgentAccountsState {
         self.get_account(db, &account.id)?.ok_or_else(account_not_found)
     }
 
+    /// Dedicated intake for Alfred-managed API keys. Runtime registration is
+    /// intentionally not involved: the native runtimes remain gated until
+    /// their independent release evidence passes.
+    pub async fn connect_api_key_account(
+        &self,
+        db: &Db,
+        provider: AgentProvider,
+        account_id: Option<&str>,
+        api_key: Zeroizing<String>,
+    ) -> Result<AgentAccountDto, AgentAccountCommandError> {
+        validate_native_api_key(provider, api_key.as_str())?;
+        let fingerprint = api_key_fingerprint(provider, api_key.as_str());
+        let metadata = AuthorizedAgentAccount {
+            provider,
+            harness: AgentHarness::Alfred,
+            display_name: Some("API key".into()),
+            external_account_id: format!("api-key-sha256:{fingerprint}"),
+            external_workspace_id: None,
+            auth_method: AgentAuthMethod::ApiKey,
+            custody_mode: CredentialCustodyMode::AlfredManaged,
+            scopes: Vec::new(),
+            expires_at: None,
+        };
+        let requested = match account_id {
+            Some(id) => db.get_agent_account(id).map_err(|_| metadata_error())?,
+            None => db
+                .get_agent_account_by_identity(
+                    provider,
+                    AgentHarness::Alfred,
+                    &metadata.identity_key(),
+                )
+                .map_err(|_| metadata_error())?,
+        };
+        let (account, is_new) = if let Some(account) = requested {
+            if account.provider != provider
+                || account.harness != AgentHarness::Alfred
+                || account.auth_method != AgentAuthMethod::ApiKey
+                || account.custody_mode != CredentialCustodyMode::AlfredManaged
+            {
+                return Err(command_error(
+                    "provider_mismatch",
+                    "That account cannot be reconnected with this provider credential.",
+                    false,
+                ));
+            }
+            (account, false)
+        } else if account_id.is_some() {
+            return Err(account_not_found());
+        } else {
+            (
+                db.prepare_agent_account(copy_api_key_metadata(&metadata))
+                    .map_err(|_| metadata_error())?,
+                true,
+            )
+        };
+
+        let _guard = self.lock_account(&account.id).await?;
+        // `prepare_agent_account` may reuse the same pending identity while a
+        // concurrent connect is waiting for this lock. Re-read after locking
+        // so the waiter backs up a credential finalized by the first writer
+        // instead of treating that durable account as disposable new state.
+        let account = db
+            .get_agent_account(&account.id)
+            .map_err(|_| metadata_error())?
+            .ok_or_else(account_not_found)?;
+        let is_new = is_new && account.status != AgentAccountStatus::Connected;
+        let previous = if is_new {
+            None
+        } else {
+            let store = self.credential_store.clone();
+            let credential_ref = account.credential_ref.clone();
+            match tauri::async_runtime::spawn_blocking(move || store.get(&credential_ref))
+                .await
+                .map_err(|_| state_unavailable())?
+            {
+                Ok(credential) => Some(credential),
+                Err(AgentCredentialStoreError::Missing | AgentCredentialStoreError::Invalid) => {
+                    None
+                }
+                Err(error) => return Err(credential_command_error(error)),
+            }
+        };
+
+        let credential_ref = account.credential_ref.clone();
+        let store = self.credential_store.clone();
+        let credential = AgentCredentialEnvelope::alfred_managed(api_key.as_str().to_owned());
+        let persisted = tauri::async_runtime::spawn_blocking(move || {
+            store.put(&credential_ref, &credential)
+        })
+        .await
+        .map_err(|_| state_unavailable())?;
+        if let Err(error) = persisted {
+            let original_error = credential_command_error(error);
+            if let Err(rollback_error) = rollback_api_key_credential(
+                self.credential_store.clone(),
+                account.credential_ref.clone(),
+                previous,
+            )
+            .await
+            {
+                let _ = db.set_agent_account_state(
+                    &account.id,
+                    AgentAccountStatus::Error,
+                    None,
+                    Some("credential_rollback_failed"),
+                );
+                return Err(rollback_error);
+            }
+            if is_new {
+                db.delete_agent_account_metadata(&account.id)
+                    .map_err(|_| metadata_error())?;
+                self.release_account_lock(&account.id);
+            }
+            return Err(original_error);
+        }
+
+        if db.finalize_api_key_agent_account(&account.id, &metadata).is_err() {
+            if let Err(rollback_error) = rollback_api_key_credential(
+                self.credential_store.clone(),
+                account.credential_ref.clone(),
+                previous,
+            )
+            .await
+            {
+                let _ = db.set_agent_account_state(
+                    &account.id,
+                    AgentAccountStatus::Error,
+                    None,
+                    Some("credential_rollback_failed"),
+                );
+                return Err(rollback_error);
+            }
+            if is_new {
+                db.delete_agent_account_metadata(&account.id)
+                    .map_err(|_| metadata_error())?;
+                self.release_account_lock(&account.id);
+            }
+            return Err(metadata_error());
+        }
+
+        self.get_account(db, &account.id)?.ok_or_else(account_not_found)
+    }
+
     pub async fn disconnect_account(
         &self,
         db: &Db,
@@ -496,31 +642,37 @@ impl AgentAccountsState {
             }
         };
         if let Some(credential) = credential {
-            let (_, handler) = self.provider(account.provider)?;
-            let Some(handler) = handler else {
-                db.set_agent_account_state(
-                    account_id,
-                    AgentAccountStatus::DisconnectPending,
-                    account.expires_at.as_deref(),
-                    Some("unsupported_auth_mode"),
-                )
-                .map_err(|_| metadata_error())?;
-                return Err(command_error(
-                    "unsupported_auth_mode",
-                    "This build cannot revoke the provider credential. Retry with provider support or remove local metadata after revoking it yourself.",
-                    true,
-                ));
-            };
-            if let Err(error) = handler.revoke(&account, credential).await {
-                if error.kind != AgentProviderFailureKind::TerminalRevoked {
+            if account.auth_method == AgentAuthMethod::ApiKey {
+                // Provider consoles own API-key revocation. Alfred truthfully
+                // performs local deletion only and never claims remote revoke.
+                drop(credential);
+            } else {
+                let (_, handler) = self.provider(account.provider)?;
+                let Some(handler) = handler else {
                     db.set_agent_account_state(
                         account_id,
                         AgentAccountStatus::DisconnectPending,
                         account.expires_at.as_deref(),
-                        Some(&error.code),
+                        Some("unsupported_auth_mode"),
                     )
                     .map_err(|_| metadata_error())?;
-                    return Err(provider_command_error(error));
+                    return Err(command_error(
+                        "unsupported_auth_mode",
+                        "This build cannot revoke the provider credential. Retry with provider support or remove local metadata after revoking it yourself.",
+                        true,
+                    ));
+                };
+                if let Err(error) = handler.revoke(&account, credential).await {
+                    if error.kind != AgentProviderFailureKind::TerminalRevoked {
+                        db.set_agent_account_state(
+                            account_id,
+                            AgentAccountStatus::DisconnectPending,
+                            account.expires_at.as_deref(),
+                            Some(&error.code),
+                        )
+                        .map_err(|_| metadata_error())?;
+                        return Err(provider_command_error(error));
+                    }
                 }
             }
         }
@@ -707,6 +859,95 @@ fn account_not_found() -> AgentAccountCommandError {
     command_error("account_not_found", "The native-agent account no longer exists.", false)
 }
 
+async fn rollback_api_key_credential(
+    store: Arc<dyn AgentCredentialStore>,
+    credential_ref: String,
+    previous: Option<AgentCredentialEnvelope>,
+) -> Result<(), AgentAccountCommandError> {
+    let rollback = tauri::async_runtime::spawn_blocking(move || match previous {
+        Some(previous) => store.put(&credential_ref, &previous),
+        None => match store.delete(&credential_ref) {
+            Ok(()) | Err(AgentCredentialStoreError::Missing) => Ok(()),
+            Err(error) => Err(error),
+        },
+    })
+    .await
+    .map_err(|_| {
+        command_error(
+            "credential_rollback_failed",
+            "The previous native-agent credential could not be restored.",
+            true,
+        )
+    })?;
+    rollback.map_err(|_| {
+        command_error(
+            "credential_rollback_failed",
+            "The previous native-agent credential could not be restored.",
+            true,
+        )
+    })
+}
+
+fn copy_api_key_metadata(input: &AuthorizedAgentAccount) -> AuthorizedAgentAccount {
+    AuthorizedAgentAccount {
+        provider: input.provider,
+        harness: input.harness,
+        display_name: input.display_name.clone(),
+        external_account_id: input.external_account_id.clone(),
+        external_workspace_id: None,
+        auth_method: input.auth_method,
+        custody_mode: input.custody_mode,
+        scopes: Vec::new(),
+        expires_at: None,
+    }
+}
+
+fn api_key_fingerprint(provider: AgentProvider, api_key: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(provider.as_str().as_bytes());
+    hasher.update([0]);
+    hasher.update(api_key.as_bytes());
+    URL_SAFE_NO_PAD.encode(hasher.finalize())
+}
+
+fn validate_native_api_key(
+    provider: AgentProvider,
+    api_key: &str,
+) -> Result<(), AgentAccountCommandError> {
+    let bounded = api_key.len() <= 512 && api_key.trim() == api_key;
+    let valid = match provider {
+        AgentProvider::ClaudeCode => {
+            bounded
+                && api_key.starts_with("sk-ant-")
+                && api_key.len() > "sk-ant-".len()
+                && api_key.bytes().all(|byte| byte.is_ascii_graphic())
+        }
+        AgentProvider::Gemini => {
+            bounded
+                && api_key.len() >= 20
+                && api_key.bytes().all(|byte| {
+                    byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.')
+                })
+        }
+        AgentProvider::Grok => {
+            bounded
+                && api_key.len() >= 20
+                && api_key.starts_with("xai-")
+                && !api_key.chars().any(char::is_whitespace)
+        }
+        _ => false,
+    };
+    if valid {
+        Ok(())
+    } else {
+        Err(command_error(
+            "api_key_invalid",
+            "Use a valid API key for this native provider.",
+            false,
+        ))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -826,6 +1067,292 @@ mod tests {
             .await
             .expect("complete");
         (db, store, state, provider, account)
+    }
+
+    fn api_key(provider: AgentProvider, suffix: &str) -> String {
+        match provider {
+            AgentProvider::ClaudeCode => format!("sk-ant-api03-{suffix}-fixture-value"),
+            AgentProvider::Gemini => format!("AIza{suffix}FixtureValue1234567890"),
+            AgentProvider::Grok => format!("xai-{suffix}-fixture-value-1234567890"),
+            _ => panic!("unsupported API-key fixture provider"),
+        }
+    }
+
+    fn fail_api_key_metadata_updates(db: &Db) {
+        db.with_conn(|conn| {
+            conn.execute_batch(
+                "CREATE TRIGGER fail_api_key_metadata
+                 BEFORE UPDATE OF status ON agent_accounts
+                 WHEN NEW.auth_method = 'api_key' AND NEW.status = 'connected'
+                 BEGIN SELECT RAISE(FAIL, 'metadata write failed'); END;",
+            )?;
+            Ok(())
+        })
+        .expect("install metadata failure");
+    }
+
+    #[tokio::test]
+    async fn api_key_intake_connects_only_approved_providers_and_serializes_redacted_metadata() {
+        let db = Db::open_in_memory().expect("database");
+        let store = Arc::new(InMemoryAgentCredentialStore::default());
+        let state = AgentAccountsState::new(store.clone());
+
+        for provider in [
+            AgentProvider::ClaudeCode,
+            AgentProvider::Gemini,
+            AgentProvider::Grok,
+        ] {
+            let secret = api_key(provider, "success-secret");
+            let account = state
+                .connect_api_key_account(
+                    &db,
+                    provider,
+                    None,
+                    Zeroizing::new(secret.clone()),
+                )
+                .await
+                .expect("connect API key");
+            assert_eq!(account.auth_method, AgentAuthMethod::ApiKey);
+            assert_eq!(account.custody_mode, CredentialCustodyMode::AlfredManaged);
+            assert_eq!(account.status, AgentAccountStatus::Connected);
+            assert!(account.external_account_id.is_none());
+            assert!(account.external_workspace_id.is_none());
+
+            let serialized = serde_json::to_string(&account).expect("serialize DTO");
+            let backend = db
+                .get_agent_account(&account.id)
+                .expect("read account")
+                .expect("saved account");
+            assert!(!serialized.contains(&secret));
+            assert!(!format!("{backend:?}").contains(&secret));
+            assert_eq!(
+                store
+                    .get(&backend.credential_ref)
+                    .expect("stored key")
+                    .access_token
+                    .as_deref(),
+                Some(secret.as_str())
+            );
+        }
+        assert_eq!(db.list_agent_accounts().expect("list").len(), 3);
+
+        for provider in [
+            AgentProvider::ClaudeCode,
+            AgentProvider::Gemini,
+            AgentProvider::Grok,
+        ] {
+            let invalid_secret = " invalid-secret ".to_string();
+            let error = state
+                .connect_api_key_account(
+                    &db,
+                    provider,
+                    None,
+                    Zeroizing::new(invalid_secret.clone()),
+                )
+                .await
+                .unwrap_err();
+            assert_eq!(error.code, "api_key_invalid");
+            assert!(!format!("{error:?}").contains(&invalid_secret));
+        }
+
+        let invalid = state
+            .connect_api_key_account(
+                &db,
+                AgentProvider::Codex,
+                None,
+                Zeroizing::new("sk-not-approved-secret".into()),
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(invalid.code, "api_key_invalid");
+        assert!(!format!("{invalid:?}").contains("sk-not-approved-secret"));
+    }
+
+    #[tokio::test]
+    async fn api_key_reconnect_overwrites_in_place_and_refuses_provider_mismatch() {
+        let db = Db::open_in_memory().expect("database");
+        let store = Arc::new(InMemoryAgentCredentialStore::default());
+        let state = AgentAccountsState::new(store.clone());
+        let first_key = api_key(AgentProvider::Grok, "first-secret");
+        let first = state
+            .connect_api_key_account(
+                &db,
+                AgentProvider::Grok,
+                None,
+                Zeroizing::new(first_key.clone()),
+            )
+            .await
+            .expect("first connect");
+        let first_backend = db.get_agent_account(&first.id).unwrap().unwrap();
+
+        let second_key = api_key(AgentProvider::Grok, "second-secret");
+        let reconnected = state
+            .connect_api_key_account(
+                &db,
+                AgentProvider::Grok,
+                Some(&first.id),
+                Zeroizing::new(second_key.clone()),
+            )
+            .await
+            .expect("reconnect");
+        assert_eq!(reconnected.id, first.id);
+        assert_eq!(db.list_agent_accounts().expect("list").len(), 1);
+        assert_eq!(
+            store
+                .get(&first_backend.credential_ref)
+                .expect("overwritten key")
+                .access_token
+                .as_deref(),
+            Some(second_key.as_str())
+        );
+
+        let mismatch_key = api_key(AgentProvider::Gemini, "mismatch-secret");
+        let error = state
+            .connect_api_key_account(
+                &db,
+                AgentProvider::Gemini,
+                Some(&first.id),
+                Zeroizing::new(mismatch_key.clone()),
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(error.code, "provider_mismatch");
+        assert!(!format!("{error:?}").contains(&mismatch_key));
+        assert_eq!(
+            store
+                .get(&first_backend.credential_ref)
+                .expect("unchanged key")
+                .access_token
+                .as_deref(),
+            Some(second_key.as_str())
+        );
+
+        state
+            .disconnect_account(&db, &first.id, false)
+            .await
+            .expect("local API-key disconnect");
+        assert!(db.get_agent_account(&first.id).unwrap().is_none());
+        assert_eq!(
+            store.get(&first_backend.credential_ref).unwrap_err(),
+            AgentCredentialStoreError::Missing
+        );
+    }
+
+    #[tokio::test]
+    async fn api_key_store_and_metadata_failures_roll_back_without_orphaning_secrets() {
+        let db = Db::open_in_memory().expect("database");
+        let store = Arc::new(InMemoryAgentCredentialStore::default());
+        let state = AgentAccountsState::new(store.clone());
+        store.fail_next_put(AgentCredentialStoreError::Locked);
+        let rejected_key = api_key(AgentProvider::ClaudeCode, "store-failure-secret");
+        let error = state
+            .connect_api_key_account(
+                &db,
+                AgentProvider::ClaudeCode,
+                None,
+                Zeroizing::new(rejected_key.clone()),
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(error.code, "credential_store_locked");
+        assert!(db.list_agent_accounts().expect("list").is_empty());
+        assert_eq!(store.entry_count(), 0);
+        assert!(!format!("{error:?}").contains(&rejected_key));
+
+        store.fail_next_put_after_write(AgentCredentialStoreError::Failed);
+        let ambiguous_key = api_key(AgentProvider::ClaudeCode, "ambiguous-failure-secret");
+        let error = state
+            .connect_api_key_account(
+                &db,
+                AgentProvider::ClaudeCode,
+                None,
+                Zeroizing::new(ambiguous_key.clone()),
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(error.code, "credential_store_failed");
+        assert!(db.list_agent_accounts().expect("list").is_empty());
+        assert_eq!(store.entry_count(), 0);
+        assert!(!format!("{error:?}").contains(&ambiguous_key));
+
+        fail_api_key_metadata_updates(&db);
+        let metadata_key = api_key(AgentProvider::Gemini, "metadata-failure-secret");
+        let error = state
+            .connect_api_key_account(
+                &db,
+                AgentProvider::Gemini,
+                None,
+                Zeroizing::new(metadata_key.clone()),
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(error.code, "account_store_failed");
+        assert!(db.list_agent_accounts().expect("list").is_empty());
+        assert_eq!(store.entry_count(), 0);
+        assert!(!format!("{error:?}").contains(&metadata_key));
+
+        store.fail_next_delete(AgentCredentialStoreError::Failed);
+        let rollback_key = api_key(AgentProvider::Grok, "rollback-failure-secret");
+        let error = state
+            .connect_api_key_account(
+                &db,
+                AgentProvider::Grok,
+                None,
+                Zeroizing::new(rollback_key.clone()),
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(error.code, "credential_rollback_failed");
+        let retained = db.list_agent_accounts().expect("list");
+        assert_eq!(retained.len(), 1);
+        assert_eq!(retained[0].status, AgentAccountStatus::Error);
+        assert_eq!(
+            retained[0].last_error_code.as_deref(),
+            Some("credential_rollback_failed")
+        );
+        assert_eq!(store.entry_count(), 1);
+        assert!(!format!("{error:?}").contains(&rollback_key));
+    }
+
+    #[tokio::test]
+    async fn reconnect_metadata_failure_restores_the_previous_key_and_metadata() {
+        let db = Db::open_in_memory().expect("database");
+        let store = Arc::new(InMemoryAgentCredentialStore::default());
+        let state = AgentAccountsState::new(store.clone());
+        let first_key = api_key(AgentProvider::Grok, "rollback-first-secret");
+        let first = state
+            .connect_api_key_account(
+                &db,
+                AgentProvider::Grok,
+                None,
+                Zeroizing::new(first_key.clone()),
+            )
+            .await
+            .expect("first connect");
+        let before = db.get_agent_account(&first.id).unwrap().unwrap();
+        fail_api_key_metadata_updates(&db);
+
+        let replacement = api_key(AgentProvider::Grok, "rollback-second-secret");
+        let error = state
+            .connect_api_key_account(
+                &db,
+                AgentProvider::Grok,
+                Some(&first.id),
+                Zeroizing::new(replacement.clone()),
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(error.code, "account_store_failed");
+        assert_eq!(db.get_agent_account(&first.id).unwrap().unwrap(), before);
+        assert_eq!(
+            store
+                .get(&before.credential_ref)
+                .expect("restored key")
+                .access_token
+                .as_deref(),
+            Some(first_key.as_str())
+        );
+        assert!(!format!("{error:?}").contains(&replacement));
     }
 
     #[test]

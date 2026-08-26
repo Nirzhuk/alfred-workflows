@@ -338,6 +338,7 @@ pub fn run() {
             commands::agent_accounts::list_agent_account_providers,
             commands::agent_accounts::list_agent_accounts,
             commands::agent_accounts::get_agent_account,
+            commands::agent_accounts::connect_agent_api_key_account,
             commands::agent_accounts::start_agent_authorization,
             commands::agent_accounts::complete_agent_authorization,
             commands::agent_accounts::cancel_agent_authorization,

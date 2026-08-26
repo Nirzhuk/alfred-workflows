@@ -51,12 +51,12 @@
 | Alfred-native provider | Status | Exact remaining blocker |
 | --- | --- | --- |
 | Codex | blocked | `codex_cross_platform_signing_and_packaged_smoke_missing` |
-| Claude | blocked | `claude_api_key_account_intake_and_live_smoke_missing`; subscription OAuth separately lacks Anthropic approval |
+| Claude | blocked | `claude_live_api_key_smoke_missing`; subscription OAuth separately lacks Anthropic approval |
 | Cursor | blocked | `cursor_account_repository_consent_and_e2e_gates_missing` |
 | OpenCode | blocked | `opencode_package_account_and_tool_bridge_unverified` |
 | GitHub Copilot | blocked | `copilot_sdk_package_license_and_packaged_smoke_missing` |
-| Gemini | blocked | `gemini_api_key_account_intake_and_live_smoke_missing`; desktop OAuth packaging remains separate |
-| Grok | blocked | `grok_api_key_account_intake_and_live_smoke_missing` |
+| Gemini | blocked | `gemini_live_api_key_smoke_missing`; desktop OAuth packaging remains separate |
+| Grok | blocked | `grok_live_api_key_smoke_missing` |
 | Pi / OMP | disabled | `native_provider_not_implemented` |
 
 Enabled Alfred-native providers: **none**. Enabled Provider CLI harnesses:

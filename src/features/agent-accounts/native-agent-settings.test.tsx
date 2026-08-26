@@ -164,3 +164,72 @@ test("shows the Grok API billing boundary without implying subscription reuse", 
   expect(markup).toContain("Grok subscription");
   expect(markup).not.toContain("OAuth with PKCE");
 });
+
+test("offers the dedicated API-key intake for exactly Claude, Gemini, and Grok", () => {
+
+  const providers: AgentProviderRegistration[] = [
+    {
+      providerId: "claude_code",
+      providerName: "Claude",
+      harness: "alfred",
+      authMethods: ["api_key"],
+      billingSource: "anthropic_api_usage_based",
+      credentialCustody: "alfred_managed",
+      connectAvailable: true,
+      gateCode: "claude_live_api_key_smoke_missing",
+    },
+    {
+      providerId: "gemini",
+      providerName: "Gemini",
+      harness: "alfred",
+      authMethods: ["api_key"],
+      billingSource: "google_ai_api_usage_based",
+      credentialCustody: "alfred_managed",
+      connectAvailable: true,
+      gateCode: "gemini_live_api_key_smoke_missing",
+    },
+    {
+      providerId: "grok",
+      providerName: "Grok",
+      harness: "alfred",
+      authMethods: ["api_key"],
+      billingSource: "xai_api_usage_based",
+      credentialCustody: "alfred_managed",
+      connectAvailable: true,
+      gateCode: "grok_live_api_key_smoke_missing",
+    },
+  ];
+  const accounts: AgentAccount[] = [
+    {
+      id: "account_claude",
+      providerId: "claude_code",
+      providerName: "Claude",
+      harness: "alfred",
+      displayName: "API key",
+      externalAccountId: null,
+      externalWorkspaceId: null,
+      authMethod: "api_key",
+      custodyMode: "alfred_managed",
+      scopes: [],
+      status: "connected",
+      expiresAt: null,
+      lastCheckedAt: null,
+      lastErrorCode: null,
+      createdAt: "now",
+      updatedAt: "now",
+    },
+  ];
+
+  const markup = renderToStaticMarkup(
+    <NativeAgentSettings snapshot={{ providers, accounts }} />,
+  );
+  expect(markup).toContain("Anthropic API key");
+  expect(markup).toContain("Gemini API key");
+  expect(markup).toContain("xAI API key");
+  expect(markup).toContain("Reconnect");
+  expect(markup).toContain("Native Claude runs remain blocked");
+  expect(markup).toContain("Native Gemini runs remain blocked");
+  expect(markup).toContain("Native Grok runs remain blocked");
+  expect(markup).not.toContain(">Refresh<");
+  expect(markup).not.toContain("sk-ant");
+});

@@ -525,7 +525,7 @@ fn native_entry(provider: AgentProvider) -> AgentCapabilityEntry {
                 true,
                 true,
                 false,
-                "claude_api_key_account_intake_and_live_smoke_missing",
+                "claude_live_api_key_smoke_missing",
                 not_applicable_package("direct_https"),
             ),
             AgentProvider::Cursor => (
@@ -584,7 +584,7 @@ fn native_entry(provider: AgentProvider) -> AgentCapabilityEntry {
                 true,
                 true,
                 false,
-                "gemini_api_key_account_intake_and_live_smoke_missing",
+                "gemini_live_api_key_smoke_missing",
                 not_applicable_package("direct_https"),
             ),
             AgentProvider::Grok => (
@@ -598,7 +598,7 @@ fn native_entry(provider: AgentProvider) -> AgentCapabilityEntry {
                 true,
                 true,
                 false,
-                "grok_api_key_account_intake_and_live_smoke_missing",
+                "grok_live_api_key_smoke_missing",
                 not_applicable_package("direct_https"),
             ),
             AgentProvider::Pi | AgentProvider::Omp => (
@@ -979,7 +979,7 @@ mod tests {
             (
                 AgentProvider::ClaudeCode,
                 CapabilityStatus::Blocked,
-                "claude_api_key_account_intake_and_live_smoke_missing",
+                "claude_live_api_key_smoke_missing",
             ),
             (
                 AgentProvider::Cursor,
@@ -1004,12 +1004,12 @@ mod tests {
             (
                 AgentProvider::Gemini,
                 CapabilityStatus::Blocked,
-                "gemini_api_key_account_intake_and_live_smoke_missing",
+                "gemini_live_api_key_smoke_missing",
             ),
             (
                 AgentProvider::Grok,
                 CapabilityStatus::Blocked,
-                "grok_api_key_account_intake_and_live_smoke_missing",
+                "grok_live_api_key_smoke_missing",
             ),
             (
                 AgentProvider::Pi,

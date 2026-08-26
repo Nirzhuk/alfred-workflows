@@ -1,6 +1,7 @@
 use crate::agent_accounts::authorization::AuthorizationStartedDto;
 use crate::agent_accounts::models::{
-    AgentAccountCommandError, AgentAccountDto, AgentProviderRegistrationDto,
+    AgentAccountCommandError, AgentAccountDto, AgentApiKeySecret,
+    AgentProviderRegistrationDto,
 };
 use crate::agent_accounts::AgentAccountsState;
 use crate::agents::{AgentHarness, AgentProvider};
@@ -37,6 +38,18 @@ fn apply_manifest_registration(
         provider.auth_methods = capability.auth_methods.clone();
         provider.billing_source = capability.billing_source.clone();
         provider.credential_custody = capability.credential_custody.clone();
+        if provider.provider_id == AgentProvider::ClaudeCode.as_str()
+            && capability.auth_methods.as_slice() == ["api_key"]
+        {
+            provider.provider_name = "Claude".into();
+        }
+    }
+    if capability.is_some_and(|entry| {
+        api_key_intake_is_approved(&provider.provider_id, entry, available)
+    }) {
+        provider.connect_available = true;
+        provider.gate_code = capability.and_then(|entry| entry.block_reason.clone());
+        return;
     }
     if !available {
         provider.connect_available = false;
@@ -46,6 +59,110 @@ fn apply_manifest_registration(
                 .unwrap_or_else(|| "native_capability_manifest_entry_missing".into()),
         );
     }
+}
+
+#[tauri::command]
+pub async fn connect_agent_api_key_account(
+    db: State<'_, Db>,
+    state: State<'_, AgentAccountsState>,
+    manifest: State<'_, crate::agents::capability_manifest::AgentCapabilityManifest>,
+    provider_id: String,
+    harness: AgentHarness,
+    account_id: Option<String>,
+    api_key: AgentApiKeySecret,
+) -> Result<AgentAccountDto, AgentAccountCommandError> {
+    let provider = parse_api_key_provider(&provider_id)?;
+    require_api_key_intake_capability(manifest.inner(), provider, harness)?;
+    state
+        .connect_api_key_account(
+            db.inner(),
+            provider,
+            account_id.as_deref(),
+            api_key.into_zeroizing(),
+        )
+        .await
+}
+
+fn parse_api_key_provider(provider_id: &str) -> Result<AgentProvider, AgentAccountCommandError> {
+    match provider_id {
+        "claude_code" => Ok(AgentProvider::ClaudeCode),
+        "gemini" => Ok(AgentProvider::Gemini),
+        "grok" => Ok(AgentProvider::Grok),
+        _ => Err(AgentAccountCommandError::new(
+            "api_key_provider_not_supported",
+            "API-key account intake is not available for that native provider.",
+            false,
+        )),
+    }
+}
+
+fn api_key_live_smoke_code(provider: AgentProvider) -> Option<&'static str> {
+    match provider {
+        AgentProvider::ClaudeCode => Some("claude_live_api_key_smoke_missing"),
+        AgentProvider::Gemini => Some("gemini_live_api_key_smoke_missing"),
+        AgentProvider::Grok => Some("grok_live_api_key_smoke_missing"),
+        _ => None,
+    }
+}
+
+fn api_key_intake_is_approved(
+    provider_id: &str,
+    capability: &crate::agents::capability_manifest::AgentCapabilityEntry,
+    execution_available: bool,
+) -> bool {
+    let Some(provider) = AgentProvider::from_str(provider_id) else {
+        return false;
+    };
+    let Some(live_smoke_code) = api_key_live_smoke_code(provider) else {
+        return false;
+    };
+    capability.harness == AgentHarness::Alfred
+        && capability.auth_methods.as_slice() == ["api_key"]
+        && capability.credential_custody == "alfred_managed"
+        && (execution_available || capability.block_reason.as_deref() == Some(live_smoke_code))
+}
+
+fn require_api_key_intake_capability(
+    manifest: &crate::agents::capability_manifest::AgentCapabilityManifest,
+    provider: AgentProvider,
+    harness: AgentHarness,
+) -> Result<(), AgentAccountCommandError> {
+    if harness != AgentHarness::Alfred {
+        return Err(AgentAccountCommandError::new(
+            "native_account_requires_alfred_harness",
+            "Native API-key accounts are only available for the Alfred harness.",
+            false,
+        ));
+    }
+    if !manifest.is_valid() {
+        return Err(AgentAccountCommandError::new(
+            "native_capability_manifest_invalid",
+            "Native API-key account intake is blocked because the release manifest is invalid.",
+            false,
+        ));
+    }
+    let capability = manifest.entry(provider, harness).ok_or_else(|| {
+        AgentAccountCommandError::new(
+            "native_capability_manifest_entry_missing",
+            "Native API-key account intake is not declared by this build.",
+            false,
+        )
+    })?;
+    if api_key_intake_is_approved(
+        provider.as_str(),
+        capability,
+        capability.permits_execution(manifest.platform, manifest.build_kind),
+    ) {
+        return Ok(());
+    }
+    Err(AgentAccountCommandError::new(
+        capability
+            .block_reason
+            .as_deref()
+            .unwrap_or("native_provider_not_available"),
+        "Native API-key account intake is blocked by this build's release manifest.",
+        false,
+    ))
 }
 
 #[tauri::command]
@@ -228,6 +345,35 @@ mod tests {
         assert!(!json.contains("identity-secret"));
         assert!(!json.contains("accessToken"));
         assert!(!json.contains("refreshToken"));
+
+        let api_key_dto = AgentAccountDto::from(AgentAccount {
+            id: "account_api_key".into(),
+            provider: AgentProvider::ClaudeCode,
+            harness: AgentHarness::Alfred,
+            identity_key: "hashed-identity".into(),
+            display_name: Some("API key redacted-label".into()),
+            external_account_id: Some("secret-derived-fingerprint".into()),
+            external_workspace_id: Some("must-not-cross".into()),
+            auth_method: AgentAuthMethod::ApiKey,
+            custody_mode: CredentialCustodyMode::AlfredManaged,
+            scopes: vec![],
+            status: AgentAccountStatus::Connected,
+            expires_at: None,
+            last_checked_at: None,
+            last_error_code: None,
+            credential_ref: "agent-account:secret-ref".into(),
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        });
+        let json = serde_json::to_string(&api_key_dto).expect("serialize API-key DTO");
+        assert_eq!(api_key_dto.provider_name, "Claude");
+        for hidden in [
+            "secret-derived-fingerprint",
+            "must-not-cross",
+            "agent-account:secret-ref",
+        ] {
+            assert!(!json.contains(hidden));
+        }
     }
 
     #[test]
@@ -253,27 +399,78 @@ mod tests {
             AgentHarness::Alfred,
         )
         .unwrap_err();
+        assert_eq!(error.code, "gemini_live_api_key_smoke_missing");
+
+        for provider in [
+            AgentProvider::ClaudeCode,
+            AgentProvider::Gemini,
+            AgentProvider::Grok,
+        ] {
+            assert_eq!(
+                parse_api_key_provider(provider.as_str()).unwrap(),
+                provider
+            );
+            assert!(require_api_key_intake_capability(
+                &manifest,
+                provider,
+                AgentHarness::Alfred,
+            )
+            .is_ok());
+        }
         assert_eq!(
-            error.code,
-            "gemini_api_key_account_intake_and_live_smoke_missing"
+            parse_api_key_provider("codex").unwrap_err().code,
+            "api_key_provider_not_supported"
+        );
+        assert_eq!(
+            parse_api_key_provider("claude").unwrap_err().code,
+            "api_key_provider_not_supported"
+        );
+        assert_eq!(
+            require_api_key_intake_capability(
+                &manifest,
+                AgentProvider::Gemini,
+                AgentHarness::Cli,
+            )
+            .unwrap_err()
+            .code,
+            "native_account_requires_alfred_harness"
         );
 
         let state = AgentAccountsState::default();
-        let mut provider = state
-            .list_providers()
-            .unwrap()
-            .into_iter()
-            .find(|provider| provider.provider_id == "gemini")
-            .unwrap();
-        apply_manifest_registration(&mut provider, &manifest);
-        assert!(!provider.connect_available);
-        assert_eq!(provider.auth_methods, vec!["api_key"]);
-        assert_eq!(provider.credential_custody, "alfred_managed");
-        assert_eq!(provider.billing_source, "google_ai_api_usage_based");
-        assert_eq!(
-            provider.gate_code.as_deref(),
-            Some("gemini_api_key_account_intake_and_live_smoke_missing")
-        );
+        for (provider_id, name, billing, gate) in [
+            (
+                "claude_code",
+                "Claude",
+                "anthropic_api_usage_based",
+                "claude_live_api_key_smoke_missing",
+            ),
+            (
+                "gemini",
+                "Gemini",
+                "google_ai_api_usage_based",
+                "gemini_live_api_key_smoke_missing",
+            ),
+            (
+                "grok",
+                "Grok",
+                "xai_api_usage_based",
+                "grok_live_api_key_smoke_missing",
+            ),
+        ] {
+            let mut provider = state
+                .list_providers()
+                .unwrap()
+                .into_iter()
+                .find(|provider| provider.provider_id == provider_id)
+                .unwrap();
+            apply_manifest_registration(&mut provider, &manifest);
+            assert!(provider.connect_available);
+            assert_eq!(provider.provider_name, name);
+            assert_eq!(provider.auth_methods, vec!["api_key"]);
+            assert_eq!(provider.credential_custody, "alfred_managed");
+            assert_eq!(provider.billing_source, billing);
+            assert_eq!(provider.gate_code.as_deref(), Some(gate));
+        }
 
         let mut invalid_manifest = manifest.clone();
         invalid_manifest.entries.push(invalid_manifest.entries[0].clone());
@@ -284,5 +481,15 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(error.code, "native_capability_manifest_invalid");
+        assert_eq!(
+            require_api_key_intake_capability(
+                &invalid_manifest,
+                AgentProvider::Gemini,
+                AgentHarness::Alfred,
+            )
+            .unwrap_err()
+            .code,
+            "native_capability_manifest_invalid"
+        );
     }
 }

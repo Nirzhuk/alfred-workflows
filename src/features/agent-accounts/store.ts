@@ -28,6 +28,12 @@ const ERROR_MESSAGES: Record<string, string> = {
     "Unlock the system credential store and try again.",
   credential_store_failed:
     "The system credential store could not complete this operation.",
+  credential_rollback_failed:
+    "The system credential store could not restore the previous key. Reconnect before running this provider.",
+  api_key_invalid:
+    "That API key is not valid for this provider. Check the key and try again.",
+  api_key_provider_not_supported:
+    "API-key account setup is not available for that native provider.",
   unsupported_auth_mode:
     "This build cannot manage the account's authorization method.",
   account_not_refreshable:
@@ -98,6 +104,11 @@ export type AgentAccountsState = {
   start: (providerId: string) => Promise<AgentAuthorizationStarted | null>;
   complete: (providerId: string, completionState?: string | null) => Promise<boolean>;
   cancel: (providerId: string) => Promise<void>;
+  connectApiKey: (
+    providerId: string,
+    apiKey: string,
+    accountId?: string,
+  ) => Promise<boolean>;
   refresh: (id: string) => Promise<boolean>;
   disconnect: (id: string, metadataOnly?: boolean) => Promise<boolean>;
   clearError: () => void;
@@ -205,6 +216,32 @@ export function createAgentAccountsStore(
           delete attempts[providerId];
           return { attempts };
         });
+      }
+    },
+
+    connectApiKey: async (providerId, apiKey, accountId) => {
+      const operationId = accountId ?? providerId;
+      set({ busyId: operationId, error: null });
+      try {
+        const account = redactAgentAccount(
+          await api.connectApiKeyAccount(
+            providerId,
+            "alfred",
+            accountId ?? null,
+            apiKey,
+          ),
+        );
+        set((state) => ({
+          accounts: [
+            ...state.accounts.filter((item) => item.id !== account.id),
+            account,
+          ],
+          busyId: null,
+        }));
+        return true;
+      } catch (error) {
+        set({ busyId: null, error: mapAgentAccountError(error) });
+        return false;
       }
     },
 

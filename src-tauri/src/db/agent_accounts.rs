@@ -1,6 +1,7 @@
 use super::{Db, DbError};
 use crate::agent_accounts::models::{
-    AgentAccount, AgentAccountStatus, AuthorizedAgentAccount,
+    AgentAccount, AgentAccountStatus, AgentAuthMethod, AuthorizedAgentAccount,
+    CredentialCustodyMode,
 };
 use crate::agents::{AgentHarness, AgentProvider};
 use chrono::Utc;
@@ -85,6 +86,26 @@ impl Db {
                 .query_row(
                     &format!("SELECT {COLUMNS} FROM agent_accounts WHERE id = ?1"),
                     params![id],
+                    map_account,
+                )
+                .optional()?)
+        })
+    }
+
+    pub fn get_agent_account_by_identity(
+        &self,
+        provider: AgentProvider,
+        harness: AgentHarness,
+        identity_key: &str,
+    ) -> Result<Option<AgentAccount>, DbError> {
+        self.with_conn(|conn| {
+            Ok(conn
+                .query_row(
+                    &format!(
+                        "SELECT {COLUMNS} FROM agent_accounts
+                         WHERE provider_id = ?1 AND harness = ?2 AND identity_key = ?3"
+                    ),
+                    params![provider.as_str(), harness.as_str(), identity_key],
                     map_account,
                 )
                 .optional()?)
@@ -194,6 +215,47 @@ impl Db {
                      last_error_code = ?4, updated_at = ?3
                  WHERE id = ?5",
                 params![status.as_str(), expires_at, checked_at, last_error_code, id],
+            )?)
+        })?;
+        if changed == 0 {
+            return Err(DbError::Other("agent account not found".into()));
+        }
+        Ok(())
+    }
+
+    /// Promotes API-key metadata only after the OS credential write succeeds.
+    /// One statement makes reconnect updates atomic from SQLite's perspective.
+    pub fn finalize_api_key_agent_account(
+        &self,
+        id: &str,
+        input: &AuthorizedAgentAccount,
+    ) -> Result<(), DbError> {
+        if input.harness != AgentHarness::Alfred
+            || input.auth_method != AgentAuthMethod::ApiKey
+            || input.custody_mode != CredentialCustodyMode::AlfredManaged
+            || input.external_account_id.trim().is_empty()
+        {
+            return Err(DbError::Other("invalid API-key account metadata".into()));
+        }
+        let identity_key = input.identity_key();
+        let checked_at = now();
+        let changed = self.with_conn(|conn| {
+            Ok(conn.execute(
+                "UPDATE agent_accounts SET
+                   identity_key = ?1, display_name = ?2,
+                   external_account_id = ?3, external_workspace_id = NULL,
+                   auth_method = 'api_key', custody_mode = 'alfred_managed',
+                   scopes_json = '[]', status = 'connected', expires_at = NULL,
+                   last_checked_at = ?4, last_error_code = NULL, updated_at = ?4
+                 WHERE id = ?5 AND provider_id = ?6 AND harness = 'alfred'",
+                params![
+                    identity_key,
+                    input.display_name,
+                    input.external_account_id,
+                    checked_at,
+                    id,
+                    input.provider.as_str(),
+                ],
             )?)
         })?;
         if changed == 0 {

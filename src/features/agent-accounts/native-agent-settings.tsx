@@ -3,6 +3,11 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { ConfirmDialog } from "../../components/confirm-dialog";
 import { CursorNativeDisclosure } from "./cursor-native-disclosure";
 import { GrokNativeDisclosure } from "./grok-native-disclosure";
+import {
+  isNativeApiKeyProvider,
+  NativeApiKeyConnect,
+  type NativeApiKeyProviderId,
+} from "./components/native-api-key-connect";
 import { OpenCodeNativeDisclosure } from "./opencode-native-disclosure";
 import { useAgentAccountsStore } from "./store";
 import type {
@@ -23,12 +28,19 @@ const STATUS_LABELS: Record<AgentAccountStatus, string> = {
 const AUTH_LABELS: Record<AgentAuthMethod, string> = {
   oauth_pkce: "OAuth with PKCE",
   device_code: "Device authorization",
+  api_key: "API key",
   runtime: "Provider runtime",
 };
 
 const GATE_MESSAGES: Record<string, string> = {
   native_provider_not_available:
     "Native account support is gated until this provider's public-client or isolated runtime integration ships.",
+  claude_live_api_key_smoke_missing:
+    "API-key setup is available. Native Claude runs remain blocked until the live API-key smoke gate passes.",
+  gemini_live_api_key_smoke_missing:
+    "API-key setup is available. Native Gemini runs remain blocked until the live API-key smoke gate passes.",
+  grok_live_api_key_smoke_missing:
+    "API-key setup is available. Native Grok runs remain blocked until the live API-key smoke gate passes.",
 };
 
 const LOCAL_API_KEY_PROVIDERS = new Set([
@@ -66,6 +78,10 @@ export function NativeAgentSettings({ snapshot }: NativeAgentSettingsProps = {})
   const [pendingCleanup, setPendingCleanup] = useState<AgentAccount | null>(
     null,
   );
+  const [pendingApiKey, setPendingApiKey] = useState<{
+    providerId: NativeApiKeyProviderId;
+    accountId?: string;
+  } | null>(null);
 
   useEffect(() => {
     void load();
@@ -163,7 +179,7 @@ export function NativeAgentSettings({ snapshot }: NativeAgentSettingsProps = {})
                       connectAvailable={provider.connectAvailable}
                     />
                   ) : null}
-                  {!provider.connectAvailable ? (
+                  {provider.gateCode ? (
                     <p className="settings-value native-agent-gate">
                       {GATE_MESSAGES[
                         provider.gateCode ?? "native_provider_not_available"
@@ -203,7 +219,14 @@ export function NativeAgentSettings({ snapshot }: NativeAgentSettingsProps = {})
                     type="button"
                     className="integration-action integration-connect"
                     disabled={!provider.connectAvailable || providerBusy}
-                    onClick={() => void begin(provider.providerId)}
+                    onClick={() => {
+                      if (isNativeApiKeyProvider(provider.providerId)) {
+                        clearError();
+                        setPendingApiKey({ providerId: provider.providerId });
+                      } else {
+                        void begin(provider.providerId);
+                      }
+                    }}
                   >
                     {providerBusy ? "Starting..." : "Connect"}
                   </button>
@@ -216,7 +239,20 @@ export function NativeAgentSettings({ snapshot }: NativeAgentSettingsProps = {})
                       account={account}
                       busy={busyId === account.id || providerBusy}
                       reconnectAvailable={provider.connectAvailable}
-                      reconnect={() => void begin(provider.providerId)}
+                      reconnect={() => {
+                        if (
+                          account.authMethod === "api_key" &&
+                          isNativeApiKeyProvider(provider.providerId)
+                        ) {
+                          clearError();
+                          setPendingApiKey({
+                            providerId: provider.providerId,
+                            accountId: account.id,
+                          });
+                        } else {
+                          void begin(provider.providerId);
+                        }
+                      }}
                       refresh={() => void refresh(account.id)}
                       disconnect={() => setPendingDisconnect(account)}
                       cleanup={() => setPendingCleanup(account)}
@@ -252,6 +288,14 @@ export function NativeAgentSettings({ snapshot }: NativeAgentSettingsProps = {})
             setPendingCleanup(null);
             void disconnect(account.id, true);
           }}
+        />
+      ) : null}
+
+      {pendingApiKey ? (
+        <NativeApiKeyConnect
+          providerId={pendingApiKey.providerId}
+          accountId={pendingApiKey.accountId}
+          onClose={() => setPendingApiKey(null)}
         />
       ) : null}
     </section>
@@ -312,6 +356,7 @@ function AgentAccountRow({
           </button>
         ) : null}
         {reconnectAvailable &&
+        account.authMethod !== "api_key" &&
         !(["revoked", "disconnect_pending"] as AgentAccountStatus[]).includes(
           account.status,
         ) ? (
@@ -378,12 +423,24 @@ function readableManifestValue(value: string): string {
 }
 
 function manifestAuthLabel(providerId: string, method: string): string {
+  if (method === "api_key" && providerId === "claude_code") {
+    return "Anthropic API key";
+  }
+  if (method === "api_key" && providerId === "gemini") {
+    return "Gemini API key";
+  }
   if (method === "api_key" && providerId === "grok") return "xAI API key";
   if (method === "api_key" && providerId === "cursor") return "Cursor API key";
   return readableManifestValue(method);
 }
 
 function accountAuthLabel(account: AgentAccount): string {
+  if (account.authMethod === "api_key" && account.providerId === "claude_code") {
+    return "Anthropic API key";
+  }
+  if (account.authMethod === "api_key" && account.providerId === "gemini") {
+    return "Gemini API key";
+  }
   if (account.providerId === "cursor") return "Cursor API key";
   if (account.providerId === "grok") return "xAI API key";
   return AUTH_LABELS[account.authMethod];

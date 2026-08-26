@@ -315,6 +315,7 @@ fn map_keyring_error(error: keyring::Error) -> AgentCredentialStoreError {
 pub struct InMemoryAgentCredentialStore {
     entries: Mutex<HashMap<String, Vec<u8>>>,
     put_failure: Mutex<Option<AgentCredentialStoreError>>,
+    put_after_write_failure: Mutex<Option<AgentCredentialStoreError>>,
     delete_failure: Mutex<Option<AgentCredentialStoreError>>,
 }
 
@@ -324,10 +325,20 @@ impl InMemoryAgentCredentialStore {
         *self.put_failure.lock().expect("put failure lock") = Some(error);
     }
 
+    pub fn fail_next_put_after_write(&self, error: AgentCredentialStoreError) {
+        *self
+            .put_after_write_failure
+            .lock()
+            .expect("put after write failure lock") = Some(error);
+    }
+
     pub fn fail_next_delete(&self, error: AgentCredentialStoreError) {
         *self.delete_failure.lock().expect("delete failure lock") = Some(error);
     }
 
+    pub fn entry_count(&self) -> usize {
+        self.entries.lock().expect("entries lock").len()
+    }
 }
 
 #[cfg(test)]
@@ -349,6 +360,14 @@ impl AgentCredentialStore for InMemoryAgentCredentialStore {
         let mut entries = self.entries.lock().map_err(|_| AgentCredentialStoreError::Failed)?;
         if let Some(mut previous) = entries.insert(credential_ref.into(), payload) {
             previous.zeroize();
+        }
+        if let Some(error) = self
+            .put_after_write_failure
+            .lock()
+            .map_err(|_| AgentCredentialStoreError::Failed)?
+            .take()
+        {
+            return Err(error);
         }
         Ok(())
     }

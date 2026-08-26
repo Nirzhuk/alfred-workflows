@@ -4,10 +4,12 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fmt;
 use std::str::FromStr;
+use zeroize::{Zeroize, Zeroizing};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AgentAuthMethod {
+    ApiKey,
     OAuthPkce,
     DeviceCode,
     Runtime,
@@ -16,6 +18,7 @@ pub enum AgentAuthMethod {
 impl AgentAuthMethod {
     pub fn as_str(self) -> &'static str {
         match self {
+            Self::ApiKey => "api_key",
             Self::OAuthPkce => "oauth_pkce",
             Self::DeviceCode => "device_code",
             Self::Runtime => "runtime",
@@ -28,11 +31,31 @@ impl FromStr for AgentAuthMethod {
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
+            "api_key" => Ok(Self::ApiKey),
             "oauth_pkce" => Ok(Self::OAuthPkce),
             "device_code" => Ok(Self::DeviceCode),
             "runtime" => Ok(Self::Runtime),
             _ => Err("unknown agent auth method".into()),
         }
+    }
+}
+
+/// Secret-bearing input for the dedicated native API-key account command.
+/// It cannot be serialized or formatted and is scrubbed after being moved
+/// into the narrower `Zeroizing` service boundary.
+#[derive(Deserialize)]
+#[serde(transparent)]
+pub struct AgentApiKeySecret(String);
+
+impl AgentApiKeySecret {
+    pub fn into_zeroizing(mut self) -> Zeroizing<String> {
+        Zeroizing::new(std::mem::take(&mut self.0))
+    }
+}
+
+impl Drop for AgentApiKeySecret {
+    fn drop(&mut self) {
+        self.0.zeroize();
     }
 }
 
@@ -170,14 +193,28 @@ pub struct AgentAccountDto {
 
 impl From<AgentAccount> for AgentAccountDto {
     fn from(account: AgentAccount) -> Self {
+        let (provider_name, external_account_id, external_workspace_id) =
+            if account.auth_method == AgentAuthMethod::ApiKey {
+                let provider_name = match account.provider {
+                    AgentProvider::ClaudeCode => "Claude",
+                    provider => provider.label(),
+                };
+                (provider_name, None, None)
+            } else {
+                (
+                    account.provider.label(),
+                    account.external_account_id,
+                    account.external_workspace_id,
+                )
+            };
         Self {
             id: account.id,
             provider_id: account.provider.as_str().into(),
-            provider_name: account.provider.label().into(),
+            provider_name: provider_name.into(),
             harness: account.harness,
             display_name: account.display_name,
-            external_account_id: account.external_account_id,
-            external_workspace_id: account.external_workspace_id,
+            external_account_id,
+            external_workspace_id,
             auth_method: account.auth_method,
             custody_mode: account.custody_mode,
             scopes: account.scopes,

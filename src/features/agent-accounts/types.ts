@@ -1,5 +1,9 @@
 export type AgentHarness = "alfred";
-export type AgentAuthMethod = "oauth_pkce" | "device_code" | "runtime";
+export type AgentAuthMethod =
+  | "oauth_pkce"
+  | "device_code"
+  | "api_key"
+  | "runtime";
 export type CredentialCustodyMode = "alfred_managed" | "runtime_managed";
 export type AgentAccountStatus =
   | "connected"

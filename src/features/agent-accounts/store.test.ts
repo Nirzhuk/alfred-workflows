@@ -53,6 +53,7 @@ function fakeApi(overrides: Partial<AgentAccountsApi> = {}): AgentAccountsApi {
     startAuthorization: async () => attempt,
     completeAuthorization: async () => account,
     cancelAuthorization: async () => {},
+    connectApiKeyAccount: async () => account,
     refreshAccount: async () => account,
     disconnectAccount: async () => {},
     ...overrides,
@@ -108,6 +109,66 @@ test("authorization state keeps only the safe start fields", async () => {
   expect(serialized).not.toContain("token-secret");
   expect(serialized).not.toContain("code-secret");
   expect(serialized).not.toContain("verifier-secret");
+});
+
+test("API-key connect passes the secret transiently and keeps only redacted metadata", async () => {
+  const apiKey = "sk-ant-test-transient-secret-value";
+  let received: string | null = null;
+  const apiKeyAccount = {
+    ...account,
+    id: "account_claude",
+    providerId: "claude_code",
+    providerName: "Claude",
+    displayName: "API key",
+    externalAccountId: null,
+    authMethod: "api_key" as const,
+    scopes: [],
+    credentialRef: "agent-account-hidden-ref",
+    rawApiKey: apiKey,
+  } as AgentAccount;
+  const store = createAgentAccountsStore(
+    fakeApi({
+      connectApiKeyAccount: async (providerId, harness, accountId, secret) => {
+        expect(providerId).toBe("claude_code");
+        expect(harness).toBe("alfred");
+        expect(accountId).toBeNull();
+        received = secret;
+        return apiKeyAccount;
+      },
+    }),
+  );
+
+  expect(await store.getState().connectApiKey("claude_code", apiKey)).toBe(true);
+  expect(received).toBe(apiKey);
+  const serialized = JSON.stringify(store.getState());
+  expect(serialized).not.toContain(apiKey);
+  expect(serialized).not.toContain("agent-account-hidden-ref");
+  expect(store.getState().accounts).toEqual([
+    redactAgentAccount(apiKeyAccount),
+  ]);
+});
+
+test("API-key failures expose only mapped errors and never retain the submitted key", async () => {
+  const apiKey = "xai-test-transient-secret-value";
+  const store = createAgentAccountsStore(
+    fakeApi({
+      connectApiKeyAccount: async () => {
+        throw {
+          code: "credential_store_locked",
+          message: `unsafe backend detail containing ${apiKey}`,
+          recoverable: true,
+        };
+      },
+    }),
+  );
+
+  expect(await store.getState().connectApiKey("grok", apiKey)).toBe(false);
+  expect(store.getState().error).toEqual({
+    code: "credential_store_locked",
+    message: "Unlock the system credential store and try again.",
+    recoverable: true,
+  });
+  expect(JSON.stringify(store.getState())).not.toContain(apiKey);
 });
 
 test("partial disconnect reloads the recovery state instead of removing it", async () => {
