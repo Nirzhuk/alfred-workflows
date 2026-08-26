@@ -8,9 +8,8 @@
 //! the existing Cursor CLI login can authorize native execution.
 
 use crate::agents::native::{
-    redact_text, NativeContentClass, NativeErrorCode, NativeEvent, NativeEventKind,
-    NativeModel, NativeRuntimeError, NativeTurnRequest, NativeUsageSnapshot,
-    NativeUsageState,
+    redact_text, NativeContentClass, NativeErrorCode, NativeEvent, NativeEventKind, NativeModel,
+    NativeRuntimeError, NativeTurnRequest, NativeUsageSnapshot, NativeUsageState,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
@@ -23,11 +22,9 @@ pub const CURSOR_NATIVE_GATE_CODE: &str = "cursor_native_contract_blocked";
 pub const CURSOR_NATIVE_READY: bool = false;
 
 pub const CURSOR_API_DOCS: &str = "https://cursor.com/docs/api";
-pub const CURSOR_CLOUD_AGENT_DOCS: &str =
-    "https://cursor.com/docs/cloud-agent/api/endpoints";
+pub const CURSOR_CLOUD_AGENT_DOCS: &str = "https://cursor.com/docs/cloud-agent/api/endpoints";
 pub const CURSOR_SDK_DOCS: &str = "https://cursor.com/docs/sdk/typescript";
-pub const CURSOR_CLI_AUTH_DOCS: &str =
-    "https://cursor.com/docs/cli/reference/authentication";
+pub const CURSOR_CLI_AUTH_DOCS: &str = "https://cursor.com/docs/cli/reference/authentication";
 const CURSOR_API_KEY_PREFIX: &str = "crsr_";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -268,7 +265,8 @@ pub fn decode_models(status: u16, body: &[u8]) -> Result<Vec<NativeModel>, Nativ
     if status != 200 {
         return Err(map_http_failure(status, decode_error_code(body).as_deref()));
     }
-    let response: ModelsResponse = serde_json::from_slice(body).map_err(|_| malformed_response())?;
+    let response: ModelsResponse =
+        serde_json::from_slice(body).map_err(|_| malformed_response())?;
     if response.items.len() > 128 {
         return Err(malformed_response());
     }
@@ -369,7 +367,10 @@ fn validate_provider_id(value: &str, prefix: &str) -> Result<(), NativeRuntimeEr
 
 /// Maps the documented simplified SSE events. `thinking` is intentionally
 /// replaced with a warning because Alfred prohibits reasoning content.
-pub fn map_stream_event(kind: &str, data: &[u8]) -> Result<Option<NativeEvent>, NativeRuntimeError> {
+pub fn map_stream_event(
+    kind: &str,
+    data: &[u8],
+) -> Result<Option<NativeEvent>, NativeRuntimeError> {
     if data.len() > 128 * 1024 {
         return Err(NativeRuntimeError::new(
             NativeErrorCode::EventLimitExceeded,
@@ -439,9 +440,7 @@ fn map_tool_call(payload: &Value) -> Result<Option<NativeEvent>, NativeRuntimeEr
     let status = required_string(payload, "status", 64)?;
     let mut event = match status.as_str() {
         "running" | "started" => NativeEvent::new(0, NativeEventKind::ToolStarted),
-        "completed" | "error" | "failed" => {
-            NativeEvent::new(0, NativeEventKind::ToolCompleted)
-        }
+        "completed" | "error" | "failed" => NativeEvent::new(0, NativeEventKind::ToolCompleted),
         _ => return Err(malformed_response()),
     };
     event.tool_call_id = Some(redact_cursor_text(&call_id));
@@ -525,21 +524,28 @@ pub fn redact_cursor_text(value: &str) -> String {
     while let Some(offset) = lower[search..].find(CURSOR_API_KEY_PREFIX) {
         let start = search + offset;
         let at_boundary = start == 0
-            || value[..start]
-                .chars()
-                .next_back()
-                .is_some_and(|character| {
-                    character.is_whitespace()
-                        || matches!(
-                            character,
-                            '"' | '\'' | ',' | ';' | ':' | '(' | ')' | '{' | '}' | '[' | ']'
-                                | '=' | '<' | '>'
-                        )
-                });
+            || value[..start].chars().next_back().is_some_and(|character| {
+                character.is_whitespace()
+                    || matches!(
+                        character,
+                        '"' | '\''
+                            | ','
+                            | ';'
+                            | ':'
+                            | '('
+                            | ')'
+                            | '{'
+                            | '}'
+                            | '['
+                            | ']'
+                            | '='
+                            | '<'
+                            | '>'
+                    )
+            });
         let end = value[start..]
             .find(|character: char| {
-                character.is_whitespace()
-                    || matches!(character, ',' | ';' | '"' | '\'' | ')' | '}')
+                character.is_whitespace() || matches!(character, ',' | ';' | '"' | '\'' | ')' | '}')
             })
             .map(|offset| start + offset)
             .unwrap_or(value.len());

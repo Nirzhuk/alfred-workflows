@@ -191,11 +191,13 @@ CREATE TABLE IF NOT EXISTS app_connections (
   updated_at TEXT NOT NULL
 );
 
--- Native-agent account metadata only. Credentials use the isolated
--- com.alfred.agent-harness OS credential-store namespace.
+-- Native-agent account metadata only. Provider/product/runtime/billing are
+-- independent. Product and runtime ids stay as TEXT and Rust registries
+-- validate them so adding a product does not require a SQL enum migration.
 CREATE TABLE IF NOT EXISTS agent_accounts (
   id TEXT PRIMARY KEY NOT NULL,
   provider_id TEXT NOT NULL,
+  product_id TEXT NOT NULL,
   harness TEXT NOT NULL,
   identity_key TEXT NOT NULL,
   display_name TEXT,
@@ -203,14 +205,36 @@ CREATE TABLE IF NOT EXISTS agent_accounts (
   external_workspace_id TEXT,
   auth_method TEXT NOT NULL,
   custody_mode TEXT NOT NULL,
+  managed_runtime_id TEXT,
+  managed_runtime_version TEXT,
+  runtime_profile_ref TEXT UNIQUE,
   scopes_json TEXT NOT NULL DEFAULT '[]',
+  billing_source TEXT NOT NULL,
+  billing_owner TEXT NOT NULL,
+  entitlement_state TEXT NOT NULL DEFAULT 'unknown'
+    CHECK (entitlement_state IN ('unknown', 'eligible', 'limited', 'exhausted', 'ineligible')),
+  entitlement_source TEXT NOT NULL,
+  entitlement_observed_at TEXT,
   status TEXT NOT NULL DEFAULT 'error' CHECK (status IN ('connected', 'expired', 'error', 'revoked', 'disconnect_pending')),
   expires_at TEXT,
   last_checked_at TEXT,
   last_error_code TEXT,
-  credential_ref TEXT NOT NULL UNIQUE,
+  credential_ref TEXT UNIQUE,
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  CHECK ((managed_runtime_id IS NULL) = (managed_runtime_version IS NULL)),
+  CHECK (runtime_profile_ref IS NULL OR managed_runtime_id IS NOT NULL),
+  CHECK (runtime_profile_ref IS NOT NULL OR credential_ref IS NOT NULL)
+);
+
+-- Migration-only credential references stay reachable until the account
+-- service deletes the corresponding legacy OS credential. This table has no
+-- foreign key because the agent_accounts contract is rebuilt in place.
+CREATE TABLE IF NOT EXISTS agent_account_credential_cleanup (
+  account_id TEXT PRIMARY KEY NOT NULL,
+  credential_ref TEXT NOT NULL UNIQUE,
+  cleanup_owner TEXT NOT NULL,
+  created_at TEXT NOT NULL
 );
 
 -- Provider-neutral app event delivery. Normalized payloads are bounded and
@@ -352,8 +376,5 @@ CREATE INDEX IF NOT EXISTS idx_run_memory_uses_memory_id ON run_memory_uses(memo
 CREATE UNIQUE INDEX IF NOT EXISTS idx_app_connections_identity
   ON app_connections(provider_id, connection_mode, identity_key);
 CREATE INDEX IF NOT EXISTS idx_app_connections_provider_id ON app_connections(provider_id);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_accounts_identity
-  ON agent_accounts(provider_id, harness, identity_key);
-CREATE INDEX IF NOT EXISTS idx_agent_accounts_provider_id ON agent_accounts(provider_id);
 CREATE INDEX IF NOT EXISTS idx_app_event_queue_trigger ON app_event_queue(trigger_id, enqueued_at);
 CREATE INDEX IF NOT EXISTS idx_app_event_receipts_received ON app_event_receipts(received_at);

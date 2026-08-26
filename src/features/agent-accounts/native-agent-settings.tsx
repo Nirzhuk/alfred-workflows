@@ -4,19 +4,17 @@ import { ConfirmDialog } from "../../components/confirm-dialog";
 import { AgentMark } from "../../components/agent-mark";
 import { CursorNativeDisclosure } from "./cursor-native-disclosure";
 import { GrokNativeDisclosure } from "./grok-native-disclosure";
-import {
-  isNativeApiKeyProvider,
-  NativeApiKeyConnect,
-  type NativeApiKeyProviderId,
-} from "./components/native-api-key-connect";
+import { NativeApiKeyConnect } from "./components/native-api-key-connect";
 import { OpenCodeNativeDisclosure } from "./opencode-native-disclosure";
 import { useAgentAccountsStore } from "./store";
 import type {
   AgentAccount,
   AgentAccountStatus,
   AgentAuthMethod,
+  AgentProductId,
   AgentProviderRegistration,
 } from "./types";
+import { usesAlfredManagedApiKey } from "./types";
 
 const STATUS_LABELS: Record<AgentAccountStatus, string> = {
   connected: "Connected",
@@ -43,14 +41,6 @@ const GATE_MESSAGES: Record<string, string> = {
   grok_live_api_key_smoke_missing:
     "API-key setup is available. Native Grok runs remain blocked until the live API-key smoke gate passes.",
 };
-
-const LOCAL_API_KEY_PROVIDERS = new Set([
-  "claude",
-  "claude_code",
-  "cursor",
-  "gemini",
-  "grok",
-]);
 
 type NativeAgentSettingsProps = {
   snapshot?: {
@@ -80,7 +70,9 @@ export function NativeAgentSettings({ snapshot }: NativeAgentSettingsProps = {})
     null,
   );
   const [pendingApiKey, setPendingApiKey] = useState<{
-    providerId: NativeApiKeyProviderId;
+    providerId: string;
+    providerName: string;
+    productId: AgentProductId;
     accountId?: string;
   } | null>(null);
 
@@ -93,14 +85,16 @@ export function NativeAgentSettings({ snapshot }: NativeAgentSettingsProps = {})
       (snapshot?.providers ?? providers).map((provider) => ({
         provider,
         accounts: (snapshot?.accounts ?? accounts).filter(
-          (account) => account.providerId === provider.providerId,
+          (account) =>
+            account.providerId === provider.providerId &&
+            account.productId === provider.productId,
         ),
       })),
     [accounts, providers, snapshot],
   );
 
-  const begin = async (providerId: string) => {
-    const attempt = await start(providerId);
+  const begin = async (providerId: string, productId: AgentProductId) => {
+    const attempt = await start(providerId, productId);
     if (
       attempt?.authorizationUrl &&
       attempt.authorizationUrl.startsWith("https://")
@@ -146,12 +140,12 @@ export function NativeAgentSettings({ snapshot }: NativeAgentSettingsProps = {})
         ) : null}
 
         {rows.map(({ provider, accounts: providerAccounts }) => {
-          const attempt = attempts[provider.providerId];
-          const providerBusy = busyId === provider.providerId;
+          const attempt = attempts[provider.productId];
+          const providerBusy = busyId === provider.productId;
           return (
             <div
               className="settings-row integration-provider-row"
-              key={provider.providerId}
+              key={provider.productId}
             >
               <div className="integration-provider-copy">
                 <span className="native-agent-provider-mark" aria-hidden>
@@ -162,7 +156,7 @@ export function NativeAgentSettings({ snapshot }: NativeAgentSettingsProps = {})
                   />
                 </span>
                 <div className="integration-provider-text">
-                  <p className="settings-label">{provider.providerName}</p>
+                  <p className="settings-label">{provider.productName}</p>
                   <p className="settings-value">
                     Alfred harness ·{" "}
                     {providerAuthLabel(provider)}{" "}
@@ -207,14 +201,14 @@ export function NativeAgentSettings({ snapshot }: NativeAgentSettingsProps = {})
                       type="button"
                       className="integration-action integration-connect"
                       disabled={providerBusy}
-                      onClick={() => void complete(provider.providerId)}
+                      onClick={() => void complete(provider.productId)}
                     >
                       {providerBusy ? "Finishing..." : "Finish"}
                     </button>
                     <button
                       type="button"
                       className="ghost integration-action"
-                      onClick={() => void cancel(provider.providerId)}
+                      onClick={() => void cancel(provider.productId)}
                     >
                       Cancel
                     </button>
@@ -225,11 +219,20 @@ export function NativeAgentSettings({ snapshot }: NativeAgentSettingsProps = {})
                     className="integration-action integration-connect"
                     disabled={!provider.connectAvailable || providerBusy}
                     onClick={() => {
-                      if (isNativeApiKeyProvider(provider.providerId)) {
+                      if (
+                        usesAlfredManagedApiKey(
+                          provider.authMethods,
+                          provider.credentialCustody,
+                        )
+                      ) {
                         clearError();
-                        setPendingApiKey({ providerId: provider.providerId });
+                        setPendingApiKey({
+                          providerId: provider.providerId,
+                          providerName: provider.providerName,
+                          productId: provider.productId,
+                        });
                       } else {
-                        void begin(provider.providerId);
+                        void begin(provider.providerId, provider.productId);
                       }
                     }}
                   >
@@ -246,16 +249,20 @@ export function NativeAgentSettings({ snapshot }: NativeAgentSettingsProps = {})
                       reconnectAvailable={provider.connectAvailable}
                       reconnect={() => {
                         if (
-                          account.authMethod === "api_key" &&
-                          isNativeApiKeyProvider(provider.providerId)
+                          usesAlfredManagedApiKey(
+                            account.authMethod,
+                            account.custodyMode,
+                          )
                         ) {
                           clearError();
                           setPendingApiKey({
                             providerId: provider.providerId,
+                            providerName: provider.providerName,
+                            productId: provider.productId,
                             accountId: account.id,
                           });
                         } else {
-                          void begin(provider.providerId);
+                          void begin(provider.providerId, provider.productId);
                         }
                       }}
                       refresh={() => void refresh(account.id)}
@@ -299,6 +306,8 @@ export function NativeAgentSettings({ snapshot }: NativeAgentSettingsProps = {})
       {pendingApiKey ? (
         <NativeApiKeyConnect
           providerId={pendingApiKey.providerId}
+          providerName={pendingApiKey.providerName}
+          productId={pendingApiKey.productId}
           accountId={pendingApiKey.accountId}
           onClose={() => setPendingApiKey(null)}
         />
@@ -452,7 +461,7 @@ function accountAuthLabel(account: AgentAccount): string {
 }
 
 export function disconnectMessageFor(account: AgentAccount): string {
-  if (LOCAL_API_KEY_PROVIDERS.has(account.providerId)) {
+  if (usesAlfredManagedApiKey(account.authMethod, account.custodyMode)) {
     return `Alfred will delete its locally stored ${account.providerName} API key and local account metadata. This does not revoke or rotate the provider API key; revoke or rotate it in the provider console. If local deletion fails, the account will remain visible with a recovery state.`;
   }
   if (account.custodyMode === "runtime_managed") {
@@ -462,7 +471,7 @@ export function disconnectMessageFor(account: AgentAccount): string {
 }
 
 export function cleanupMessageFor(account: AgentAccount): string {
-  if (LOCAL_API_KEY_PROVIDERS.has(account.providerId)) {
+  if (usesAlfredManagedApiKey(account.authMethod, account.custodyMode)) {
     return `Alfred could not remove its local ${account.providerName} API key or metadata. Revoke or rotate the key in the provider console and remove any stale Alfred credential before deleting this local recovery record.`;
   }
   if (account.custodyMode === "runtime_managed") {

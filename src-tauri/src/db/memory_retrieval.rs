@@ -325,10 +325,7 @@ fn item_heading(candidate: &RankedCandidate) -> String {
     )
 }
 
-fn render_candidates(
-    db: &Db,
-    candidates: Vec<RankedCandidate>,
-) -> RetrievalResult {
+fn render_candidates(db: &Db, candidates: Vec<RankedCandidate>) -> RetrievalResult {
     render_candidates_bounded(db, candidates, RETRIEVAL_MAX_ITEMS, RETRIEVAL_MAX_BYTES)
 }
 
@@ -373,8 +370,7 @@ fn render_candidates_bounded(
             )
         };
         let rendered = format!("{heading}{rendered_body}\n\n");
-        if rendered.len() > RETRIEVAL_ITEM_MAX_BYTES
-            || markdown.len() + rendered.len() > max_bytes
+        if rendered.len() > RETRIEVAL_ITEM_MAX_BYTES || markdown.len() + rendered.len() > max_bytes
         {
             continue;
         }
@@ -417,10 +413,7 @@ impl Db {
     /// Existing-memory context for post-run memory review (Plan 028). Same
     /// ranking and rendering as live recall, but bounded at 12 items / 12 KiB
     /// so the reviewer can propose supersede/retract against real targets.
-    pub fn retrieve_review_context(
-        &self,
-        request: &MemoryRetrievalRequest<'_>,
-    ) -> RetrievalResult {
+    pub fn retrieve_review_context(&self, request: &MemoryRetrievalRequest<'_>) -> RetrievalResult {
         match ranked_candidates(self, request, Utc::now()) {
             Ok(candidates) => render_candidates_bounded(
                 self,

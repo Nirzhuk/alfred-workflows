@@ -1,14 +1,15 @@
 use super::redaction::{contains_cli_permission_flag, contains_secret_marker, redact_text};
 use super::{
-    normalize_tool_result, prepare_native_request, validate_tool_request,
-    AlfredApprovalDecision, AlfredApprovalHandler, AlfredApprovalRequest, AlfredToolExecutor,
-    AlfredToolRequest, AlfredToolResult, NativeAccountResolver, NativeAgentRuntime,
-    NativeApprovalPolicy, NativeCancellation, NativeCapabilities, NativeContextPolicy,
-    NativeErrorCode, NativeEvent, NativeEventKind, NativeEventLimits, NativeEventNormalizer,
-    NativeModel, NativePermissionProfile, NativeRuntimeDescriptor, NativeRuntimeError,
-    NativeSessionMode, NativeToolCapabilitySet, NativeTurnHost, NativeTurnOutcome,
+    normalize_tool_result, prepare_native_request, validate_tool_request, AlfredApprovalDecision,
+    AlfredApprovalHandler, AlfredApprovalRequest, AlfredToolExecutor, AlfredToolRequest,
+    AlfredToolResult, NativeAccountResolver, NativeAgentRuntime, NativeApprovalPolicy,
+    NativeCancellation, NativeCapabilities, NativeContextPolicy, NativeErrorCode, NativeEvent,
+    NativeEventKind, NativeEventLimits, NativeEventNormalizer, NativeModel,
+    NativePermissionProfile, NativeRuntimeDescriptor, NativeRuntimeError, NativeSessionMode,
+    NativeToolCapabilitySet, NativeToolExecutionOwner, NativeTurnHost, NativeTurnOutcome,
     NativeTurnRequest, NativeUsageSnapshot, ResolvedNativeAccount, TOOL_CONTRACT_VERSION,
 };
+use crate::agent_accounts::models::AgentProductId;
 use crate::agents::{
     AgentActivity, AgentActivityKind, AgentActivityState, AgentError, AgentExecutionTarget,
     AgentNativeRuntime, AgentProvider, AgentRequest, AgentResponse, AgentRunHooks,
@@ -39,8 +40,10 @@ pub struct CapabilityReportEntry {
 #[serde(rename_all = "camelCase")]
 pub struct NativeCapabilityReport {
     pub provider: AgentProvider,
+    pub product: AgentProductId,
     pub runtime_id: String,
     pub runtime_version: String,
+    pub tool_execution_owner: NativeToolExecutionOwner,
     pub entries: Vec<CapabilityReportEntry>,
 }
 
@@ -62,15 +65,20 @@ impl NativeCapabilityReport {
                 "native_filesystem",
                 descriptor.capabilities.supports_native_filesystem,
             ),
-            ("native_shell", descriptor.capabilities.supports_native_shell),
+            (
+                "native_shell",
+                descriptor.capabilities.supports_native_shell,
+            ),
             ("patch", descriptor.capabilities.supports_patch),
             ("mcp", descriptor.capabilities.supports_mcp),
             ("subagents", descriptor.capabilities.supports_subagents),
         ];
         Self {
             provider: descriptor.provider,
+            product: descriptor.product,
             runtime_id: descriptor.runtime_id.clone(),
             runtime_version: descriptor.runtime_version.clone(),
+            tool_execution_owner: descriptor.tool_execution_owner,
             entries: capabilities
                 .into_iter()
                 .map(|(capability, supported)| CapabilityReportEntry {
@@ -155,10 +163,11 @@ impl NativeRuntimeRegistry {
         resolver: &dyn NativeAccountResolver,
     ) -> Result<(), NativeRuntimeError> {
         let runtime = self.runtime(provider)?;
+        let descriptor = runtime.descriptor();
         let account = resolver
-            .resolve(account_ref, provider)
+            .resolve(account_ref, provider, descriptor.product)
             .map_err(sanitize_runtime_error)?;
-        validate_resolved_account(&account, account_ref, provider)?;
+        validate_resolved_account(&account, account_ref, provider, descriptor.product)?;
         runtime
             .validate_account(&account)
             .map_err(sanitize_runtime_error)
@@ -176,9 +185,9 @@ impl NativeRuntimeRegistry {
             return Err(unsupported("model discovery"));
         }
         let account = resolver
-            .resolve(account_ref, provider)
+            .resolve(account_ref, provider, descriptor.product)
             .map_err(sanitize_runtime_error)?;
-        validate_resolved_account(&account, account_ref, provider)?;
+        validate_resolved_account(&account, account_ref, provider, descriptor.product)?;
         runtime
             .validate_account(&account)
             .map_err(sanitize_runtime_error)?;
@@ -200,9 +209,9 @@ impl NativeRuntimeRegistry {
             return Ok(NativeUsageSnapshot::unavailable());
         }
         let account = resolver
-            .resolve(account_ref, provider)
+            .resolve(account_ref, provider, descriptor.product)
             .map_err(sanitize_runtime_error)?;
-        validate_resolved_account(&account, account_ref, provider)?;
+        validate_resolved_account(&account, account_ref, provider, descriptor.product)?;
         runtime
             .validate_account(&account)
             .map_err(sanitize_runtime_error)?;
@@ -231,9 +240,14 @@ impl NativeRuntimeRegistry {
             ));
         }
         let account = resolver
-            .resolve(&request.account_ref, request.provider)
+            .resolve(&request.account_ref, request.provider, descriptor.product)
             .map_err(sanitize_runtime_error)?;
-        validate_resolved_account(&account, &request.account_ref, request.provider)?;
+        validate_resolved_account(
+            &account,
+            &request.account_ref,
+            request.provider,
+            descriptor.product,
+        )?;
         runtime
             .validate_account(&account)
             .map_err(sanitize_runtime_error)?;
@@ -250,6 +264,7 @@ impl NativeRuntimeRegistry {
         let result = (|| {
             let mut host = RegistryTurnHost::new(
                 request,
+                descriptor.tool_execution_owner,
                 tool_executor,
                 approval_handler,
                 on_event,
@@ -269,7 +284,11 @@ impl NativeRuntimeRegistry {
         result.map_err(sanitize_runtime_error)
     }
 
-    pub fn cancel(&self, provider: AgentProvider, cancellation_id: &str) -> Result<(), NativeRuntimeError> {
+    pub fn cancel(
+        &self,
+        provider: AgentProvider,
+        cancellation_id: &str,
+    ) -> Result<(), NativeRuntimeError> {
         let runtime = self.runtime(provider)?;
         let cancellation = self
             .active
@@ -331,7 +350,10 @@ impl NativeRuntimeRegistry {
         }
     }
 
-    fn runtime(&self, provider: AgentProvider) -> Result<Arc<dyn NativeAgentRuntime>, NativeRuntimeError> {
+    fn runtime(
+        &self,
+        provider: AgentProvider,
+    ) -> Result<Arc<dyn NativeAgentRuntime>, NativeRuntimeError> {
         self.runtimes
             .read()
             .map_err(|_| registry_unavailable())?
@@ -372,6 +394,7 @@ pub struct NativeExecutionResult {
 
 struct RegistryTurnHost<'a> {
     request: &'a NativeTurnRequest,
+    tool_execution_owner: NativeToolExecutionOwner,
     tool_executor: &'a dyn AlfredToolExecutor,
     approval_handler: &'a dyn AlfredApprovalHandler,
     on_event: &'a mut dyn FnMut(&NativeEvent),
@@ -384,12 +407,14 @@ struct RegistryTurnHost<'a> {
 impl<'a> RegistryTurnHost<'a> {
     fn new(
         request: &'a NativeTurnRequest,
+        tool_execution_owner: NativeToolExecutionOwner,
         tool_executor: &'a dyn AlfredToolExecutor,
         approval_handler: &'a dyn AlfredApprovalHandler,
         on_event: &'a mut dyn FnMut(&NativeEvent),
     ) -> Result<Self, NativeRuntimeError> {
         Ok(Self {
             request,
+            tool_execution_owner,
             tool_executor,
             approval_handler,
             on_event,
@@ -427,7 +452,9 @@ impl NativeTurnHost for RegistryTurnHost<'_> {
         self.next_sequence = self.next_sequence.saturating_add(1);
         let event = self.normalizer.normalize(event)?;
         if let (NativeEventKind::AssistantDelta, Some(text)) = (event.kind, event.text.as_deref()) {
-            if self.output.len().saturating_add(text.len()) > self.request.event_limits.max_text_bytes {
+            if self.output.len().saturating_add(text.len())
+                > self.request.event_limits.max_text_bytes
+            {
                 return Err(NativeRuntimeError::new(
                     NativeErrorCode::EventLimitExceeded,
                     "combined assistant output exceeded the native turn limit",
@@ -441,8 +468,18 @@ impl NativeTurnHost for RegistryTurnHost<'_> {
         Ok(())
     }
 
-    fn invoke_tool(&mut self, request: AlfredToolRequest) -> Result<AlfredToolResult, NativeRuntimeError> {
+    fn invoke_tool(
+        &mut self,
+        request: AlfredToolRequest,
+    ) -> Result<AlfredToolResult, NativeRuntimeError> {
         self.cancellation().checkpoint()?;
+        if self.tool_execution_owner != NativeToolExecutionOwner::AlfredExecuted {
+            return Err(NativeRuntimeError::new(
+                NativeErrorCode::CapabilityUnsupported,
+                "this runtime does not delegate tool execution to Alfred",
+                false,
+            ));
+        }
         let policy = validate_tool_request(
             &request,
             &self.request.working_directory,
@@ -469,7 +506,9 @@ impl NativeTurnHost for RegistryTurnHost<'_> {
             let mut requested = NativeEvent::new(0, NativeEventKind::ApprovalRequested);
             requested.approval_id = Some(approval.approval_id.clone());
             self.emit_harness_event(requested)?;
-            let decision = self.approval_handler.decide(&approval, self.cancellation())?;
+            let decision = self
+                .approval_handler
+                .decide(&approval, self.cancellation())?;
             self.cancellation().checkpoint()?;
             let mut resolved = NativeEvent::new(0, NativeEventKind::ApprovalResolved);
             resolved.approval_id = Some(approval.approval_id);
@@ -570,27 +609,26 @@ impl AgentNativeRuntime for NativeExecutionRouter {
                         .and_then(|runtime| runtime.cancel(cancellation))
                         .map_err(native_agent_error)?;
                 }
-                Some(
-                    self.registry
-                        .watch_control(
-                            target.provider,
-                            control.clone(),
-                            cancellation.clone(),
-                        ),
-                )
+                Some(self.registry.watch_control(
+                    target.provider,
+                    control.clone(),
+                    cancellation.clone(),
+                ))
             }
             _ => None,
         };
         let control = hooks.control.cloned();
         let on_activity = hooks.on_activity;
         let mut forward_event = |event: &NativeEvent| {
-            if control.as_ref().is_some_and(|control| control.is_cancelled()) {
+            if control
+                .as_ref()
+                .is_some_and(|control| control.is_cancelled())
+            {
                 if let Some(cancellation) = request.cancellation.as_ref() {
                     cancellation.cancel();
                 }
             }
-            if let (Some(on_activity), Some(activity)) =
-                (on_activity, native_event_activity(event))
+            if let (Some(on_activity), Some(activity)) = (on_activity, native_event_activity(event))
             {
                 on_activity(&activity);
             }
@@ -622,23 +660,31 @@ impl AgentNativeRuntime for NativeExecutionRouter {
 /// detail, so no provider text can reach a run event through this path.
 fn native_event_activity(event: &NativeEvent) -> Option<AgentActivity> {
     let (kind, state, label) = match event.kind {
-        NativeEventKind::SessionStarted | NativeEventKind::TurnStarted => {
-            (AgentActivityKind::Status, AgentActivityState::Started, "Working")
-        }
+        NativeEventKind::SessionStarted | NativeEventKind::TurnStarted => (
+            AgentActivityKind::Status,
+            AgentActivityState::Started,
+            "Working",
+        ),
         NativeEventKind::AssistantDelta => (
             AgentActivityKind::Assistant,
             AgentActivityState::Started,
             "Responding",
         ),
-        NativeEventKind::ToolStarted => {
-            (AgentActivityKind::Tool, AgentActivityState::Started, "Using a tool")
-        }
-        NativeEventKind::ToolProgress => {
-            (AgentActivityKind::Tool, AgentActivityState::Started, "Using a tool")
-        }
-        NativeEventKind::ToolCompleted => {
-            (AgentActivityKind::Tool, AgentActivityState::Completed, "Used a tool")
-        }
+        NativeEventKind::ToolStarted => (
+            AgentActivityKind::Tool,
+            AgentActivityState::Started,
+            "Using a tool",
+        ),
+        NativeEventKind::ToolProgress => (
+            AgentActivityKind::Tool,
+            AgentActivityState::Started,
+            "Using a tool",
+        ),
+        NativeEventKind::ToolCompleted => (
+            AgentActivityKind::Tool,
+            AgentActivityState::Completed,
+            "Used a tool",
+        ),
         NativeEventKind::ApprovalRequested => (
             AgentActivityKind::Status,
             AgentActivityState::Started,
@@ -649,18 +695,26 @@ fn native_event_activity(event: &NativeEvent) -> Option<AgentActivity> {
             AgentActivityState::Completed,
             "Approval resolved",
         ),
-        NativeEventKind::Warning => {
-            (AgentActivityKind::Status, AgentActivityState::Started, "Working")
-        }
-        NativeEventKind::TurnCompleted => {
-            (AgentActivityKind::Status, AgentActivityState::Completed, "Done")
-        }
-        NativeEventKind::TurnFailed => {
-            (AgentActivityKind::Error, AgentActivityState::Completed, "Failed")
-        }
-        NativeEventKind::TurnCancelled => {
-            (AgentActivityKind::Status, AgentActivityState::Completed, "Cancelled")
-        }
+        NativeEventKind::Warning => (
+            AgentActivityKind::Status,
+            AgentActivityState::Started,
+            "Working",
+        ),
+        NativeEventKind::TurnCompleted => (
+            AgentActivityKind::Status,
+            AgentActivityState::Completed,
+            "Done",
+        ),
+        NativeEventKind::TurnFailed => (
+            AgentActivityKind::Error,
+            AgentActivityState::Completed,
+            "Failed",
+        ),
+        NativeEventKind::TurnCancelled => (
+            AgentActivityKind::Status,
+            AgentActivityState::Completed,
+            "Cancelled",
+        ),
     };
     Some(AgentActivity::new(
         format!("native-{}", event.sequence),
@@ -674,13 +728,11 @@ fn native_event_activity(event: &NativeEvent) -> Option<AgentActivity> {
 fn native_agent_error(error: NativeRuntimeError) -> AgentError {
     match error.code {
         NativeErrorCode::Cancelled => AgentError::Cancelled,
-        _ => AgentError::Message(format!(
-            "native_{:?}: {}",
-            error.code,
-            redact_text(&error.message)
-        )
-        .to_ascii_lowercase()
-        .replace(' ', "_")),
+        _ => AgentError::Message(
+            format!("native_{:?}: {}", error.code, redact_text(&error.message))
+                .to_ascii_lowercase()
+                .replace(' ', "_"),
+        ),
     }
 }
 
@@ -692,6 +744,7 @@ fn validate_descriptor(descriptor: &NativeRuntimeDescriptor) -> Result<(), Nativ
         || descriptor.request_contract_version != super::NATIVE_REQUEST_CONTRACT_VERSION
         || descriptor.event_contract_version != super::NATIVE_EVENT_CONTRACT_VERSION
         || descriptor.capabilities.contract_version != super::NATIVE_CAPABILITY_CONTRACT_VERSION
+        || descriptor.product.provider() != descriptor.provider
         || contains_secret_marker(&descriptor.runtime_id)
         || contains_secret_marker(&descriptor.runtime_version)
     {
@@ -716,6 +769,38 @@ fn validate_descriptor(descriptor: &NativeRuntimeDescriptor) -> Result<(), Nativ
             "native runtime cannot support approvals without tool calls",
             false,
         ));
+    }
+    match descriptor.tool_execution_owner {
+        NativeToolExecutionOwner::NoTools
+            if descriptor.capabilities.supports_tool_calls
+                || descriptor.capabilities.supports_approval_events =>
+        {
+            return Err(NativeRuntimeError::new(
+                NativeErrorCode::InvalidRequest,
+                "a no-tools runtime cannot declare tool or approval events",
+                false,
+            ));
+        }
+        NativeToolExecutionOwner::AlfredExecuted
+            if !descriptor.capabilities.supports_tool_calls =>
+        {
+            return Err(NativeRuntimeError::new(
+                NativeErrorCode::InvalidRequest,
+                "an Alfred-executed runtime must declare tool calls",
+                false,
+            ));
+        }
+        NativeToolExecutionOwner::RuntimeExecutedWithHostApproval
+            if !descriptor.capabilities.supports_tool_calls
+                || !descriptor.capabilities.supports_approval_events =>
+        {
+            return Err(NativeRuntimeError::new(
+                NativeErrorCode::InvalidRequest,
+                "a runtime-executed tool route requires host approval events",
+                false,
+            ));
+        }
+        _ => {}
     }
     Ok(())
 }
@@ -751,9 +836,7 @@ fn validate_request(request: &NativeTurnRequest) -> Result<(), NativeRuntimeErro
     request.event_limits.validate()?;
     request.cancellation()?.checkpoint()?;
     NativeContextPolicy::default().validate_blocks(&request.context)?;
-    if request.context.last().map(|block| block.content.as_str())
-        != Some(request.prompt.as_str())
-    {
+    if request.context.last().map(|block| block.content.as_str()) != Some(request.prompt.as_str()) {
         return Err(NativeRuntimeError::new(
             NativeErrorCode::InvalidRequest,
             "native prompt and final user context block do not match",
@@ -869,8 +952,12 @@ fn validate_resolved_account(
     account: &ResolvedNativeAccount,
     expected_ref: &OpaqueAgentAccountRef,
     expected_provider: AgentProvider,
+    expected_product: AgentProductId,
 ) -> Result<(), NativeRuntimeError> {
-    if account.provider != expected_provider || account.account_ref != *expected_ref {
+    if account.provider != expected_provider
+        || account.product != expected_product
+        || account.account_ref != *expected_ref
+    {
         Err(NativeRuntimeError::new(
             NativeErrorCode::AccountMismatch,
             "resolved native account does not match the request",
@@ -909,9 +996,9 @@ fn validate_explicit_model(selected: &str) -> Result<(), NativeRuntimeError> {
     let valid = !selected.is_empty()
         && selected.len() <= 256
         && selected.trim() == selected
-        && selected
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.' | b':' | b'/'))
+        && selected.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.' | b':' | b'/')
+        })
         && !contains_secret_marker(selected);
     if valid {
         Ok(())

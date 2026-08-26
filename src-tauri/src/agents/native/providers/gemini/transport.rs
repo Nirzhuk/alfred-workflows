@@ -30,10 +30,7 @@ pub trait GeminiTransport: Send + Sync {
         cancellation: &NativeCancellation,
     ) -> Result<Box<dyn GeminiByteStream>, NativeRuntimeError>;
 
-    fn list_models(
-        &self,
-        credential: &GeminiCredential,
-    ) -> Result<String, NativeRuntimeError>;
+    fn list_models(&self, credential: &GeminiCredential) -> Result<String, NativeRuntimeError>;
 }
 
 pub struct HttpGeminiTransport {
@@ -61,9 +58,8 @@ impl GeminiTransport for HttpGeminiTransport {
     ) -> Result<Box<dyn GeminiByteStream>, NativeRuntimeError> {
         validate_model_path(model)?;
         cancellation.checkpoint()?;
-        let url = format!(
-            "{GEMINI_API_HOST}/{GEMINI_API_VERSION}/models/{model}:streamGenerateContent"
-        );
+        let url =
+            format!("{GEMINI_API_HOST}/{GEMINI_API_VERSION}/models/{model}:streamGenerateContent");
         let request = self
             .client
             .post(url)
@@ -96,10 +92,7 @@ impl GeminiTransport for HttpGeminiTransport {
         }))
     }
 
-    fn list_models(
-        &self,
-        credential: &GeminiCredential,
-    ) -> Result<String, NativeRuntimeError> {
+    fn list_models(&self, credential: &GeminiCredential) -> Result<String, NativeRuntimeError> {
         let url = format!("{GEMINI_API_HOST}/{GEMINI_API_VERSION}/models");
         let request = self
             .client
@@ -187,9 +180,9 @@ impl GeminiByteStream for ReqwestGeminiStream {
 fn validate_model_path(model: &str) -> Result<(), NativeRuntimeError> {
     let valid = !model.is_empty()
         && model.len() <= 256
-        && model.bytes().all(|byte| {
-            byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.')
-        });
+        && model
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.'));
     if valid {
         Ok(())
     } else {

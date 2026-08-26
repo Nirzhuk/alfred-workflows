@@ -2,8 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Icon } from "../../../../components/icon";
 import { Modal, ModalHeader } from "../../../../components/modal";
 import { useAgentAccountsStore } from "../../store";
-
-export type NativeApiKeyProviderId = "claude_code" | "gemini" | "grok";
+import type { AgentProductId } from "../../types";
 
 type NativeApiKeyCopy = {
   providerName: string;
@@ -13,7 +12,7 @@ type NativeApiKeyCopy = {
   billing: string;
 };
 
-const PROVIDER_COPY: Record<NativeApiKeyProviderId, NativeApiKeyCopy> = {
+const PROVIDER_COPY: Record<string, NativeApiKeyCopy> = {
   claude_code: {
     providerName: "Claude",
     keyLabel: "Anthropic API key",
@@ -40,20 +39,18 @@ const PROVIDER_COPY: Record<NativeApiKeyProviderId, NativeApiKeyCopy> = {
   },
 };
 
-export function isNativeApiKeyProvider(
-  providerId: string,
-): providerId is NativeApiKeyProviderId {
-  return Object.prototype.hasOwnProperty.call(PROVIDER_COPY, providerId);
-}
-
 type NativeApiKeyConnectProps = {
-  providerId: NativeApiKeyProviderId;
+  providerId: string;
+  providerName: string;
+  productId: AgentProductId;
   accountId?: string;
   onClose: () => void;
 };
 
 export function NativeApiKeyConnect({
   providerId,
+  providerName,
+  productId,
   accountId,
   onClose,
 }: NativeApiKeyConnectProps) {
@@ -62,8 +59,20 @@ export function NativeApiKeyConnect({
   const connectApiKey = useAgentAccountsStore((state) => state.connectApiKey);
   const busyId = useAgentAccountsStore((state) => state.busyId);
   const error = useAgentAccountsStore((state) => state.error);
-  const copy = PROVIDER_COPY[providerId];
-  const operationId = accountId ?? providerId;
+  const providerCopy = Object.prototype.hasOwnProperty.call(
+    PROVIDER_COPY,
+    providerId,
+  )
+    ? PROVIDER_COPY[providerId]
+    : undefined;
+  const copy = providerCopy ?? {
+    providerName,
+    keyLabel: `${providerName} API key`,
+    placeholder: `Enter your ${providerName} API key`,
+    description: `Enter an API key issued for ${providerName}. Subscription and CLI credentials are separate and are not imported.`,
+    billing: `Native runs are billed to the account that owns this ${providerName} API key.`,
+  };
+  const operationId = accountId ?? productId;
   const busy = busyId === operationId;
 
   const clearInput = () => {
@@ -89,7 +98,7 @@ export function NativeApiKeyConnect({
     let apiKey = input.value;
     clearInput();
     try {
-      if (await connectApiKey(providerId, apiKey, accountId)) onClose();
+      if (await connectApiKey(providerId, productId, apiKey, accountId)) onClose();
     } finally {
       apiKey = "";
     }

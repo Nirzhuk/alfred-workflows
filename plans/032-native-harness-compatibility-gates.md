@@ -14,7 +14,8 @@
 - **Depends on**: Plans 030–031
 - **Category**: agent runtime / compatibility
 - **Planned at**: 2026-08-24
-- **Implementation**: DONE
+- **Implementation**: FOUNDATION DONE; capability contract v3 tool-owner
+  cutover implemented 2026-08-26 with focused verification pending
 
 ## Goal
 
@@ -85,6 +86,23 @@ supports_mcp
 supports_subagents
 ```
 
+Every runtime descriptor also declares exactly one execution owner, separate
+from capability flags. The descriptor carries an exact provider/product pair,
+and the resolved account must match both before the runtime receives it:
+
+```text
+alfred_executed
+runtime_executed_with_host_approval
+no_tools
+```
+
+`alfred_executed` means model/runtime requests are converted to typed Alfred
+tool calls and Alfred performs execution. `runtime_executed_with_host_approval`
+means the managed runtime performs execution only after Alfred observes and
+approves the bounded request. `no_tools` means tool calls and approval events
+are absent. The capability contract version is 3; invalid owner/capability
+combinations fail registration.
+
 A missing capability must produce a visible, actionable state. The runner must
 not silently emulate a dangerous capability with shell execution.
 
@@ -140,9 +158,10 @@ content, nested tool results, provider errors, and secret-looking fields.
 
 ### Step 3: Define tools and approval
 
-Register Alfred-owned tools separately from provider-native tools. A provider
-may use its own tool executor, but it must declare whether Alfred can observe,
-approve, cancel, and bound the operation.
+Register Alfred-owned tools separately from runtime-executed tools. A runtime
+must use the descriptor owner above; boolean capability combinations are not a
+substitute for ownership. Runtime execution is allowed only when Alfred can
+observe, approve, cancel, and bound the operation before execution.
 
 For Alfred-owned tools, define a stable request/result shape for:
 
@@ -224,5 +243,5 @@ Add a contract-test report listing each provider capability as `supported`,
 - [x] Provider capabilities are explicit and bounded.
 - [x] Tool/approval/cancellation ownership is documented.
 - [x] Alfred resolves skills/context in native mode.
-- [x] A fake native runtime passes the contract suite.
+- [ ] Re-run the fake native runtime suite against capability contract v3.
 - [x] Provider plans can proceed without editing core semantics.

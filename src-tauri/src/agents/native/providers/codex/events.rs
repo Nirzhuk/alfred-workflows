@@ -67,10 +67,8 @@ impl CodexEventMapper {
             }
             CodexNotificationMethod::TurnDiffUpdated => {
                 let mut event = self.event(NativeEventKind::ToolProgress)?;
-                event.tool_call_id = Some(format!(
-                    "turn-diff-{}",
-                    required_id(params.get("turnId"))?
-                ));
+                event.tool_call_id =
+                    Some(format!("turn-diff-{}", required_id(params.get("turnId"))?));
                 event.tool_name = Some("apply_patch".into());
                 event.tool_output = Some(bounded_string(
                     params.get("diff"),
@@ -123,14 +121,9 @@ impl CodexEventMapper {
             ),
             "fileChange" => (
                 "apply_patch",
-                item.get("changes")
-                    .map(bounded_json)
-                    .transpose()?,
+                item.get("changes").map(bounded_json).transpose()?,
             ),
-            "mcpToolCall" => (
-                "mcp",
-                item.get("result").map(bounded_json).transpose()?,
-            ),
+            "mcpToolCall" => ("mcp", item.get("result").map(bounded_json).transpose()?),
             _ => return Ok(None),
         };
         let mut event = self.event(if completed {

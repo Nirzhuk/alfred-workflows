@@ -67,25 +67,20 @@ pub const GEMINI_AUTH_SURFACES: [GeminiSurfaceEvidence; 4] = [
         status: GeminiSurfaceStatus::Selected,
         code: "gemini_api_auth_key",
         label: "Gemini API auth key",
-        billing_owner:
-            "The Google Cloud project that owns a standard key, or the project \
+        billing_owner: "The Google Cloud project that owns a standard key, or the project \
              and service-account binding behind an authorization key. Free tier \
              bills nobody; a linked billing account invoices that account.",
-        project_region:
-            "No region is chosen by the client. The key's own project is the \
+        project_region: "No region is chosen by the client. The key's own project is the \
              only project involved, and Google restricts free-tier use for end \
              users in the EEA, Switzerland, and the UK to paid services.",
-        models:
-            "Listed live from GET /v1beta/models, filtered to models that \
+        models: "Listed live from GET /v1beta/models, filtered to models that \
              advertise the generateContent method.",
-        quota:
-            "Unavailable. Google publishes no remaining-quota endpoint for this \
+        quota: "Unavailable. Google publishes no remaining-quota endpoint for this \
              surface; limits are project-scoped and read in AI Studio, while \
              authorization-key requests are not recorded in Cloud service-account \
              usage metrics. Alfred therefore reports usage as unavailable instead \
              of estimating it.",
-        data_handling:
-            "Unpaid tier: Google uses submitted content and responses to improve \
+        data_handling: "Unpaid tier: Google uses submitted content and responses to improve \
              its products and human reviewers may read them. Paid tier: prompts \
              and responses are not used for product improvement. In the EEA, \
              Switzerland, and the UK, paid-data terms apply even to unpaid quota, \
@@ -97,11 +92,9 @@ pub const GEMINI_AUTH_SURFACES: [GeminiSurfaceEvidence; 4] = [
         status: GeminiSurfaceStatus::Blocked,
         code: "gemini_oauth_client_packaging_unresolved",
         label: "Google OAuth desktop client / ADC",
-        billing_owner:
-            "The Cloud project behind the OAuth client, which Alfred would have \
+        billing_owner: "The Cloud project behind the OAuth client, which Alfred would have \
              to own or ask each user to create.",
-        project_region:
-            "Requires an OAuth client registered in a Cloud project. Google's \
+        project_region: "Requires an OAuth client registered in a Cloud project. Google's \
              installed-app sample downloads desktop client configuration with \
              client ID and client_secret fields and writes ADC/token files.",
         models: "Same catalog as the API-key surface once authorized.",
@@ -120,19 +113,15 @@ pub const GEMINI_AUTH_SURFACES: [GeminiSurfaceEvidence; 4] = [
         status: GeminiSurfaceStatus::Blocked,
         code: "gemini_vertex_project_binding_unresolved",
         label: "Vertex AI (aiplatform.googleapis.com)",
-        billing_owner:
-            "The Google Cloud billing account attached to the caller's Vertex \
+        billing_owner: "The Google Cloud billing account attached to the caller's Vertex \
              project. Never Alfred, and never a consumer Gemini plan.",
-        project_region:
-            "Standard Vertex calls name a project and location and use ADC, a \
+        project_region: "Standard Vertex calls name a project and location and use ADC, a \
              service account, or an authorization key. Vertex Express Mode is \
              a separate Preview API-key onboarding path without a client-chosen \
              project/location. Alfred has selected neither Vertex account shape.",
-        models:
-            "Vertex publisher model catalog for the selected standard \
+        models: "Vertex publisher model catalog for the selected standard \
              project/location, or the separate Express Mode catalog.",
-        quota:
-            "Unavailable to the client; Vertex quota is read through Cloud \
+        quota: "Unavailable to the client; Vertex quota is read through Cloud \
              Monitoring and the Cloud console.",
         data_handling: "Google Cloud Platform terms and the Cloud privacy notice.",
         // Blocked: standard onboarding requires an ADC/authorization-key
@@ -147,14 +136,12 @@ pub const GEMINI_AUTH_SURFACES: [GeminiSurfaceEvidence; 4] = [
         status: GeminiSurfaceStatus::Blocked,
         code: "gemini_consumer_subscription_prohibited",
         label: "Consumer Gemini plan / Gemini CLI Google-account login",
-        billing_owner:
-            "The end user's consumer Google subscription. It grants no \
+        billing_owner: "The end user's consumer Google subscription. It grants no \
              third-party API entitlement of any kind.",
         project_region: "Not applicable; there is no client-visible project.",
         models: "Not applicable.",
         quota: "Not applicable.",
-        data_handling:
-            "Google Terms of Service and the Gemini Code Assist for individuals \
+        data_handling: "Google Terms of Service and the Gemini Code Assist for individuals \
              privacy notice.",
         // Blocked: Gemini CLI's own terms state that directly accessing the
         // services powering Gemini CLI (for example the Gemini Code Assist

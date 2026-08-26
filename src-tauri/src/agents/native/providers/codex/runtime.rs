@@ -205,7 +205,8 @@ pub fn verify_artifact_checksum(
     artifact: CodexRuntimeArtifact,
     archive_path: &Path,
 ) -> Result<(), CodexRuntimePackageError> {
-    let mut file = fs::File::open(archive_path).map_err(|_| CodexRuntimePackageError::ArtifactIo)?;
+    let mut file =
+        fs::File::open(archive_path).map_err(|_| CodexRuntimePackageError::ArtifactIo)?;
     let mut hasher = Sha256::new();
     let mut buffer = [0u8; 64 * 1024];
     loop {
@@ -349,7 +350,9 @@ mod tests {
         ] {
             let artifact = artifact_for_target(target).unwrap();
             assert_eq!(artifact.sha256.len(), 64);
-            assert!(artifact.url().starts_with("https://github.com/openai/codex/releases/"));
+            assert!(artifact
+                .url()
+                .starts_with("https://github.com/openai/codex/releases/"));
         }
         assert_eq!(
             artifact_for_target("aarch64-apple-darwin")
@@ -382,7 +385,8 @@ mod tests {
 
     #[test]
     fn checksum_mismatch_fails_closed() {
-        let root = std::env::temp_dir().join(format!("alfred-codex-digest-{}", uuid::Uuid::new_v4()));
+        let root =
+            std::env::temp_dir().join(format!("alfred-codex-digest-{}", uuid::Uuid::new_v4()));
         fs::create_dir_all(&root).unwrap();
         let archive = root.join("artifact.tar.gz");
         fs::write(&archive, b"not the official artifact").unwrap();
@@ -404,7 +408,10 @@ mod tests {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            assert_eq!(fs::metadata(&home).unwrap().permissions().mode() & 0o777, 0o700);
+            assert_eq!(
+                fs::metadata(&home).unwrap().permissions().mode() & 0o777,
+                0o700
+            );
         }
         assert!(matches!(
             prepare_codex_runtime_home(&root, "../escape"),

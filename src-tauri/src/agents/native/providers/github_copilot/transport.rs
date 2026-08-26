@@ -187,5 +187,9 @@ impl CopilotTransport for UnlinkedSdkTransport {
 }
 
 fn unavailable() -> NativeRuntimeError {
-    NativeRuntimeError::new(NativeErrorCode::ProviderUnavailable, UNLINKED_MESSAGE, false)
+    NativeRuntimeError::new(
+        NativeErrorCode::ProviderUnavailable,
+        UNLINKED_MESSAGE,
+        false,
+    )
 }

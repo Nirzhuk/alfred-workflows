@@ -19,7 +19,8 @@
 - **Depends on**: Plan 030
 - **Category**: agent authentication / security
 - **Planned at**: 2026-08-24
-- **Implementation**: DONE
+- **Implementation**: FOUNDATION DONE; managed-product contract cutover
+  implemented 2026-08-26 with focused verification pending
 
 ## Goal
 
@@ -31,10 +32,24 @@ Native-agent accounts are not Connected Apps and are not CLI credentials.
 
 ## Architecture contract
 
+Account identity has four separate dimensions: provider, stable product,
+runtime, and billing. Provider/product values are registry-validated Rust
+strings, not SQL enums. The stable product registry is:
+
+```text
+claude_code_subscription  claude_api
+chatgpt_codex             openai_api
+opencode_go               opencode_zen
+cursor_cloud              github_copilot_subscription
+gemini_api                grok_api
+```
+
 Use three data classes:
 
-1. **SQLite metadata**: opaque account ID, provider, harness, display identity,
-   auth method, scopes/capabilities, status, expiry, last error code, and
+1. **SQLite metadata**: opaque account ID, provider, product, harness, display
+   identity, auth method, scopes/capabilities, optional managed runtime id and
+   version, opaque runtime profile reference, billing source/owner,
+   entitlement observation, status, expiry, last error, and an optional secret
    credential reference.
 2. **OS credential store**: access token, refresh token, provider secret fields,
    and provider-owned account tokens.
@@ -63,11 +78,23 @@ A provider may declare one of these custody modes:
 
 The custody mode must be explicit in provider registration and diagnostics.
 
+Managed subscription accounts resolve through a managed runtime profile and
+must not have a fake secret reference. Direct API/PAYG products may have a
+secret reference; a managed PAYG server product can require both a profile and
+its separate secret. Neither `runtime_profile_ref` nor `credential_ref` may
+cross command DTOs, React state, workflow graphs, diagnostics, or logs.
+
+Entitlement is an observation, not billing identity. Store one of `unknown`,
+`eligible`, `limited`, `exhausted`, or `ineligible`, plus a source and an RFC
+3339 observation timestamp when the state is not `unknown`. Never infer
+entitlement from a credential's existence or silently switch products after
+exhaustion.
+
 ## Scope
 
 **In scope**:
 
-- Additive `agent_accounts` migration and repository.
+- Transactional `agent_accounts` contract rebuild and repository.
 - Agent-specific credential envelope/store namespace.
 - Redacted account DTOs and Tauri commands.
 - Native authorization session lifecycle.
@@ -88,28 +115,41 @@ The custody mode must be explicit in provider registration and diagnostics.
 
 ### Step 1: Define account metadata and migration
 
-Add an additive migration for `agent_accounts` with fields equivalent to:
+Rebuild `agent_accounts` transactionally for the new contract, preserving
+legacy rows and retry-safe cleanup references, with fields equivalent to:
 
 ```text
 id
 provider_id
+product_id
 harness
 identity_key
 display_name
 external_account_id
 external_workspace_id
 auth_method
+custody_mode
+managed_runtime_id
+managed_runtime_version
+runtime_profile_ref
 scopes_json
+billing_source
+billing_owner
+entitlement_state
+entitlement_source
+entitlement_observed_at
 status
 expires_at
 last_checked_at
 last_error_code
-credential_ref
+credential_ref (nullable)
 created_at
 updated_at
 ```
 
-Do not add SQL provider enums. Rust provider registries validate known values.
+Do not add SQL provider or product enums. Rust registries validate known
+values; SQL may enforce only structural invariants and the closed entitlement
+state set.
 Do not store access tokens, refresh tokens, authorization codes, raw ID tokens,
 client secrets, or raw provider responses.
 
@@ -245,4 +285,4 @@ redacted. Run the full repository gate before marking done.
 - [x] Settings exposes safe native account lifecycle.
 - [x] Provider plans can register auth and refresh handlers without editing the
       workflow runner.
-- [x] Focused and full verification gates pass.
+- [ ] Re-run focused and full verification after the managed-product cutover.

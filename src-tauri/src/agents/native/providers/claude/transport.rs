@@ -50,14 +50,14 @@ impl HttpClaudeTransport {
     fn with_endpoints(messages_url: &str, models_url: &str) -> Result<Self, NativeRuntimeError> {
         let client = tauri::async_runtime::block_on(async {
             reqwest::Client::builder()
-            // The API key is carried in a custom `x-api-key` header. Reqwest
-            // does not strip that header on a cross-host redirect, so redirects
-            // must be disabled rather than merely host-checked afterwards.
-            .redirect(reqwest::redirect::Policy::none())
-            .connect_timeout(CLAUDE_CONNECT_TIMEOUT)
-            .read_timeout(CLAUDE_READ_TIMEOUT)
-            .timeout(CLAUDE_REQUEST_TIMEOUT)
-            .build()
+                // The API key is carried in a custom `x-api-key` header. Reqwest
+                // does not strip that header on a cross-host redirect, so redirects
+                // must be disabled rather than merely host-checked afterwards.
+                .redirect(reqwest::redirect::Policy::none())
+                .connect_timeout(CLAUDE_CONNECT_TIMEOUT)
+                .read_timeout(CLAUDE_READ_TIMEOUT)
+                .timeout(CLAUDE_REQUEST_TIMEOUT)
+                .build()
         })
         .map_err(|_| unavailable("Anthropic HTTP client could not be created"))?;
         Ok(Self {
@@ -68,7 +68,10 @@ impl HttpClaudeTransport {
     }
 
     #[cfg(test)]
-    pub(super) fn fixture(messages_url: &str, models_url: &str) -> Result<Self, NativeRuntimeError> {
+    pub(super) fn fixture(
+        messages_url: &str,
+        models_url: &str,
+    ) -> Result<Self, NativeRuntimeError> {
         Self::with_endpoints(messages_url, models_url)
     }
 }
@@ -180,11 +183,7 @@ fn read_bounded_body(
     tauri::async_runtime::block_on(async {
         let mut response = response;
         let mut body = Vec::new();
-        while let Some(chunk) = response
-            .chunk()
-            .await
-            .map_err(map_reqwest_error)?
-        {
+        while let Some(chunk) = response.chunk().await.map_err(map_reqwest_error)? {
             if body.len().saturating_add(chunk.len()) > maximum {
                 return Err(NativeRuntimeError::new(
                     NativeErrorCode::EventLimitExceeded,

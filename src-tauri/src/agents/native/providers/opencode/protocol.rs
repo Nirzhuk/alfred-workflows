@@ -115,11 +115,8 @@ pub fn decode_server_event(
             let permission_id = wire_id(required_string(properties, "id")?, "permission id")?;
             let session_id = wire_id(required_string(properties, "sessionID")?, "session id")?;
             validate_expected_session(expected_session_id, &session_id)?;
-            let permission_type = bounded_text(
-                required_string(properties, "type")?,
-                64,
-                "permission type",
-            )?;
+            let permission_type =
+                bounded_text(required_string(properties, "type")?, 64, "permission type")?;
             let title = redact_text(&bounded_text(
                 required_string(properties, "title")?,
                 512,
@@ -244,7 +241,9 @@ fn required_string<'a>(
 
 fn wire_id(value: &str, label: &str) -> Result<String, NativeRuntimeError> {
     if contains_secret_marker(value) {
-        Err(invalid_event(format!("OpenCode {label} contains prohibited material")))
+        Err(invalid_event(format!(
+            "OpenCode {label} contains prohibited material"
+        )))
     } else {
         bounded_text(value, MAX_WIRE_ID_BYTES, label)
     }
@@ -253,7 +252,9 @@ fn wire_id(value: &str, label: &str) -> Result<String, NativeRuntimeError> {
 fn bounded_text(value: &str, limit: usize, label: &str) -> Result<String, NativeRuntimeError> {
     if value.is_empty()
         || value.len() > limit
-        || value.chars().any(|character| matches!(character, '\r' | '\n' | '\0'))
+        || value
+            .chars()
+            .any(|character| matches!(character, '\r' | '\n' | '\0'))
     {
         Err(invalid_event(format!("OpenCode {label} is invalid")))
     } else {

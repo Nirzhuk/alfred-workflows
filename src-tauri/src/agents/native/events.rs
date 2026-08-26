@@ -1,6 +1,6 @@
+pub use super::redaction::redact_text;
 use super::redaction::{canonical_key, is_secret_key};
 use super::{NativeErrorCode, NativeRuntimeError, NATIVE_EVENT_CONTRACT_VERSION};
-pub use super::redaction::redact_text;
 use serde::Serialize;
 use serde_json::{Map, Value};
 
@@ -216,11 +216,18 @@ impl NativeEventNormalizer {
                 false,
             ));
         }
-        if self.last_sequence.is_some_and(|last| event.sequence <= last) {
-            return Err(invalid_event("native event sequence is not strictly increasing"));
+        if self
+            .last_sequence
+            .is_some_and(|last| event.sequence <= last)
+        {
+            return Err(invalid_event(
+                "native event sequence is not strictly increasing",
+            ));
         }
         if event.content_class == Some(NativeContentClass::Reasoning) {
-            return Err(invalid_event("reasoning content is prohibited in native events"));
+            return Err(invalid_event(
+                "reasoning content is prohibited in native events",
+            ));
         }
         match event.kind {
             NativeEventKind::AssistantDelta
@@ -243,18 +250,28 @@ impl NativeEventNormalizer {
         validate_optional_id(event.tool_call_id.as_deref(), "tool call id")?;
         validate_optional_id(event.approval_id.as_deref(), "approval id")?;
         if event.text.is_some() && !event.kind.allows_text() {
-            return Err(invalid_event("text is not valid for this native event kind"));
+            return Err(invalid_event(
+                "text is not valid for this native event kind",
+            ));
         }
         if event.error.is_some() && !event.kind.allows_error() {
-            return Err(invalid_event("error text is not valid for this native event kind"));
+            return Err(invalid_event(
+                "error text is not valid for this native event kind",
+            ));
         }
-        if (event.tool_call_id.is_some() || event.tool_name.is_some() || event.tool_output.is_some())
+        if (event.tool_call_id.is_some()
+            || event.tool_name.is_some()
+            || event.tool_output.is_some())
             && !event.kind.is_tool()
         {
-            return Err(invalid_event("tool fields are not valid for this native event kind"));
+            return Err(invalid_event(
+                "tool fields are not valid for this native event kind",
+            ));
         }
         if (event.approval_id.is_some() || event.approved.is_some()) && !event.kind.is_approval() {
-            return Err(invalid_event("approval fields are not valid for this native event kind"));
+            return Err(invalid_event(
+                "approval fields are not valid for this native event kind",
+            ));
         }
         if let Some(text) = event.text.as_mut() {
             enforce_bytes(text, self.limits.max_text_bytes, "native event text")?;
@@ -276,13 +293,10 @@ impl NativeEventNormalizer {
             enforce_bytes(name, 128, "native tool name")?;
             *name = redact_text(name);
         }
-        event.metadata = sanitize_metadata(
-            Value::Object(event.metadata),
-            &self.limits,
-        )?
-        .as_object()
-        .cloned()
-        .unwrap_or_default();
+        event.metadata = sanitize_metadata(Value::Object(event.metadata), &self.limits)?
+            .as_object()
+            .cloned()
+            .unwrap_or_default();
         self.accepted += 1;
         self.last_sequence = Some(event.sequence);
         Ok(event)
@@ -293,7 +307,9 @@ impl NativeEventNormalizer {
             .as_object()
             .ok_or_else(|| invalid_event("native event must be an object"))?;
         if contains_reasoning_field(&value) {
-            return Err(invalid_event("reasoning content is prohibited in native events"));
+            return Err(invalid_event(
+                "reasoning content is prohibited in native events",
+            ));
         }
         for key in object.keys() {
             if !matches!(
@@ -363,19 +379,29 @@ impl NativeEventNormalizer {
     }
 }
 
-fn optional_string(object: &Map<String, Value>, key: &str) -> Result<Option<String>, NativeRuntimeError> {
+fn optional_string(
+    object: &Map<String, Value>,
+    key: &str,
+) -> Result<Option<String>, NativeRuntimeError> {
     match object.get(key) {
         None | Some(Value::Null) => Ok(None),
         Some(Value::String(value)) => Ok(Some(value.clone())),
-        Some(_) => Err(invalid_event(format!("native event {key} must be a string"))),
+        Some(_) => Err(invalid_event(format!(
+            "native event {key} must be a string"
+        ))),
     }
 }
 
-fn optional_bool(object: &Map<String, Value>, key: &str) -> Result<Option<bool>, NativeRuntimeError> {
+fn optional_bool(
+    object: &Map<String, Value>,
+    key: &str,
+) -> Result<Option<bool>, NativeRuntimeError> {
     match object.get(key) {
         None | Some(Value::Null) => Ok(None),
         Some(Value::Bool(value)) => Ok(Some(*value)),
-        Some(_) => Err(invalid_event(format!("native event {key} must be a boolean"))),
+        Some(_) => Err(invalid_event(format!(
+            "native event {key} must be a boolean"
+        ))),
     }
 }
 
@@ -412,9 +438,9 @@ fn invalid_event(message: impl Into<String>) -> NativeRuntimeError {
 
 fn contains_reasoning_field(value: &Value) -> bool {
     match value {
-        Value::Object(map) => map.iter().any(|(key, child)| {
-            is_reasoning_key(key) || contains_reasoning_field(child)
-        }),
+        Value::Object(map) => map
+            .iter()
+            .any(|(key, child)| is_reasoning_key(key) || contains_reasoning_field(child)),
         Value::Array(values) => values.iter().any(contains_reasoning_field),
         _ => false,
     }
@@ -427,9 +453,14 @@ fn is_reasoning_key(key: &str) -> bool {
     )
 }
 
-fn sanitize_metadata(value: Value, limits: &NativeEventLimits) -> Result<Value, NativeRuntimeError> {
+fn sanitize_metadata(
+    value: Value,
+    limits: &NativeEventLimits,
+) -> Result<Value, NativeRuntimeError> {
     if contains_reasoning_field(&value) {
-        return Err(invalid_event("reasoning content is prohibited in native metadata"));
+        return Err(invalid_event(
+            "reasoning content is prohibited in native metadata",
+        ));
     }
     let sanitized = sanitize_value(value, 0, limits)?;
     let serialized = serde_json::to_vec(&sanitized)

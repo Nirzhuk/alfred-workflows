@@ -40,11 +40,13 @@ impl FakeCodexAppServer {
                 "primary":{"usedPercent":10.0,"windowDurationMins":300,"resetsAt":1730947200},
                 "secondary":null
             }}),
-            _ => return Some(
-                json!({"id":id,"error":{"code":-32601,"message":"Method not found"}})
-                    .to_string()
-                    .into_bytes(),
-            ),
+            _ => {
+                return Some(
+                    json!({"id":id,"error":{"code":-32601,"message":"Method not found"}})
+                        .to_string()
+                        .into_bytes(),
+                )
+            }
         };
         Some(json!({"id":id,"result":result}).to_string().into_bytes())
     }
@@ -69,7 +71,9 @@ fn fake_app_server_drives_handshake_account_models_limits_and_exit() {
             Duration::from_secs(1),
         )
         .unwrap();
-    transport.ingest(&fake.respond(&initialize).unwrap()).unwrap();
+    transport
+        .ingest(&fake.respond(&initialize).unwrap())
+        .unwrap();
     let CodexIncoming::Response(response) = transport.pop().unwrap() else {
         panic!("initialize response")
     };

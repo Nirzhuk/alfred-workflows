@@ -29,8 +29,12 @@ impl NativeAccountResolver for TestResolver {
         &self,
         account_ref: &OpaqueAgentAccountRef,
         provider: AgentProvider,
+        product: crate::agent_accounts::models::AgentProductId,
     ) -> Result<ResolvedNativeAccount, NativeRuntimeError> {
-        if account_ref != &self.account_ref || provider != AgentProvider::Gemini {
+        if account_ref != &self.account_ref
+            || provider != AgentProvider::Gemini
+            || product != crate::agent_accounts::models::AgentProductId::GeminiApi
+        {
             return Err(NativeRuntimeError::new(
                 NativeErrorCode::AccountMismatch,
                 "gemini fixture account mismatch",
@@ -40,6 +44,7 @@ impl NativeAccountResolver for TestResolver {
         Ok(ResolvedNativeAccount {
             account_ref: account_ref.clone(),
             provider,
+            product: crate::agent_accounts::models::AgentProductId::GeminiApi,
             credential: NativeCredential::new(TestGeminiApiKey(self.key.clone())),
         })
     }
@@ -96,10 +101,7 @@ impl GeminiTransport for ScriptedTransport {
         }))
     }
 
-    fn list_models(
-        &self,
-        credential: &GeminiCredential,
-    ) -> Result<String, NativeRuntimeError> {
+    fn list_models(&self, credential: &GeminiCredential) -> Result<String, NativeRuntimeError> {
         assert_eq!(credential.header_value(), TEST_KEY);
         Ok(self.catalog.clone().unwrap_or_else(|| {
             json!({
@@ -169,7 +171,11 @@ fn harness(transport: ScriptedTransport) -> Harness {
 }
 
 fn request(account_ref: OpaqueAgentAccountRef) -> NativeTurnRequest {
-    request_with(account_ref, NativeEventLimits::default(), DEFAULT_TURN_TIMEOUT)
+    request_with(
+        account_ref,
+        NativeEventLimits::default(),
+        DEFAULT_TURN_TIMEOUT,
+    )
 }
 
 fn request_with(
@@ -219,13 +225,9 @@ fn run(
     approver: &dyn AlfredApprovalHandler,
 ) -> Result<NativeExecutionResult, NativeRuntimeError> {
     let mut sink = |_: &NativeEvent| {};
-    harness.registry.execute_turn(
-        request,
-        &harness.resolver,
-        executor,
-        approver,
-        &mut sink,
-    )
+    harness
+        .registry
+        .execute_turn(request, &harness.resolver, executor, approver, &mut sink)
 }
 
 fn sse(value: Value) -> Vec<u8> {
@@ -295,7 +297,10 @@ impl AlfredApprovalHandler for FixedApprover {
 fn surface_evidence_keeps_all_four_auth_and_billing_boundaries_distinct() {
     assert_eq!(SELECTED_SURFACE, GeminiAuthSurface::ApiKey);
     assert_eq!(GEMINI_AUTH_SURFACES.len(), 4);
-    assert_eq!(GEMINI_AUTH_SURFACES[0].status, GeminiSurfaceStatus::Selected);
+    assert_eq!(
+        GEMINI_AUTH_SURFACES[0].status,
+        GeminiSurfaceStatus::Selected
+    );
     assert!(GEMINI_AUTH_SURFACES[0].billing_owner.contains("project"));
     assert!(GEMINI_AUTH_SURFACES[2]
         .project_region
@@ -340,12 +345,20 @@ fn model_catalog_and_usage_unavailable_are_explicit() {
     let harness = harness(ScriptedTransport::default());
     let models = harness
         .registry
-        .discover_models(AgentProvider::Gemini, &harness.account_ref, &harness.resolver)
+        .discover_models(
+            AgentProvider::Gemini,
+            &harness.account_ref,
+            &harness.resolver,
+        )
         .expect("models");
     assert_eq!(models[0].id, TEST_MODEL);
     let usage = harness
         .registry
-        .usage_snapshot(AgentProvider::Gemini, &harness.account_ref, &harness.resolver)
+        .usage_snapshot(
+            AgentProvider::Gemini,
+            &harness.account_ref,
+            &harness.resolver,
+        )
         .expect("usage");
     assert_eq!(usage.state, NativeUsageState::Unavailable);
     assert!(usage.input_tokens.is_none());
@@ -353,7 +366,7 @@ fn model_catalog_and_usage_unavailable_are_explicit() {
 
 #[test]
 fn streamed_text_maps_to_bounded_native_events_and_turn_token_metadata() {
-    let harness = harness(ScriptedTransport::new(vec![text_turn("hello") ]));
+    let harness = harness(ScriptedTransport::new(vec![text_turn("hello")]));
     let request = request(harness.account_ref.clone());
     let result = run(
         &harness,
@@ -364,7 +377,11 @@ fn streamed_text_maps_to_bounded_native_events_and_turn_token_metadata() {
     .expect("turn");
     assert_eq!(result.output, "hello");
     assert_eq!(
-        result.events.iter().map(|event| event.kind).collect::<Vec<_>>(),
+        result
+            .events
+            .iter()
+            .map(|event| event.kind)
+            .collect::<Vec<_>>(),
         vec![
             NativeEventKind::TurnStarted,
             NativeEventKind::AssistantDelta,
@@ -372,7 +389,10 @@ fn streamed_text_maps_to_bounded_native_events_and_turn_token_metadata() {
         ]
     );
     let completed = result.events.last().expect("completed");
-    assert_eq!(completed.metadata["accountUsageState"], json!("unavailable"));
+    assert_eq!(
+        completed.metadata["accountUsageState"],
+        json!("unavailable")
+    );
     assert_eq!(completed.metadata["providerInputUnitCount"], json!(9));
 }
 
@@ -474,7 +494,10 @@ fn content_blocks_are_failures_not_empty_successes() {
         &NativeEventLimits::default(),
     )
     .expect("mapped block");
-    assert!(matches!(events.as_slice(), [GeminiChunkEvent::Blocked { .. }]));
+    assert!(matches!(
+        events.as_slice(),
+        [GeminiChunkEvent::Blocked { .. }]
+    ));
 }
 
 #[test]

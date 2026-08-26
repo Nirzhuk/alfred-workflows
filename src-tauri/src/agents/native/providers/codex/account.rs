@@ -61,7 +61,9 @@ pub struct CodexAccountMetadata {
 
 impl CodexAccountMetadata {
     pub fn from_account_read(result: &Value) -> Result<Option<Self>, CodexAccountError> {
-        let object = result.as_object().ok_or(CodexAccountError::InvalidResponse)?;
+        let object = result
+            .as_object()
+            .ok_or(CodexAccountError::InvalidResponse)?;
         let requires_openai_auth = object
             .get("requiresOpenaiAuth")
             .and_then(Value::as_bool)
@@ -91,7 +93,9 @@ impl CodexAccountMetadata {
     }
 
     pub fn from_account_updated(params: &Value) -> Result<Option<Self>, CodexAccountError> {
-        let object = params.as_object().ok_or(CodexAccountError::InvalidResponse)?;
+        let object = params
+            .as_object()
+            .ok_or(CodexAccountError::InvalidResponse)?;
         let Some(auth_mode) = object.get("authMode") else {
             return Err(CodexAccountError::InvalidResponse);
         };
@@ -127,10 +131,7 @@ impl fmt::Debug for CodexLoginPrompt {
             .field("login_id", &self.login_id)
             .field("kind", &self.kind)
             .field("authorization_url", &"[REDACTED URL]")
-            .field(
-                "user_code",
-                &self.user_code.as_ref().map(|_| "[REDACTED]"),
-            )
+            .field("user_code", &self.user_code.as_ref().map(|_| "[REDACTED]"))
             .finish()
     }
 }
@@ -178,7 +179,9 @@ impl CodexLoginLifecycle {
         if timeout.is_zero() {
             return Err(CodexAccountError::LoginTimedOut);
         }
-        let object = result.as_object().ok_or(CodexAccountError::InvalidResponse)?;
+        let object = result
+            .as_object()
+            .ok_or(CodexAccountError::InvalidResponse)?;
         let login_id = bounded_required(object.get("loginId"), MAX_LOGIN_ID_BYTES)?;
         let (authorization_url, user_code) = match kind {
             ChatGptLoginKind::Browser => {
@@ -207,7 +210,9 @@ impl CodexLoginLifecycle {
     }
 
     pub fn complete(&mut self, params: &Value) -> Result<(), CodexAccountError> {
-        let object = params.as_object().ok_or(CodexAccountError::InvalidResponse)?;
+        let object = params
+            .as_object()
+            .ok_or(CodexAccountError::InvalidResponse)?;
         let login_id = bounded_required(object.get("loginId"), MAX_LOGIN_ID_BYTES)?;
         let CodexLoginState::Pending { prompt, .. } = &self.state else {
             return Err(CodexAccountError::LoginMismatch);
@@ -256,10 +261,7 @@ impl CodexLoginLifecycle {
     }
 }
 
-fn validate_authorization_url(
-    raw: &str,
-    kind: ChatGptLoginKind,
-) -> Result<(), CodexAccountError> {
+fn validate_authorization_url(raw: &str, kind: ChatGptLoginKind) -> Result<(), CodexAccountError> {
     let url = Url::parse(raw).map_err(|_| CodexAccountError::UnsafeAuthorizationUrl)?;
     if url.scheme() != "https" || !url.username().is_empty() || url.password().is_some() {
         return Err(CodexAccountError::UnsafeAuthorizationUrl);
@@ -269,9 +271,7 @@ fn validate_authorization_url(
         .ok_or(CodexAccountError::UnsafeAuthorizationUrl)?;
     let allowed = match kind {
         ChatGptLoginKind::Browser => matches!(host, "chatgpt.com" | "auth.openai.com"),
-        ChatGptLoginKind::DeviceCode => {
-            host == "auth.openai.com" && url.path() == "/codex/device"
-        }
+        ChatGptLoginKind::DeviceCode => host == "auth.openai.com" && url.path() == "/codex/device",
     };
     allowed
         .then_some(())
@@ -296,7 +296,9 @@ pub fn parse_models(result: &Value) -> Result<Vec<CodexModelSummary>, CodexAccou
     }
     data.iter()
         .map(|model| {
-            let object = model.as_object().ok_or(CodexAccountError::InvalidResponse)?;
+            let object = model
+                .as_object()
+                .ok_or(CodexAccountError::InvalidResponse)?;
             Ok(CodexModelSummary {
                 id: bounded_required(object.get("id"), 256)?,
                 label: object
@@ -345,7 +347,9 @@ fn parse_window(value: Option<&Value>) -> Result<Option<CodexRateLimitWindow>, C
     if value.is_null() {
         return Ok(None);
     }
-    let object = value.as_object().ok_or(CodexAccountError::InvalidResponse)?;
+    let object = value
+        .as_object()
+        .ok_or(CodexAccountError::InvalidResponse)?;
     let used_percent = object
         .get("usedPercent")
         .and_then(Value::as_f64)
@@ -358,7 +362,10 @@ fn parse_window(value: Option<&Value>) -> Result<Option<CodexRateLimitWindow>, C
     }))
 }
 
-fn bounded_optional(value: Option<&Value>, max: usize) -> Result<Option<String>, CodexAccountError> {
+fn bounded_optional(
+    value: Option<&Value>,
+    max: usize,
+) -> Result<Option<String>, CodexAccountError> {
     match value {
         None | Some(Value::Null) => Ok(None),
         Some(value) => bounded_required(Some(value), max).map(Some),
@@ -391,16 +398,28 @@ mod tests {
         let now = Instant::now();
         let mut login = CodexLoginLifecycle::default();
         login
-            .start(ChatGptLoginKind::Browser, &browser_result("login-1"), now, Duration::from_secs(1))
+            .start(
+                ChatGptLoginKind::Browser,
+                &browser_result("login-1"),
+                now,
+                Duration::from_secs(1),
+            )
             .unwrap();
         assert_eq!(
             login
-                .start(ChatGptLoginKind::Browser, &browser_result("login-2"), now, Duration::from_secs(1))
+                .start(
+                    ChatGptLoginKind::Browser,
+                    &browser_result("login-2"),
+                    now,
+                    Duration::from_secs(1)
+                )
                 .unwrap_err(),
             CodexAccountError::LoginAlreadyPending
         );
         assert_eq!(
-            login.complete(&json!({"loginId":"other","success":true})).unwrap_err(),
+            login
+                .complete(&json!({"loginId":"other","success":true}))
+                .unwrap_err(),
             CodexAccountError::LoginMismatch
         );
         assert_eq!(
@@ -413,23 +432,42 @@ mod tests {
                 .unwrap_err(),
             CodexAccountError::LoginDenied
         );
-        let CodexLoginState::Denied(error) = login.state() else { panic!("denied") };
+        let CodexLoginState::Denied(error) = login.state() else {
+            panic!("denied")
+        };
         assert!(!error.contains("secret"));
 
         login
-            .start(ChatGptLoginKind::Browser, &browser_result("login-3"), now, Duration::from_millis(1))
+            .start(
+                ChatGptLoginKind::Browser,
+                &browser_result("login-3"),
+                now,
+                Duration::from_millis(1),
+            )
             .unwrap();
         assert_eq!(
-            login.check_timeout(now + Duration::from_millis(2)).unwrap_err(),
+            login
+                .check_timeout(now + Duration::from_millis(2))
+                .unwrap_err(),
             CodexAccountError::LoginTimedOut
         );
         login
-            .start(ChatGptLoginKind::Browser, &browser_result("login-4"), now, Duration::from_secs(1))
+            .start(
+                ChatGptLoginKind::Browser,
+                &browser_result("login-4"),
+                now,
+                Duration::from_secs(1),
+            )
             .unwrap();
         login.cancel("login-4").unwrap();
         assert_eq!(login.state(), &CodexLoginState::Cancelled);
         login
-            .start(ChatGptLoginKind::Browser, &browser_result("login-5"), now, Duration::from_secs(1))
+            .start(
+                ChatGptLoginKind::Browser,
+                &browser_result("login-5"),
+                now,
+                Duration::from_secs(1),
+            )
             .unwrap();
         login
             .complete(&json!({"loginId":"login-5","success":true,"error":null}))
@@ -446,7 +484,12 @@ mod tests {
         });
         assert_eq!(
             login
-                .start(ChatGptLoginKind::Browser, &unsafe_result, Instant::now(), Duration::from_secs(1))
+                .start(
+                    ChatGptLoginKind::Browser,
+                    &unsafe_result,
+                    Instant::now(),
+                    Duration::from_secs(1)
+                )
                 .unwrap_err(),
             CodexAccountError::UnsafeAuthorizationUrl
         );
@@ -457,7 +500,12 @@ mod tests {
         });
         assert_eq!(
             login
-                .start(ChatGptLoginKind::DeviceCode, &device, Instant::now(), Duration::from_secs(1))
+                .start(
+                    ChatGptLoginKind::DeviceCode,
+                    &device,
+                    Instant::now(),
+                    Duration::from_secs(1)
+                )
                 .unwrap()
                 .user_code
                 .as_deref(),

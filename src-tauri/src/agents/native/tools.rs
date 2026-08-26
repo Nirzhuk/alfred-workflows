@@ -88,7 +88,11 @@ pub struct AlfredToolRequest {
 }
 
 impl AlfredToolRequest {
-    pub fn new(request_id: impl Into<String>, kind: AlfredToolKind, name: impl Into<String>) -> Self {
+    pub fn new(
+        request_id: impl Into<String>,
+        kind: AlfredToolKind,
+        name: impl Into<String>,
+    ) -> Self {
         Self {
             contract_version: TOOL_CONTRACT_VERSION,
             request_id: request_id.into(),
@@ -233,9 +237,7 @@ pub(crate) fn validate_tool_request(
             false,
         ));
     }
-    if request.max_output_bytes == 0
-        || request.max_output_bytes > DEFAULT_MAX_TOOL_OUTPUT_BYTES
-    {
+    if request.max_output_bytes == 0 || request.max_output_bytes > DEFAULT_MAX_TOOL_OUTPUT_BYTES {
         return Err(NativeRuntimeError::new(
             NativeErrorCode::ToolOutputLimitExceeded,
             "tool output limit exceeds the Alfred maximum",
@@ -250,7 +252,10 @@ pub(crate) fn validate_tool_request(
         return Err(invalid_tool("tool arguments exceed the Alfred limit"));
     }
     if contains_secret_material(&Value::Object(request.input.clone()))
-        || request.arguments.iter().any(|argument| contains_secret_marker(argument))
+        || request
+            .arguments
+            .iter()
+            .any(|argument| contains_secret_marker(argument))
         || contains_secret_marker(&request.name)
     {
         return Err(NativeRuntimeError::new(
@@ -311,7 +316,9 @@ pub(crate) fn normalize_tool_result(
     Ok(result)
 }
 
-fn reject_cli_permission_inheritance(request: &AlfredToolRequest) -> Result<(), NativeRuntimeError> {
+fn reject_cli_permission_inheritance(
+    request: &AlfredToolRequest,
+) -> Result<(), NativeRuntimeError> {
     let serialized = serde_json::to_string(request)
         .map_err(|_| invalid_tool("tool request could not be encoded"))?;
     if contains_cli_permission_flag(&serialized) {
@@ -342,9 +349,10 @@ pub fn validate_workspace_path(
         normalize_lexically(&working_directory.join(path))
     }?;
     let absolute = canonicalize_with_missing(&absolute)?;
-    let allowed = roots.iter().filter_map(|root| canonicalize_with_missing(root).ok()).any(|root| {
-        absolute == root || absolute.starts_with(&root)
-    });
+    let allowed = roots
+        .iter()
+        .filter_map(|root| canonicalize_with_missing(root).ok())
+        .any(|root| absolute == root || absolute.starts_with(&root));
     if allowed {
         Ok(absolute)
     } else {

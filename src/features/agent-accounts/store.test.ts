@@ -10,10 +10,15 @@ import type {
 const provider: AgentProviderRegistration = {
   providerId: "codex",
   providerName: "Codex",
+  productId: "chatgpt_codex",
+  productName: "ChatGPT Codex",
   harness: "alfred",
-  authMethods: ["chatgpt_oauth", "chatgpt_device_code"],
-  billingSource: "chatgpt_subscription",
+  authMethods: ["oauth_pkce", "device_code"],
+  billingSource: "provider_subscription",
+  billingOwner: "subscription_account",
   credentialCustody: "runtime_managed",
+  managedRuntimeId: "codex_python_sdk",
+  managedRuntimeVersion: "0.147.0",
   connectAvailable: true,
   gateCode: null,
 };
@@ -22,13 +27,22 @@ const account: AgentAccount = {
   id: "account_opaque",
   providerId: "codex",
   providerName: "Codex",
+  productId: "openai_api",
+  productName: "OpenAI API",
   harness: "alfred",
   displayName: "Codex User",
   externalAccountId: "user-1",
   externalWorkspaceId: null,
-  authMethod: "oauth_pkce",
+  authMethod: "api_key",
   custodyMode: "alfred_managed",
+  managedRuntimeId: null,
+  managedRuntimeVersion: null,
   scopes: ["models:read"],
+  billingSource: "provider_api",
+  billingOwner: "credential_owner",
+  entitlementState: "unknown",
+  entitlementSource: "provider_unobserved",
+  entitlementObservedAt: null,
   status: "connected",
   expiresAt: null,
   lastCheckedAt: null,
@@ -40,6 +54,7 @@ const account: AgentAccount = {
 const attempt: AgentAuthorizationStarted = {
   attemptId: "attempt-opaque",
   providerId: "codex",
+  productId: "chatgpt_codex",
   authorizationUrl: "https://provider.invalid/authorize",
   userCode: null,
   expiresAt: "2099-01-01T00:00:00Z",
@@ -64,6 +79,7 @@ test("keeps only the redacted account DTO shape in React state", async () => {
   const unsafe = {
     ...account,
     credentialRef: "credential-secret",
+    runtimeProfileRef: "profile-secret",
     identityKey: "identity-secret",
     accessToken: "token-secret",
   } as AgentAccount;
@@ -73,6 +89,7 @@ test("keeps only the redacted account DTO shape in React state", async () => {
   expect(await store.getState().load()).toBe(true);
   const serialized = JSON.stringify(store.getState().accounts);
   expect(serialized).not.toContain("credential-secret");
+  expect(serialized).not.toContain("profile-secret");
   expect(serialized).not.toContain("identity-secret");
   expect(serialized).not.toContain("token-secret");
   expect(redactAgentAccount(unsafe)).toEqual(account);
@@ -87,11 +104,11 @@ test("authorization cancellation removes process-local attempt state", async () 
       },
     }),
   );
-  expect(await store.getState().start("codex")).toEqual(attempt);
-  expect(store.getState().attempts.codex).toEqual(attempt);
-  await store.getState().cancel("codex");
+  expect(await store.getState().start("codex", "chatgpt_codex")).toEqual(attempt);
+  expect(store.getState().attempts.chatgpt_codex).toEqual(attempt);
+  await store.getState().cancel("chatgpt_codex");
   expect(cancelled).toBe("attempt-opaque");
-  expect(store.getState().attempts.codex).toBeUndefined();
+  expect(store.getState().attempts.chatgpt_codex).toBeUndefined();
 });
 
 test("authorization state keeps only the safe start fields", async () => {
@@ -104,7 +121,7 @@ test("authorization state keeps only the safe start fields", async () => {
   const store = createAgentAccountsStore(
     fakeApi({ startAuthorization: async () => unsafe }),
   );
-  await store.getState().start("codex");
+  await store.getState().start("codex", "chatgpt_codex");
   const serialized = JSON.stringify(store.getState().attempts);
   expect(serialized).not.toContain("token-secret");
   expect(serialized).not.toContain("code-secret");
@@ -119,6 +136,8 @@ test("API-key connect passes the secret transiently and keeps only redacted meta
     id: "account_claude",
     providerId: "claude_code",
     providerName: "Claude",
+    productId: "claude_api",
+    productName: "Claude API",
     displayName: "API key",
     externalAccountId: null,
     authMethod: "api_key" as const,
@@ -128,8 +147,9 @@ test("API-key connect passes the secret transiently and keeps only redacted meta
   } as AgentAccount;
   const store = createAgentAccountsStore(
     fakeApi({
-      connectApiKeyAccount: async (providerId, harness, accountId, secret) => {
+      connectApiKeyAccount: async (providerId, productId, harness, accountId, secret) => {
         expect(providerId).toBe("claude_code");
+        expect(productId).toBe("claude_api");
         expect(harness).toBe("alfred");
         expect(accountId).toBeNull();
         received = secret;
@@ -138,7 +158,7 @@ test("API-key connect passes the secret transiently and keeps only redacted meta
     }),
   );
 
-  expect(await store.getState().connectApiKey("claude_code", apiKey)).toBe(true);
+  expect(await store.getState().connectApiKey("claude_code", "claude_api", apiKey)).toBe(true);
   expect(received).toBe(apiKey);
   const serialized = JSON.stringify(store.getState());
   expect(serialized).not.toContain(apiKey);
@@ -162,7 +182,7 @@ test("API-key failures expose only mapped errors and never retain the submitted 
     }),
   );
 
-  expect(await store.getState().connectApiKey("grok", apiKey)).toBe(false);
+  expect(await store.getState().connectApiKey("grok", "grok_api", apiKey)).toBe(false);
   expect(store.getState().error).toEqual({
     code: "credential_store_locked",
     message: "Unlock the system credential store and try again.",

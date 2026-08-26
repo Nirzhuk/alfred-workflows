@@ -14,11 +14,11 @@ pub use account::{
     OpenCodeAccountBinding, OpenCodeAuthKind, OpenCodeRoute, MAX_BILLING_OWNER_BYTES,
     MAX_UPSTREAM_ID_BYTES,
 };
-pub use package::{
-    native_release_gate, OpenCodeNativeReleaseGate, OpenCodePackagePlatform,
-    OPENCODE_LICENSE, OPENCODE_RUNTIME_VERSION,
-};
 pub use launch::OpenCodeLaunchSpec;
+pub use package::{
+    native_release_gate, OpenCodeNativeReleaseGate, OpenCodePackagePlatform, OPENCODE_LICENSE,
+    OPENCODE_RUNTIME_VERSION,
+};
 pub use protocol::{
     decode_server_event, map_http_failure, OpenCodeProtocolEvent, OpenCodeServerFailure,
     OpenCodeToolPermission,

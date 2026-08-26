@@ -66,8 +66,7 @@ impl OpenCodeLaunchSpec {
             ("OPENCODE_CONFIG_DIR".into(), path_text(&config)?),
             (
                 "OPENCODE_CONFIG_CONTENT".into(),
-                r#"{"autoupdate":false,"share":"disabled","permission":{"*":"deny"}}"#
-                    .into(),
+                r#"{"autoupdate":false,"share":"disabled","permission":{"*":"deny"}}"#.into(),
             ),
             ("OPENCODE_DISABLE_PROJECT_CONFIG".into(), "true".into()),
             ("OPENCODE_SERVER_USERNAME".into(), SERVER_USERNAME.into()),
@@ -114,7 +113,9 @@ fn validate_absolute_file(path: &Path, label: &str) -> Result<(), NativeRuntimeE
 
 fn validate_runtime_home(path: &Path) -> Result<(), NativeRuntimeError> {
     if !path.is_absolute() || path.parent().is_none() || path.file_name().is_none() {
-        Err(invalid_launch("OpenCode runtime home must be a dedicated absolute directory"))
+        Err(invalid_launch(
+            "OpenCode runtime home must be a dedicated absolute directory",
+        ))
     } else {
         Ok(())
     }

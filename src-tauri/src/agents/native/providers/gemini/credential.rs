@@ -85,7 +85,9 @@ pub fn credential_from(
         .ok_or_else(|| unavailable("gemini account has no stored API key"))?;
 
     validate_key(key)?;
-    Ok(GeminiCredential { key: key.to_owned() })
+    Ok(GeminiCredential {
+        key: key.to_owned(),
+    })
 }
 
 /// Bounds the key without guessing at a prefix.

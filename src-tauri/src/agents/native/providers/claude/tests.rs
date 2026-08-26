@@ -38,8 +38,12 @@ impl NativeAccountResolver for TestResolver {
         &self,
         account_ref: &OpaqueAgentAccountRef,
         provider: AgentProvider,
+        product: crate::agent_accounts::models::AgentProductId,
     ) -> Result<ResolvedNativeAccount, NativeRuntimeError> {
-        if account_ref != &self.account_ref || provider != AgentProvider::ClaudeCode {
+        if account_ref != &self.account_ref
+            || provider != AgentProvider::ClaudeCode
+            || product != crate::agent_accounts::models::AgentProductId::ClaudeApi
+        {
             return Err(NativeRuntimeError::new(
                 NativeErrorCode::AccountMismatch,
                 "fixture account does not match",
@@ -49,6 +53,7 @@ impl NativeAccountResolver for TestResolver {
         Ok(ResolvedNativeAccount {
             account_ref: account_ref.clone(),
             provider,
+            product: crate::agent_accounts::models::AgentProductId::ClaudeApi,
             credential: NativeCredential::new(TestApiKey(self.key.clone())),
         })
     }
@@ -86,7 +91,10 @@ impl ClaudeTransport for ScriptedTransport {
         body: &Value,
         _cancellation: &NativeCancellation,
     ) -> Result<Box<dyn ClaudeByteStream>, NativeRuntimeError> {
-        assert_eq!(api_key, TEST_KEY, "the runtime must send the stored API key");
+        assert_eq!(
+            api_key, TEST_KEY,
+            "the runtime must send the stored API key"
+        );
         self.bodies.lock().expect("bodies").push(body.clone());
         if let Some((status, payload)) = self.fail_with.as_ref() {
             return Err(classify_status(*status, payload).error());
@@ -181,7 +189,13 @@ impl AlfredApprovalHandler for FixedApprover {
 fn sse(events: &[Value]) -> Vec<String> {
     events
         .iter()
-        .map(|event| format!("event: {}\ndata: {}\n\n", event["type"].as_str().unwrap(), event))
+        .map(|event| {
+            format!(
+                "event: {}\ndata: {}\n\n",
+                event["type"].as_str().unwrap(),
+                event
+            )
+        })
         .collect()
 }
 
@@ -256,7 +270,11 @@ impl ClaudeTransport for SharedTransport {
 }
 
 fn request(account_ref: OpaqueAgentAccountRef) -> NativeTurnRequest {
-    request_with(account_ref, NativeEventLimits::default(), DEFAULT_TURN_TIMEOUT)
+    request_with(
+        account_ref,
+        NativeEventLimits::default(),
+        DEFAULT_TURN_TIMEOUT,
+    )
 }
 
 fn request_with(
@@ -381,6 +399,7 @@ fn a_non_api_key_credential_is_refused() {
     let account = ResolvedNativeAccount {
         account_ref: OpaqueAgentAccountRef::parse("account_claude-01").expect("ref"),
         provider: AgentProvider::ClaudeCode,
+        product: crate::agent_accounts::models::AgentProductId::ClaudeApi,
         credential: NativeCredential::new(TestApiKey("oauth-access-token".into())),
     };
     let error = runtime.validate_account(&account).expect_err("refused");
@@ -393,9 +412,12 @@ fn an_admin_api_key_is_not_accepted_as_a_messages_api_key() {
     let account = ResolvedNativeAccount {
         account_ref: OpaqueAgentAccountRef::parse("account_claude-01").expect("ref"),
         provider: AgentProvider::ClaudeCode,
+        product: crate::agent_accounts::models::AgentProductId::ClaudeApi,
         credential: NativeCredential::new(TestApiKey("sk-ant-admin01-fixture-key".into())),
     };
-    let error = runtime.validate_account(&account).expect_err("admin key refused");
+    let error = runtime
+        .validate_account(&account)
+        .expect_err("admin key refused");
     assert_eq!(error.code, NativeErrorCode::AccountUnavailable);
 }
 
@@ -430,7 +452,11 @@ fn text_stream_produces_bounded_assistant_events() {
 #[test]
 fn thinking_blocks_are_replayed_but_never_emitted() {
     let harness = harness(ScriptedTransport::new(vec![
-        sse(&tool_turn("toolu_1", "alfred_read_file", json!({"path": "."}))),
+        sse(&tool_turn(
+            "toolu_1",
+            "alfred_read_file",
+            json!({"path": "."}),
+        )),
         sse(&text_turn("done")),
     ]));
     let request = request(harness.account_ref.clone());
@@ -654,8 +680,8 @@ fn a_looping_model_is_stopped_by_the_tool_iteration_bound() {
 fn cancellation_stops_the_turn_mid_stream() {
     let events = text_turn("hello");
     let mut transport = ScriptedTransport::new(vec![sse(&events)]);
-    let cancellation = NativeCancellation::new("cancel_claude", DEFAULT_TURN_TIMEOUT)
-        .expect("cancellation");
+    let cancellation =
+        NativeCancellation::new("cancel_claude", DEFAULT_TURN_TIMEOUT).expect("cancellation");
     transport.cancel_after = Some((1, cancellation.clone()));
     let harness = harness(transport);
     let mut request = request(harness.account_ref.clone());
@@ -687,14 +713,62 @@ fn a_slow_stream_is_stopped_by_the_turn_deadline() {
 #[test]
 fn http_failures_map_to_stable_alfred_errors() {
     let cases = [
-        (401, r#"{"error":{"type":"authentication_error"}}"#, ClaudeFailure::InvalidAuth, NativeErrorCode::AccountUnavailable, false),
-        (402, r#"{"error":{"type":"billing_error"}}"#, ClaudeFailure::Billing, NativeErrorCode::AccountUnavailable, false),
-        (403, r#"{"error":{"type":"permission_error"}}"#, ClaudeFailure::PermissionDenied, NativeErrorCode::PermissionDenied, false),
-        (404, r#"{"error":{"type":"not_found_error"}}"#, ClaudeFailure::ModelUnavailable, NativeErrorCode::ModelUnavailable, false),
-        (413, r#"{"error":{"type":"request_too_large"}}"#, ClaudeFailure::RequestTooLarge, NativeErrorCode::InvalidRequest, false),
-        (429, r#"{"error":{"type":"rate_limit_error"}}"#, ClaudeFailure::RateLimited, NativeErrorCode::ProviderUnavailable, true),
-        (500, r#"{"error":{"type":"api_error"}}"#, ClaudeFailure::ProviderUnavailable, NativeErrorCode::ProviderUnavailable, true),
-        (529, r#"{"error":{"type":"overloaded_error"}}"#, ClaudeFailure::Overloaded, NativeErrorCode::ProviderUnavailable, true),
+        (
+            401,
+            r#"{"error":{"type":"authentication_error"}}"#,
+            ClaudeFailure::InvalidAuth,
+            NativeErrorCode::AccountUnavailable,
+            false,
+        ),
+        (
+            402,
+            r#"{"error":{"type":"billing_error"}}"#,
+            ClaudeFailure::Billing,
+            NativeErrorCode::AccountUnavailable,
+            false,
+        ),
+        (
+            403,
+            r#"{"error":{"type":"permission_error"}}"#,
+            ClaudeFailure::PermissionDenied,
+            NativeErrorCode::PermissionDenied,
+            false,
+        ),
+        (
+            404,
+            r#"{"error":{"type":"not_found_error"}}"#,
+            ClaudeFailure::ModelUnavailable,
+            NativeErrorCode::ModelUnavailable,
+            false,
+        ),
+        (
+            413,
+            r#"{"error":{"type":"request_too_large"}}"#,
+            ClaudeFailure::RequestTooLarge,
+            NativeErrorCode::InvalidRequest,
+            false,
+        ),
+        (
+            429,
+            r#"{"error":{"type":"rate_limit_error"}}"#,
+            ClaudeFailure::RateLimited,
+            NativeErrorCode::ProviderUnavailable,
+            true,
+        ),
+        (
+            500,
+            r#"{"error":{"type":"api_error"}}"#,
+            ClaudeFailure::ProviderUnavailable,
+            NativeErrorCode::ProviderUnavailable,
+            true,
+        ),
+        (
+            529,
+            r#"{"error":{"type":"overloaded_error"}}"#,
+            ClaudeFailure::Overloaded,
+            NativeErrorCode::ProviderUnavailable,
+            true,
+        ),
         (
             400,
             r#"{"error":{"type":"invalid_request_error","message":"prompt is too long: 1200000 tokens > 1000000 maximum"}}"#,
@@ -702,7 +776,13 @@ fn http_failures_map_to_stable_alfred_errors() {
             NativeErrorCode::InvalidRequest,
             false,
         ),
-        (400, r#"{"error":{"type":"invalid_request_error","message":"bad field"}}"#, ClaudeFailure::InvalidRequest, NativeErrorCode::InvalidRequest, false),
+        (
+            400,
+            r#"{"error":{"type":"invalid_request_error","message":"bad field"}}"#,
+            ClaudeFailure::InvalidRequest,
+            NativeErrorCode::InvalidRequest,
+            false,
+        ),
     ];
     for (status, body, expected, code, retryable) in cases {
         let failure = classify_status(status, body);
@@ -768,7 +848,9 @@ fn a_context_limit_failure_surfaces_as_a_terminal_request_error() {
 fn a_mid_stream_error_event_is_classified_not_streamed() {
     let mut events = text_turn("partial");
     events.truncate(3);
-    events.push(json!({"type": "error", "error": {"type": "overloaded_error", "message": "overloaded"}}));
+    events.push(
+        json!({"type": "error", "error": {"type": "overloaded_error", "message": "overloaded"}}),
+    );
     let harness = harness(ScriptedTransport::new(vec![sse(&events)]));
     let request = request(harness.account_ref.clone());
     let (executor, approver) = deny_all();
@@ -796,18 +878,26 @@ fn provider_error_text_never_reaches_the_user() {
 #[test]
 fn the_sse_decoder_reassembles_events_split_across_chunks() {
     let mut decoder = SseDecoder::default();
-    assert!(decoder.push(b"event: message_stop\ndata: {\"ty").expect("first").is_empty());
+    assert!(decoder
+        .push(b"event: message_stop\ndata: {\"ty")
+        .expect("first")
+        .is_empty());
     let events = decoder.push(b"pe\":\"message_stop\"}\n\n").expect("second");
     assert_eq!(events.len(), 1);
     assert_eq!(events[0]["type"], json!("message_stop"));
     // Keep-alive comments and the terminator carry no payload.
-    assert!(decoder.push(b": ping\ndata: [DONE]\n\n").expect("ping").is_empty());
+    assert!(decoder
+        .push(b": ping\ndata: [DONE]\n\n")
+        .expect("ping")
+        .is_empty());
 }
 
 #[test]
 fn a_malformed_stream_payload_is_rejected() {
     let mut decoder = SseDecoder::default();
-    let error = decoder.push(b"data: {not json}\n\n").expect_err("malformed");
+    let error = decoder
+        .push(b"data: {not json}\n\n")
+        .expect_err("malformed");
     assert_eq!(error.code, NativeErrorCode::InvalidEvent);
 }
 
@@ -883,7 +973,9 @@ fn production_http_policy_refuses_redirects_before_replaying_x_api_key() {
         let mut request = [0u8; 4096];
         let read = stream.read(&mut request).expect("read request");
         let request = String::from_utf8_lossy(&request[..read]);
-        assert!(request.to_ascii_lowercase().contains("x-api-key: sk-ant-api03-fixture-key"));
+        assert!(request
+            .to_ascii_lowercase()
+            .contains("x-api-key: sk-ant-api03-fixture-key"));
         write!(
             stream,
             "HTTP/1.1 307 Temporary Redirect\r\nLocation: {sink_url}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
@@ -892,8 +984,8 @@ fn production_http_policy_refuses_redirects_before_replaying_x_api_key() {
     });
 
     let transport = HttpClaudeTransport::fixture(&source_url, &source_url).expect("transport");
-    let cancellation = NativeCancellation::new("claude-redirect", Duration::from_secs(5))
-        .expect("cancellation");
+    let cancellation =
+        NativeCancellation::new("claude-redirect", Duration::from_secs(5)).expect("cancellation");
     let result = transport.stream_messages(TEST_KEY, &json!({"messages": []}), &cancellation);
     if result.is_ok() {
         panic!("redirect response must not become a message stream");

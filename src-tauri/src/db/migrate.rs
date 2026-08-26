@@ -3,8 +3,8 @@ use rusqlite::Connection;
 use super::history::{index_memory, index_run_step};
 use super::DbError;
 
-/// Apply additive migrations for databases created with earlier schemas.
-/// `CREATE TABLE IF NOT EXISTS` does not alter existing tables.
+/// Apply compatibility migrations for databases created with earlier schemas.
+/// Most are additive; contract changes use explicit transactional rebuilds.
 pub fn apply_migrations(conn: &Connection) -> Result<(), DbError> {
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS workflow_folders (
@@ -110,31 +110,7 @@ pub fn apply_migrations(conn: &Connection) -> Result<(), DbError> {
         "provider_metadata_json",
         "TEXT NOT NULL DEFAULT '{}'",
     )?;
-    conn.execute_batch(
-        "CREATE TABLE IF NOT EXISTS agent_accounts (
-           id TEXT PRIMARY KEY NOT NULL,
-           provider_id TEXT NOT NULL,
-           harness TEXT NOT NULL,
-           identity_key TEXT NOT NULL,
-           display_name TEXT,
-           external_account_id TEXT,
-           external_workspace_id TEXT,
-           auth_method TEXT NOT NULL,
-           custody_mode TEXT NOT NULL,
-           scopes_json TEXT NOT NULL DEFAULT '[]',
-           status TEXT NOT NULL DEFAULT 'error' CHECK (status IN ('connected', 'expired', 'error', 'revoked', 'disconnect_pending')),
-           expires_at TEXT,
-           last_checked_at TEXT,
-           last_error_code TEXT,
-           credential_ref TEXT NOT NULL UNIQUE,
-           created_at TEXT NOT NULL,
-           updated_at TEXT NOT NULL
-         );
-         CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_accounts_identity
-           ON agent_accounts(provider_id, harness, identity_key);
-         CREATE INDEX IF NOT EXISTS idx_agent_accounts_provider_id
-           ON agent_accounts(provider_id);",
-    )?;
+    migrate_agent_account_contract(conn)?;
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS app_trigger_state (
            trigger_id TEXT PRIMARY KEY NOT NULL REFERENCES triggers(id) ON DELETE CASCADE,
@@ -191,6 +167,217 @@ pub fn apply_migrations(conn: &Connection) -> Result<(), DbError> {
          );",
     )?;
 
+    Ok(())
+}
+
+const AGENT_ACCOUNTS_CONTRACT_TABLE: &str = "
+  CREATE TABLE agent_accounts_contract (
+    id TEXT PRIMARY KEY NOT NULL,
+    provider_id TEXT NOT NULL,
+    product_id TEXT NOT NULL,
+    harness TEXT NOT NULL,
+    identity_key TEXT NOT NULL,
+    display_name TEXT,
+    external_account_id TEXT,
+    external_workspace_id TEXT,
+    auth_method TEXT NOT NULL,
+    custody_mode TEXT NOT NULL,
+    managed_runtime_id TEXT,
+    managed_runtime_version TEXT,
+    runtime_profile_ref TEXT UNIQUE,
+    scopes_json TEXT NOT NULL DEFAULT '[]',
+    billing_source TEXT NOT NULL,
+    billing_owner TEXT NOT NULL,
+    entitlement_state TEXT NOT NULL DEFAULT 'unknown'
+      CHECK (entitlement_state IN ('unknown', 'eligible', 'limited', 'exhausted', 'ineligible')),
+    entitlement_source TEXT NOT NULL,
+    entitlement_observed_at TEXT,
+    status TEXT NOT NULL DEFAULT 'error'
+      CHECK (status IN ('connected', 'expired', 'error', 'revoked', 'disconnect_pending')),
+    expires_at TEXT,
+    last_checked_at TEXT,
+    last_error_code TEXT,
+    credential_ref TEXT UNIQUE,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    CHECK ((managed_runtime_id IS NULL) = (managed_runtime_version IS NULL)),
+    CHECK (runtime_profile_ref IS NULL OR managed_runtime_id IS NOT NULL),
+    CHECK (runtime_profile_ref IS NOT NULL OR credential_ref IS NOT NULL)
+  );";
+
+const AGENT_ACCOUNT_CREDENTIAL_CLEANUP_TABLE: &str = "
+  CREATE TABLE IF NOT EXISTS agent_account_credential_cleanup (
+    account_id TEXT PRIMARY KEY NOT NULL,
+    credential_ref TEXT NOT NULL UNIQUE,
+    cleanup_owner TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );";
+
+fn migrate_agent_account_contract(conn: &Connection) -> Result<(), DbError> {
+    let transaction = conn.unchecked_transaction()?;
+    transaction.execute_batch("DROP TABLE IF EXISTS agent_accounts_contract;")?;
+    transaction.execute_batch(AGENT_ACCOUNT_CREDENTIAL_CLEANUP_TABLE)?;
+
+    if !table_has_column(&transaction, "agent_accounts", "id")? {
+        transaction.execute_batch(AGENT_ACCOUNTS_CONTRACT_TABLE)?;
+        transaction
+            .execute_batch("ALTER TABLE agent_accounts_contract RENAME TO agent_accounts;")?;
+        create_agent_account_indexes(&transaction)?;
+        transaction.commit()?;
+        return Ok(());
+    }
+    if table_has_column(&transaction, "agent_accounts", "product_id")? {
+        create_agent_account_indexes(&transaction)?;
+        transaction.commit()?;
+        return Ok(());
+    }
+
+    let unsupported: i64 = transaction.query_row(
+        "SELECT COUNT(*) FROM agent_accounts
+         WHERE provider_id NOT IN (
+           'claude_code', 'cursor', 'codex', 'opencode',
+           'github_copilot', 'gemini', 'grok'
+         )",
+        [],
+        |row| row.get(0),
+    )?;
+    if unsupported != 0 {
+        return Err(DbError::Other(
+            "legacy native account has no registered product route".into(),
+        ));
+    }
+
+    transaction.execute_batch("DROP INDEX IF EXISTS idx_agent_accounts_identity;")?;
+    transaction.execute_batch(AGENT_ACCOUNTS_CONTRACT_TABLE)?;
+    transaction.execute_batch(
+        "INSERT OR IGNORE INTO agent_account_credential_cleanup (
+           account_id, credential_ref, cleanup_owner, created_at
+         )
+         SELECT id, credential_ref, 'legacy_agent_account_migration', updated_at
+         FROM agent_accounts
+         WHERE (provider_id = 'claude_code' AND auth_method <> 'api_key')
+            OR (provider_id = 'codex' AND auth_method <> 'api_key')
+            OR (provider_id = 'opencode' AND custody_mode = 'runtime_managed');
+         INSERT INTO agent_accounts_contract (
+           id, provider_id, product_id, harness, identity_key, display_name,
+           external_account_id, external_workspace_id, auth_method, custody_mode,
+           managed_runtime_id, managed_runtime_version, runtime_profile_ref,
+           scopes_json, billing_source, billing_owner, entitlement_state,
+           entitlement_source, entitlement_observed_at, status, expires_at,
+           last_checked_at, last_error_code, credential_ref, created_at, updated_at
+         )
+         SELECT
+           id,
+           provider_id,
+           CASE
+             WHEN provider_id = 'claude_code' AND auth_method = 'api_key' THEN 'claude_api'
+             WHEN provider_id = 'claude_code' THEN 'claude_code_subscription'
+             WHEN provider_id = 'codex' AND auth_method = 'api_key' THEN 'openai_api'
+             WHEN provider_id = 'codex' THEN 'chatgpt_codex'
+             WHEN provider_id = 'opencode' AND custody_mode = 'runtime_managed' THEN 'opencode_go'
+             WHEN provider_id = 'opencode' THEN 'opencode_zen'
+             WHEN provider_id = 'cursor' THEN 'cursor_cloud'
+             WHEN provider_id = 'github_copilot' THEN 'github_copilot_subscription'
+             WHEN provider_id = 'gemini' THEN 'gemini_api'
+             WHEN provider_id = 'grok' THEN 'grok_api'
+           END,
+           harness,
+           identity_key,
+           display_name,
+           external_account_id,
+           external_workspace_id,
+           CASE
+             WHEN provider_id = 'claude_code' AND auth_method <> 'api_key' THEN 'runtime'
+             WHEN provider_id = 'codex' AND auth_method <> 'api_key' THEN 'device_code'
+             WHEN provider_id IN ('opencode', 'cursor', 'gemini', 'grok') THEN 'api_key'
+             WHEN provider_id = 'github_copilot' THEN 'device_code'
+             ELSE auth_method
+           END,
+           CASE
+             WHEN provider_id = 'claude_code' AND auth_method <> 'api_key' THEN 'runtime_managed'
+             WHEN provider_id = 'codex' AND auth_method <> 'api_key' THEN 'runtime_managed'
+             WHEN provider_id = 'opencode' AND custody_mode = 'runtime_managed' THEN 'runtime_managed'
+             ELSE 'alfred_managed'
+           END,
+           CASE
+             WHEN provider_id = 'claude_code' AND auth_method <> 'api_key' THEN 'claude_code_managed'
+             WHEN provider_id = 'codex' AND auth_method <> 'api_key' THEN 'codex_python_sdk'
+             WHEN provider_id = 'opencode' THEN 'opencode_server'
+             ELSE NULL
+           END,
+           CASE
+             WHEN provider_id = 'claude_code' AND auth_method <> 'api_key' THEN '2.1.246'
+             WHEN provider_id = 'codex' AND auth_method <> 'api_key' THEN '0.147.0'
+             WHEN provider_id = 'opencode' THEN '1.18.23'
+             ELSE NULL
+           END,
+           CASE
+             WHEN provider_id = 'claude_code' AND auth_method <> 'api_key' THEN 'migration-profile:' || id
+             WHEN provider_id = 'codex' AND auth_method <> 'api_key' THEN 'migration-profile:' || id
+             WHEN provider_id = 'opencode' AND custody_mode = 'runtime_managed' THEN 'migration-profile:' || id
+             WHEN provider_id = 'opencode' THEN 'migration-profile:' || id
+             ELSE NULL
+           END,
+           scopes_json,
+           CASE
+             WHEN provider_id = 'claude_code' AND auth_method <> 'api_key' THEN 'provider_subscription'
+             WHEN provider_id = 'codex' AND auth_method <> 'api_key' THEN 'provider_subscription'
+             WHEN provider_id = 'opencode' AND custody_mode = 'runtime_managed' THEN 'provider_subscription'
+             WHEN provider_id = 'github_copilot' THEN 'provider_subscription'
+             WHEN provider_id = 'opencode' THEN 'provider_payg'
+             ELSE 'provider_api'
+           END,
+           CASE
+             WHEN provider_id = 'claude_code' AND auth_method <> 'api_key' THEN 'subscription_account'
+             WHEN provider_id = 'codex' AND auth_method <> 'api_key' THEN 'subscription_account'
+             WHEN provider_id = 'opencode' AND custody_mode = 'runtime_managed' THEN 'subscription_account'
+             WHEN provider_id = 'github_copilot' THEN 'subscription_account'
+             ELSE 'credential_owner'
+           END,
+           'unknown',
+           'migration',
+           NULL,
+           CASE
+             WHEN provider_id = 'claude_code' AND auth_method <> 'api_key' THEN 'error'
+             WHEN provider_id = 'codex' AND auth_method <> 'api_key' THEN 'error'
+             WHEN provider_id = 'opencode' THEN 'error'
+             ELSE status
+           END,
+           expires_at,
+           last_checked_at,
+           CASE
+             WHEN provider_id = 'claude_code' AND auth_method <> 'api_key' THEN 'managed_runtime_reconnect_required'
+             WHEN provider_id = 'codex' AND auth_method <> 'api_key' THEN 'managed_runtime_reconnect_required'
+             WHEN provider_id = 'opencode' THEN 'managed_runtime_reconnect_required'
+             ELSE last_error_code
+           END,
+           CASE
+             WHEN provider_id = 'claude_code' AND auth_method <> 'api_key' THEN NULL
+             WHEN provider_id = 'codex' AND auth_method <> 'api_key' THEN NULL
+             WHEN provider_id = 'opencode' AND custody_mode = 'runtime_managed' THEN NULL
+             ELSE credential_ref
+           END,
+           created_at,
+           updated_at
+         FROM agent_accounts;
+         DROP TABLE agent_accounts;
+         ALTER TABLE agent_accounts_contract RENAME TO agent_accounts;",
+    )?;
+    create_agent_account_indexes(&transaction)?;
+    transaction.commit()?;
+    Ok(())
+}
+
+fn create_agent_account_indexes(conn: &Connection) -> Result<(), DbError> {
+    conn.execute_batch(
+        "DROP INDEX IF EXISTS idx_agent_accounts_identity;
+         CREATE UNIQUE INDEX idx_agent_accounts_identity
+           ON agent_accounts(provider_id, product_id, harness, identity_key);
+         CREATE INDEX IF NOT EXISTS idx_agent_accounts_provider_id
+           ON agent_accounts(provider_id);
+         CREATE INDEX IF NOT EXISTS idx_agent_accounts_product_id
+           ON agent_accounts(product_id);",
+    )?;
     Ok(())
 }
 
@@ -677,6 +864,31 @@ mod tests {
     use super::*;
     use rusqlite::params;
 
+    const LEGACY_AGENT_ACCOUNT_SCHEMA: &str = "
+      CREATE TABLE agent_accounts (
+        id TEXT PRIMARY KEY NOT NULL,
+        provider_id TEXT NOT NULL,
+        harness TEXT NOT NULL,
+        identity_key TEXT NOT NULL,
+        display_name TEXT,
+        external_account_id TEXT,
+        external_workspace_id TEXT,
+        auth_method TEXT NOT NULL,
+        custody_mode TEXT NOT NULL,
+        scopes_json TEXT NOT NULL DEFAULT '[]',
+        status TEXT NOT NULL DEFAULT 'error',
+        expires_at TEXT,
+        last_checked_at TEXT,
+        last_error_code TEXT,
+        credential_ref TEXT NOT NULL UNIQUE,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE UNIQUE INDEX idx_agent_accounts_identity
+        ON agent_accounts(provider_id, harness, identity_key);
+      CREATE INDEX idx_agent_accounts_provider_id
+        ON agent_accounts(provider_id);";
+
     fn columns(conn: &Connection, table: &str) -> Vec<String> {
         let mut stmt = conn
             .prepare(&format!("PRAGMA table_info({table})"))
@@ -788,8 +1000,13 @@ mod tests {
 
             let names = columns(&conn, "agent_accounts");
             assert!(names.contains(&"identity_key".to_owned()));
+            assert!(names.contains(&"product_id".to_owned()));
             assert!(names.contains(&"credential_ref".to_owned()));
             assert!(names.contains(&"custody_mode".to_owned()));
+            assert!(names.contains(&"managed_runtime_id".to_owned()));
+            assert!(names.contains(&"runtime_profile_ref".to_owned()));
+            assert!(names.contains(&"billing_owner".to_owned()));
+            assert!(names.contains(&"entitlement_state".to_owned()));
             assert!(!names.iter().any(|name| {
                 let name = name.to_ascii_lowercase();
                 name.contains("token")
@@ -799,6 +1016,176 @@ mod tests {
                     || name.contains("nonce")
             }));
         }
+    }
+
+    #[test]
+    fn production_order_upgrades_legacy_agent_accounts_before_product_indexes() {
+        let conn = Connection::open_in_memory().expect("open database");
+        conn.execute_batch(LEGACY_AGENT_ACCOUNT_SCHEMA)
+            .expect("initialize legacy agent account schema");
+        conn.execute(
+            "INSERT INTO agent_accounts (
+               id, provider_id, harness, identity_key, auth_method, custody_mode,
+               status, credential_ref, created_at, updated_at
+             ) VALUES (
+               'legacy-api', 'gemini', 'alfred', 'identity', 'api_key',
+               'alfred_managed', 'connected', 'legacy-secret', 'now', 'now'
+             )",
+            [],
+        )
+        .expect("insert legacy account");
+
+        conn.execute_batch(include_str!("schema.sql"))
+            .expect("run current schema before migrations");
+        assert!(!columns(&conn, "agent_accounts").contains(&"product_id".to_owned()));
+
+        apply_migrations(&conn).expect("upgrade production-order schema");
+        let migrated: (String, String) = conn
+            .query_row(
+                "SELECT product_id, credential_ref
+                 FROM agent_accounts WHERE id = 'legacy-api'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("load migrated account");
+        assert_eq!(migrated, ("gemini_api".into(), "legacy-secret".into()));
+        let indexes = {
+            let mut statement = conn
+                .prepare("SELECT name FROM pragma_index_list('agent_accounts')")
+                .expect("prepare index list");
+            statement
+                .query_map([], |row| row.get::<_, String>(0))
+                .expect("query indexes")
+                .collect::<Result<Vec<_>, _>>()
+                .expect("collect indexes")
+        };
+        assert!(indexes.contains(&"idx_agent_accounts_identity".to_owned()));
+        assert!(indexes.contains(&"idx_agent_accounts_product_id".to_owned()));
+    }
+
+    #[test]
+    fn agent_account_rebuild_discards_stale_scratch_and_retries_transactionally() {
+        let conn = Connection::open_in_memory().expect("open database");
+        conn.execute_batch(LEGACY_AGENT_ACCOUNT_SCHEMA)
+            .expect("initialize legacy agent account schema");
+        conn.execute_batch(
+            "INSERT INTO agent_accounts (
+               id, provider_id, harness, identity_key, auth_method, custody_mode,
+               status, credential_ref, created_at, updated_at
+             ) VALUES (
+               'legacy-api', 'grok', 'alfred', 'identity', 'api_key',
+               'alfred_managed', 'connected', 'legacy-secret', 'now', 'now'
+             );
+             CREATE TABLE agent_accounts_contract (stale TEXT NOT NULL);",
+        )
+        .expect("create interrupted rebuild fixture");
+        conn.execute_batch(include_str!("schema.sql"))
+            .expect("run current schema before migrations");
+
+        apply_migrations(&conn).expect("retry interrupted rebuild");
+        assert_eq!(
+            conn.query_row(
+                "SELECT product_id FROM agent_accounts WHERE id = 'legacy-api'",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .expect("load retried row"),
+            "grok_api"
+        );
+        assert!(!table_has_column(&conn, "agent_accounts_contract", "stale")
+            .expect("inspect scratch table"));
+    }
+
+    #[test]
+    fn migrates_legacy_api_and_subscription_rows_to_distinct_access_routes() {
+        let conn = Connection::open_in_memory().expect("open database");
+        conn.execute_batch(include_str!("schema.sql"))
+            .expect("initialize schema");
+        conn.execute_batch(
+            "DROP TABLE agent_accounts;
+             CREATE TABLE agent_accounts (
+               id TEXT PRIMARY KEY NOT NULL,
+               provider_id TEXT NOT NULL,
+               harness TEXT NOT NULL,
+               identity_key TEXT NOT NULL,
+               display_name TEXT,
+               external_account_id TEXT,
+               external_workspace_id TEXT,
+               auth_method TEXT NOT NULL,
+               custody_mode TEXT NOT NULL,
+               scopes_json TEXT NOT NULL DEFAULT '[]',
+               status TEXT NOT NULL,
+               expires_at TEXT,
+               last_checked_at TEXT,
+               last_error_code TEXT,
+               credential_ref TEXT NOT NULL UNIQUE,
+               created_at TEXT NOT NULL,
+               updated_at TEXT NOT NULL
+             );
+             INSERT INTO agent_accounts VALUES
+               ('api', 'codex', 'alfred', 'identity-api', NULL, 'api-user', NULL,
+                'api_key', 'alfred_managed', '[]', 'connected', NULL, NULL, NULL,
+                'secret-api', 'now', 'now'),
+               ('subscription', 'codex', 'alfred', 'identity-sub', NULL, 'chatgpt-user', NULL,
+                'oauth_pkce', 'runtime_managed', '[]', 'connected', NULL, NULL, NULL,
+                'profile-sub', 'now', 'now');",
+        )
+        .expect("legacy account fixture");
+
+        apply_migrations(&conn).expect("migrate accounts");
+        let api: (String, Option<String>, Option<String>) = conn
+            .query_row(
+                "SELECT product_id, runtime_profile_ref, credential_ref
+                 FROM agent_accounts WHERE id = 'api'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("API route");
+        assert_eq!(api, ("openai_api".into(), None, Some("secret-api".into())));
+
+        let subscription: (String, String, String, Option<String>, String) = conn
+            .query_row(
+                "SELECT product_id, managed_runtime_id, runtime_profile_ref,
+                        credential_ref, status
+                 FROM agent_accounts WHERE id = 'subscription'",
+                [],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                    ))
+                },
+            )
+            .expect("subscription route");
+        assert_eq!(
+            subscription,
+            (
+                "chatgpt_codex".into(),
+                "codex_python_sdk".into(),
+                "migration-profile:subscription".into(),
+                None,
+                "error".into(),
+            )
+        );
+        let cleanup: (String, String) = conn
+            .query_row(
+                "SELECT credential_ref, cleanup_owner
+                 FROM agent_account_credential_cleanup
+                 WHERE account_id = 'subscription'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("legacy credential cleanup route");
+        assert_eq!(
+            cleanup,
+            (
+                "profile-sub".into(),
+                "legacy_agent_account_migration".into()
+            )
+        );
     }
 
     #[test]
@@ -1222,7 +1609,13 @@ mod tests {
             .expect("initialize schema");
         apply_migrations(&conn).expect("apply migrations");
 
-        for expected in ["enabled", "provider", "model", "max_candidates", "updated_at"] {
+        for expected in [
+            "enabled",
+            "provider",
+            "model",
+            "max_candidates",
+            "updated_at",
+        ] {
             assert!(
                 columns(&conn, "memory_review_settings").contains(&expected.to_owned()),
                 "missing settings column {expected}"
@@ -1252,8 +1645,15 @@ mod tests {
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
             )
             .expect("load singleton settings");
-        assert_eq!((enabled, provider.as_deref(), model.as_deref(), max_candidates),
-                   (0, None, None, 5));
+        assert_eq!(
+            (
+                enabled,
+                provider.as_deref(),
+                model.as_deref(),
+                max_candidates
+            ),
+            (0, None, None, 5)
+        );
         assert!(conn
             .execute(
                 "INSERT INTO memory_review_settings (id, enabled, max_candidates, updated_at)
@@ -1345,7 +1745,9 @@ mod tests {
         conn.execute("DELETE FROM runs WHERE id = 'run-1'", [])
             .expect("delete reviewed run");
         let candidates: i64 = conn
-            .query_row("SELECT COUNT(*) FROM memory_candidates", [], |row| row.get(0))
+            .query_row("SELECT COUNT(*) FROM memory_candidates", [], |row| {
+                row.get(0)
+            })
             .expect("count candidates");
         assert_eq!(candidates, 0);
 

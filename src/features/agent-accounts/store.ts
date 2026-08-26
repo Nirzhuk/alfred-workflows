@@ -4,6 +4,7 @@ import type {
   AgentAccount,
   AgentAccountError,
   AgentAuthorizationStarted,
+  AgentProductId,
   AgentProviderRegistration,
 } from "./types";
 
@@ -65,13 +66,22 @@ export function redactAgentAccount(account: AgentAccount): AgentAccount {
     id: account.id,
     providerId: account.providerId,
     providerName: account.providerName,
+    productId: account.productId,
+    productName: account.productName,
     harness: "alfred",
     displayName: account.displayName,
     externalAccountId: account.externalAccountId,
     externalWorkspaceId: account.externalWorkspaceId,
     authMethod: account.authMethod,
     custodyMode: account.custodyMode,
+    managedRuntimeId: account.managedRuntimeId,
+    managedRuntimeVersion: account.managedRuntimeVersion,
     scopes: [...account.scopes],
+    billingSource: account.billingSource,
+    billingOwner: account.billingOwner,
+    entitlementState: account.entitlementState,
+    entitlementSource: account.entitlementSource,
+    entitlementObservedAt: account.entitlementObservedAt,
     status: account.status,
     expiresAt: account.expiresAt,
     lastCheckedAt: account.lastCheckedAt,
@@ -87,6 +97,7 @@ export function redactAuthorizationAttempt(
   return {
     attemptId: attempt.attemptId,
     providerId: attempt.providerId,
+    productId: attempt.productId,
     authorizationUrl: attempt.authorizationUrl,
     userCode: attempt.userCode,
     expiresAt: attempt.expiresAt,
@@ -101,11 +112,12 @@ export type AgentAccountsState = {
   busyId: string | null;
   error: AgentAccountError | null;
   load: () => Promise<boolean>;
-  start: (providerId: string) => Promise<AgentAuthorizationStarted | null>;
-  complete: (providerId: string, completionState?: string | null) => Promise<boolean>;
-  cancel: (providerId: string) => Promise<void>;
+  start: (providerId: string, productId: AgentProductId) => Promise<AgentAuthorizationStarted | null>;
+  complete: (productId: AgentProductId, completionState?: string | null) => Promise<boolean>;
+  cancel: (productId: AgentProductId) => Promise<void>;
   connectApiKey: (
     providerId: string,
+    productId: AgentProductId,
     apiKey: string,
     accountId?: string,
   ) => Promise<boolean>;
@@ -146,14 +158,14 @@ export function createAgentAccountsStore(
       }
     },
 
-    start: async (providerId) => {
-      set({ busyId: providerId, error: null });
+    start: async (providerId, productId) => {
+      set({ busyId: productId, error: null });
       try {
         const attempt = redactAuthorizationAttempt(
-          await api.startAuthorization(providerId, "alfred"),
+          await api.startAuthorization(providerId, productId, "alfred"),
         );
         set((state) => ({
-          attempts: { ...state.attempts, [providerId]: attempt },
+          attempts: { ...state.attempts, [productId]: attempt },
           busyId: null,
         }));
         return attempt;
@@ -163,22 +175,23 @@ export function createAgentAccountsStore(
       }
     },
 
-    complete: async (providerId, completionState = null) => {
-      const attempt = get().attempts[providerId];
+    complete: async (productId, completionState = null) => {
+      const attempt = get().attempts[productId];
       if (!attempt) return false;
-      set({ busyId: providerId, error: null });
+      set({ busyId: productId, error: null });
       try {
         const account = redactAgentAccount(
           await api.completeAuthorization(
             attempt.attemptId,
-            providerId,
+            attempt.providerId,
+            productId,
             "alfred",
             completionState,
           ),
         );
         set((state) => {
           const attempts = { ...state.attempts };
-          delete attempts[providerId];
+          delete attempts[productId];
           return {
             accounts: [
               ...state.accounts.filter((item) => item.id !== account.id),
@@ -192,7 +205,7 @@ export function createAgentAccountsStore(
       } catch (error) {
         set((state) => {
           const attempts = { ...state.attempts };
-          delete attempts[providerId];
+          delete attempts[productId];
           return {
             attempts,
             busyId: null,
@@ -203,8 +216,8 @@ export function createAgentAccountsStore(
       }
     },
 
-    cancel: async (providerId) => {
-      const attempt = get().attempts[providerId];
+    cancel: async (productId) => {
+      const attempt = get().attempts[productId];
       if (!attempt) return;
       try {
         await api.cancelAuthorization(attempt.attemptId);
@@ -213,19 +226,20 @@ export function createAgentAccountsStore(
       } finally {
         set((state) => {
           const attempts = { ...state.attempts };
-          delete attempts[providerId];
+          delete attempts[productId];
           return { attempts };
         });
       }
     },
 
-    connectApiKey: async (providerId, apiKey, accountId) => {
-      const operationId = accountId ?? providerId;
+    connectApiKey: async (providerId, productId, apiKey, accountId) => {
+      const operationId = accountId ?? productId;
       set({ busyId: operationId, error: null });
       try {
         const account = redactAgentAccount(
           await api.connectApiKeyAccount(
             providerId,
+            productId,
             "alfred",
             accountId ?? null,
             apiKey,

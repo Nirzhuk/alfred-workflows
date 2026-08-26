@@ -1,5 +1,5 @@
-mod app_connections;
 mod agent_accounts;
+mod app_connections;
 mod app_events;
 mod history;
 mod license;
@@ -12,6 +12,7 @@ mod triggers;
 mod workflow_folders;
 mod workflows;
 
+pub use agent_accounts::AgentAccountReadDiagnostic;
 pub use app_events::*;
 pub use history::*;
 pub use license::*;

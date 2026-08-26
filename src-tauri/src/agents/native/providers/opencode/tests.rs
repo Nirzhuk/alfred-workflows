@@ -40,7 +40,10 @@ fn release_freezes_version_license_platforms_and_exact_blockers() {
     assert_eq!(gate.platforms.len(), 6);
     assert!(!gate.ready);
     assert_eq!(
-        gate.blockers.iter().map(|(code, _)| *code).collect::<Vec<_>>(),
+        gate.blockers
+            .iter()
+            .map(|(code, _)| *code)
+            .collect::<Vec<_>>(),
         vec![
             package::PACKAGE_GATE_CODE,
             package::ACCOUNT_GATE_CODE,
@@ -61,7 +64,10 @@ fn isolated_launch_contract_has_no_path_or_global_state_fallback() {
     )
     .unwrap();
     assert_eq!(spec.executable(), executable);
-    assert_eq!(spec.args(), ["serve", "--hostname=127.0.0.1", "--port=49152"]);
+    assert_eq!(
+        spec.args(),
+        ["serve", "--hostname=127.0.0.1", "--port=49152"]
+    );
     let environment = spec.environment();
     for key in [
         "XDG_CONFIG_HOME",

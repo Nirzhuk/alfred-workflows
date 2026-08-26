@@ -125,8 +125,7 @@ impl CopilotEventMapper {
 
         // Reasoning is prohibited by the native event contract; never forward
         // it, and never fall through to a generic text mapping.
-        if event.event_type.ends_with("reasoning_delta")
-            || event.event_type.ends_with("reasoning")
+        if event.event_type.ends_with("reasoning_delta") || event.event_type.ends_with("reasoning")
         {
             return Ok(MappedEvent::Drop);
         }
@@ -170,8 +169,8 @@ impl CopilotEventMapper {
                 native.session_id = self.session_id.clone();
                 native.turn_id = self.turn_id.clone();
                 native.tool_call_id = bounded_id(&event.data, "toolCallId")?;
-                native.tool_name = bounded_text(&event.data, &["name", "toolName"], 128)?
-                    .map(|name| scrub(&name));
+                native.tool_name =
+                    bounded_text(&event.data, &["name", "toolName"], 128)?.map(|name| scrub(&name));
                 Ok(MappedEvent::Emit(native))
             }
             "tool.execution_progress" | "tool.progress" => {
@@ -185,7 +184,7 @@ impl CopilotEventMapper {
                     &["progressMessage", "message", "text"],
                     MAX_DELTA_BYTES,
                 )?
-                    .map(|text| scrub(&text));
+                .map(|text| scrub(&text));
                 Ok(MappedEvent::Emit(native))
             }
             "tool.execution_complete" | "tool.completed" | "tool.invocation_completed" => {
@@ -220,31 +219,35 @@ impl CopilotEventMapper {
                 native.session_id = self.session_id.clone();
                 native.turn_id = self.turn_id.clone();
                 native.approval_id = bounded_id(&event.data, "requestId")?;
-                native.approved = event
-                    .data
-                    .get("approved")
-                    .and_then(Value::as_bool)
-                    .or_else(|| {
-                        let kind = event
-                            .data
-                            .get("result")
-                            .and_then(Value::as_object)
-                            .and_then(|result| result.get("kind"))
-                            .and_then(Value::as_str)?;
-                        if kind.starts_with("approved") || kind.starts_with("approve") {
-                            Some(true)
-                        } else if kind.starts_with("rejected")
-                            || kind.starts_with("reject")
-                            || kind.starts_with("denied")
-                        {
-                            Some(false)
-                        } else {
-                            None
-                        }
-                    });
+                native.approved =
+                    event
+                        .data
+                        .get("approved")
+                        .and_then(Value::as_bool)
+                        .or_else(|| {
+                            let kind = event
+                                .data
+                                .get("result")
+                                .and_then(Value::as_object)
+                                .and_then(|result| result.get("kind"))
+                                .and_then(Value::as_str)?;
+                            if kind.starts_with("approved") || kind.starts_with("approve") {
+                                Some(true)
+                            } else if kind.starts_with("rejected")
+                                || kind.starts_with("reject")
+                                || kind.starts_with("denied")
+                            {
+                                Some(false)
+                            } else {
+                                None
+                            }
+                        });
                 Ok(MappedEvent::Emit(native))
             }
-            "assistant.turn_end" | "session.idle" | "turn.completed" | "assistant.turn_completed" => {
+            "assistant.turn_end"
+            | "session.idle"
+            | "turn.completed"
+            | "assistant.turn_completed" => {
                 if event.event_type == "session.idle"
                     && event.data.get("aborted").and_then(Value::as_bool) == Some(true)
                 {
@@ -300,17 +303,25 @@ fn redact_copilot_tokens(value: &str) -> String {
         while let Some(offset) = value[search..].find(prefix) {
             let start = search + offset;
             let at_boundary = start == 0
-                || value[..start]
-                    .chars()
-                    .next_back()
-                    .is_some_and(|character| {
-                        character.is_whitespace()
-                            || matches!(
-                                character,
-                                '"' | '\'' | ',' | ';' | ':' | '(' | ')' | '{' | '}' | '[' | ']'
-                                    | '=' | '<' | '>'
-                            )
-                    });
+                || value[..start].chars().next_back().is_some_and(|character| {
+                    character.is_whitespace()
+                        || matches!(
+                            character,
+                            '"' | '\''
+                                | ','
+                                | ';'
+                                | ':'
+                                | '('
+                                | ')'
+                                | '{'
+                                | '}'
+                                | '['
+                                | ']'
+                                | '='
+                                | '<'
+                                | '>'
+                        )
+                });
             let end = value[start..]
                 .find(|character: char| {
                     character.is_whitespace()
@@ -342,10 +353,7 @@ fn redact_copilot_tokens(value: &str) -> String {
     output
 }
 
-fn bounded_id(
-    data: &Map<String, Value>,
-    key: &str,
-) -> Result<Option<String>, NativeRuntimeError> {
+fn bounded_id(data: &Map<String, Value>, key: &str) -> Result<Option<String>, NativeRuntimeError> {
     let Some(value) = data.get(key) else {
         return Ok(None);
     };
@@ -357,7 +365,9 @@ fn bounded_id(
         return Ok(None);
     }
     if text.len() > MAX_ID_BYTES {
-        return Err(invalid("copilot event identifier exceeds the supported length"));
+        return Err(invalid(
+            "copilot event identifier exceeds the supported length",
+        ));
     }
     if contains_provider_secret(text) {
         return Ok(Some(opaque_provider_id(key, text)));

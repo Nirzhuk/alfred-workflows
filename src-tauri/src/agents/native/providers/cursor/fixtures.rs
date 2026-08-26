@@ -1,8 +1,8 @@
 use super::*;
 use crate::agents::native::{
-    NativeCancellation, NativeContextBlock, NativeContextRole, NativeEventLimits,
+    NativeCancellation, NativeContextBlock, NativeContextRole, NativeCredential, NativeEventLimits,
     NativeEventNormalizer, NativePermissionProfile, NativeSessionMode, NativeToolCapabilitySet,
-    NativeCredential, ResolvedNativeAccount, NATIVE_REQUEST_CONTRACT_VERSION,
+    ResolvedNativeAccount, NATIVE_REQUEST_CONTRACT_VERSION,
 };
 use crate::agents::{AgentHarness, AgentProvider, OpaqueAgentAccountRef};
 use serde_json::json;
@@ -62,6 +62,7 @@ fn resolved_account() -> ResolvedNativeAccount {
     ResolvedNativeAccount {
         account_ref: OpaqueAgentAccountRef::parse("account_cursor-fixture").unwrap(),
         provider: AgentProvider::Cursor,
+        product: crate::agent_accounts::models::AgentProductId::CursorCloud,
         credential: NativeCredential::new(FakeCursorApiKey(API_SECRET.into())),
     }
 }
@@ -92,7 +93,9 @@ fn fixture_request() -> NativeTurnRequest {
         session_id: None,
         event_limits: NativeEventLimits::default(),
         timeout_ms: 300_000,
-        cancellation: Some(NativeCancellation::new("cursor-fixture", Duration::from_secs(30)).unwrap()),
+        cancellation: Some(
+            NativeCancellation::new("cursor-fixture", Duration::from_secs(30)).unwrap(),
+        ),
     }
 }
 
@@ -112,8 +115,12 @@ fn success_fixture_maps_bounded_request_models_usage_and_events() {
     assert!(!format!("{account:?}").contains(API_SECRET));
 
     let request = fixture_request();
-    let payload = create_agent_payload(&request, &binding(), Path::new("/workspace/alfred")).unwrap();
-    assert_eq!(payload["repos"][0]["url"], "https://github.com/example/alfred");
+    let payload =
+        create_agent_payload(&request, &binding(), Path::new("/workspace/alfred")).unwrap();
+    assert_eq!(
+        payload["repos"][0]["url"],
+        "https://github.com/example/alfred"
+    );
     assert_eq!(payload["model"]["id"], "composer-2");
     assert_eq!(payload["workOnCurrentBranch"], false);
     let encoded = serde_json::to_string(&payload).unwrap();
@@ -177,12 +184,9 @@ fn timeout_and_cancellation_are_terminal_and_build_only_documented_endpoint() {
         map_transport_failure(CursorTransportFailure::Cancelled).code,
         NativeErrorCode::Cancelled
     );
-    let cancelled = map_stream_event(
-        "result",
-        br#"{"runId":"run-1","status":"CANCELLED"}"#,
-    )
-    .unwrap()
-    .unwrap();
+    let cancelled = map_stream_event("result", br#"{"runId":"run-1","status":"CANCELLED"}"#)
+        .unwrap()
+        .unwrap();
     assert_eq!(cancelled.kind, NativeEventKind::TurnCancelled);
     assert_eq!(
         cancel_endpoint("bc-123", "run-456").unwrap(),
@@ -193,8 +197,8 @@ fn timeout_and_cancellation_are_terminal_and_build_only_documented_endpoint() {
 #[test]
 fn workspace_and_repository_mismatch_never_fall_back_to_local_upload() {
     let request = fixture_request();
-    let error = create_agent_payload(&request, &binding(), Path::new("/workspace/other"))
-        .unwrap_err();
+    let error =
+        create_agent_payload(&request, &binding(), Path::new("/workspace/other")).unwrap_err();
     assert_eq!(error.code, NativeErrorCode::WorkspaceDenied);
     assert_eq!(
         CursorRepositoryBinding::new(
@@ -227,13 +231,9 @@ fn workspace_and_repository_mismatch_never_fall_back_to_local_upload() {
     secret_prompt.prompt = format!("use {API_SECRET}");
     secret_prompt.context[0].content = secret_prompt.prompt.clone();
     assert_eq!(
-        create_agent_payload(
-            &secret_prompt,
-            &binding(),
-            Path::new("/workspace/alfred")
-        )
-        .unwrap_err()
-        .code,
+        create_agent_payload(&secret_prompt, &binding(), Path::new("/workspace/alfred"))
+            .unwrap_err()
+            .code,
         NativeErrorCode::InvalidRequest
     );
 }
@@ -266,9 +266,12 @@ fn tool_failure_fixture_is_observational_and_does_not_claim_approval_support() {
 fn oversized_output_is_rejected_by_provider_and_shared_event_bounds() {
     let provider_oversized = json!({ "text": "x".repeat(128 * 1024) });
     assert_eq!(
-        map_stream_event("assistant", &serde_json::to_vec(&provider_oversized).unwrap())
-            .unwrap_err()
-            .code,
+        map_stream_event(
+            "assistant",
+            &serde_json::to_vec(&provider_oversized).unwrap()
+        )
+        .unwrap_err()
+        .code,
         NativeErrorCode::EventLimitExceeded
     );
 
@@ -279,7 +282,12 @@ fn oversized_output_is_rejected_by_provider_and_shared_event_bounds() {
     limits.max_text_bytes = 8;
     let mut normalizer = NativeEventNormalizer::new(limits).unwrap();
     assert_eq!(
-        normalizer.normalize({ let mut event = event; event.sequence = 1; event })
+        normalizer
+            .normalize({
+                let mut event = event;
+                event.sequence = 1;
+                event
+            })
             .unwrap_err()
             .code,
         NativeErrorCode::EventLimitExceeded
@@ -288,7 +296,8 @@ fn oversized_output_is_rejected_by_provider_and_shared_event_bounds() {
 
 #[test]
 fn revoked_key_and_provider_payloads_are_redacted() {
-    let body = format!(r#"{{"code":"api_key_revoked","message":"Authorization: Bearer {API_SECRET}"}}"#);
+    let body =
+        format!(r#"{{"code":"api_key_revoked","message":"Authorization: Bearer {API_SECRET}"}}"#);
     let revoked = map_http_failure(401, decode_error_code(body.as_bytes()).as_deref());
     assert_eq!(revoked.code, NativeErrorCode::AccountUnavailable);
     assert!(revoked.message.contains("revoked"));
@@ -302,7 +311,11 @@ fn revoked_key_and_provider_payloads_are_redacted() {
     .unwrap();
     let mut normalizer = NativeEventNormalizer::new(NativeEventLimits::default()).unwrap();
     let normalized = normalizer
-        .normalize({ let mut event = event; event.sequence = 1; event })
+        .normalize({
+            let mut event = event;
+            event.sequence = 1;
+            event
+        })
         .unwrap();
     assert!(!normalized.text.unwrap().contains(API_SECRET));
     assert_eq!(
@@ -313,10 +326,13 @@ fn revoked_key_and_provider_payloads_are_redacted() {
     let mismatched = ResolvedNativeAccount {
         account_ref: OpaqueAgentAccountRef::parse("account_other-fixture").unwrap(),
         provider: AgentProvider::Codex,
+        product: crate::agent_accounts::models::AgentProductId::OpenaiApi,
         credential: NativeCredential::new(FakeCursorApiKey(API_SECRET.into())),
     };
     assert_eq!(
-        FakeCursorTransport::authorize(&mismatched).unwrap_err().code,
+        FakeCursorTransport::authorize(&mismatched)
+            .unwrap_err()
+            .code,
         NativeErrorCode::AccountMismatch
     );
     assert!(!format!("{mismatched:?}").contains(API_SECRET));
@@ -330,7 +346,9 @@ fn official_surface_is_frozen_but_native_registration_remains_blocked() {
     assert!(decision.auth.contains("API key"));
     assert!(decision.billing_owner.contains("owns the API key"));
     assert!(decision.execution_location.contains("cloud"));
-    assert!(decision.repository_requirement.contains("explicitly confirmed"));
+    assert!(decision
+        .repository_requirement
+        .contains("explicitly confirmed"));
     assert!(decision.models.contains("/v1/models"));
     assert!(decision.usage.contains("token counts"));
     assert!(decision.packaging.contains("no Cursor CLI"));

@@ -1,4 +1,4 @@
-use super::models::AgentAuthMethod;
+use super::models::{AgentAuthMethod, AgentProductId};
 use crate::agents::{AgentHarness, AgentProvider};
 use chrono::{DateTime, Utc};
 use rand::{distributions::Alphanumeric, Rng};
@@ -39,8 +39,14 @@ impl fmt::Debug for AuthorizationContext {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("AuthorizationContext")
-            .field("expected_state", &self.expected_state.as_ref().map(|_| "[REDACTED]"))
-            .field("pkce_verifier", &self.pkce_verifier.as_ref().map(|_| "[REDACTED]"))
+            .field(
+                "expected_state",
+                &self.expected_state.as_ref().map(|_| "[REDACTED]"),
+            )
+            .field(
+                "pkce_verifier",
+                &self.pkce_verifier.as_ref().map(|_| "[REDACTED]"),
+            )
             .field("nonce", &self.nonce.as_ref().map(|_| "[REDACTED]"))
             .field("provider_fields", &"[REDACTED]")
             .finish()
@@ -61,6 +67,7 @@ impl Drop for AuthorizationContext {
 pub struct AuthorizationAttempt {
     pub id: String,
     pub provider: AgentProvider,
+    pub product: AgentProductId,
     pub harness: AgentHarness,
     pub auth_method: AgentAuthMethod,
     pub expires_at: DateTime<Utc>,
@@ -74,6 +81,7 @@ impl fmt::Debug for AuthorizationAttempt {
             .debug_struct("AuthorizationAttempt")
             .field("id", &self.id)
             .field("provider", &self.provider)
+            .field("product", &self.product)
             .field("harness", &self.harness)
             .field("auth_method", &self.auth_method)
             .field("expires_at", &self.expires_at)
@@ -88,6 +96,7 @@ impl fmt::Debug for AuthorizationAttempt {
 pub struct AuthorizationStartedDto {
     pub attempt_id: String,
     pub provider_id: String,
+    pub product_id: String,
     pub authorization_url: Option<String>,
     pub user_code: Option<String>,
     pub expires_at: String,
@@ -131,11 +140,16 @@ impl AuthorizationAttemptRegistry {
     pub fn insert(
         &self,
         provider: AgentProvider,
+        product: AgentProductId,
         harness: AgentHarness,
         auth_method: AgentAuthMethod,
         ttl: Duration,
         context: AuthorizationContext,
     ) -> Result<(String, DateTime<Utc>), AuthorizationRegistryError> {
+        if product.provider() != provider || !product.auth_methods().contains(&auth_method.as_str())
+        {
+            return Err(AuthorizationRegistryError::ProviderMismatch);
+        }
         if auth_method == AgentAuthMethod::OAuthPkce
             && context
                 .expected_state
@@ -145,7 +159,10 @@ impl AuthorizationAttemptRegistry {
             return Err(AuthorizationRegistryError::StateRequired);
         }
         let now = Utc::now();
-        let mut attempts = self.attempts.lock().map_err(|_| AuthorizationRegistryError::Lock)?;
+        let mut attempts = self
+            .attempts
+            .lock()
+            .map_err(|_| AuthorizationRegistryError::Lock)?;
         let expired_ids = attempts
             .iter()
             .filter(|(_, attempt)| {
@@ -183,13 +200,15 @@ impl AuthorizationAttemptRegistry {
             .take(32)
             .map(char::from)
             .collect();
-        let expires_at = now + chrono::Duration::from_std(ttl).unwrap_or_else(|_| chrono::Duration::minutes(10));
+        let expires_at =
+            now + chrono::Duration::from_std(ttl).unwrap_or_else(|_| chrono::Duration::minutes(10));
         let cancelled = Arc::new(AtomicBool::new(false));
         attempts.insert(
             id.clone(),
             AuthorizationAttempt {
                 id: id.clone(),
                 provider,
+                product,
                 harness,
                 auth_method,
                 expires_at,
@@ -211,11 +230,17 @@ impl AuthorizationAttemptRegistry {
         &self,
         id: &str,
         provider: AgentProvider,
+        product: AgentProductId,
         harness: AgentHarness,
         completion_state: Option<&str>,
     ) -> Result<AuthorizationAttempt, AuthorizationRegistryError> {
-        let mut attempts = self.attempts.lock().map_err(|_| AuthorizationRegistryError::Lock)?;
-        let attempt = attempts.remove(id).ok_or(AuthorizationRegistryError::NotFound)?;
+        let mut attempts = self
+            .attempts
+            .lock()
+            .map_err(|_| AuthorizationRegistryError::Lock)?;
+        let attempt = attempts
+            .remove(id)
+            .ok_or(AuthorizationRegistryError::NotFound)?;
         if attempt.cancelled.load(Ordering::SeqCst) {
             self.finish(id);
             return Err(AuthorizationRegistryError::Cancelled);
@@ -224,7 +249,8 @@ impl AuthorizationAttemptRegistry {
             self.finish(id);
             return Err(AuthorizationRegistryError::Expired);
         }
-        if attempt.provider != provider || attempt.harness != harness {
+        if attempt.provider != provider || attempt.product != product || attempt.harness != harness
+        {
             self.finish(id);
             return Err(AuthorizationRegistryError::ProviderMismatch);
         }
@@ -253,7 +279,10 @@ impl AuthorizationAttemptRegistry {
     }
 
     pub fn cancel(&self, id: &str) -> Result<(), AuthorizationRegistryError> {
-        let mut attempts = self.attempts.lock().map_err(|_| AuthorizationRegistryError::Lock)?;
+        let mut attempts = self
+            .attempts
+            .lock()
+            .map_err(|_| AuthorizationRegistryError::Lock)?;
         let attempt = attempts.remove(id);
         let cancelled = self
             .cancellations
@@ -283,6 +312,7 @@ mod tests {
     use super::*;
 
     const STATE: &str = "state-secret";
+    const PRODUCT: AgentProductId = AgentProductId::ChatgptCodex;
 
     fn context() -> AuthorizationContext {
         AuthorizationContext {
@@ -301,6 +331,7 @@ mod tests {
         registry
             .insert(
                 AgentProvider::Codex,
+                PRODUCT,
                 AgentHarness::Alfred,
                 AgentAuthMethod::OAuthPkce,
                 ttl,
@@ -316,7 +347,13 @@ mod tests {
         let expired = insert(&registry, Duration::ZERO);
         assert_eq!(
             registry
-                .take(&expired, AgentProvider::Codex, AgentHarness::Alfred, Some(STATE))
+                .take(
+                    &expired,
+                    AgentProvider::Codex,
+                    PRODUCT,
+                    AgentHarness::Alfred,
+                    Some(STATE)
+                )
                 .unwrap_err(),
             AuthorizationRegistryError::Expired
         );
@@ -326,7 +363,13 @@ mod tests {
         assert_eq!(registry.active_count(), 0);
         assert_eq!(
             registry
-                .take(&cancelled, AgentProvider::Codex, AgentHarness::Alfred, Some(STATE))
+                .take(
+                    &cancelled,
+                    AgentProvider::Codex,
+                    PRODUCT,
+                    AgentHarness::Alfred,
+                    Some(STATE)
+                )
                 .unwrap_err(),
             AuthorizationRegistryError::NotFound
         );
@@ -334,7 +377,13 @@ mod tests {
         let mismatch = insert(&registry, Duration::from_secs(30));
         assert_eq!(
             registry
-                .take(&mismatch, AgentProvider::Codex, AgentHarness::Alfred, Some("wrong"))
+                .take(
+                    &mismatch,
+                    AgentProvider::Codex,
+                    PRODUCT,
+                    AgentHarness::Alfred,
+                    Some("wrong")
+                )
                 .unwrap_err(),
             AuthorizationRegistryError::StateMismatch
         );
@@ -342,25 +391,49 @@ mod tests {
         let provider = insert(&registry, Duration::from_secs(30));
         assert_eq!(
             registry
-                .take(&provider, AgentProvider::Gemini, AgentHarness::Alfred, Some(STATE))
+                .take(
+                    &provider,
+                    AgentProvider::Gemini,
+                    PRODUCT,
+                    AgentHarness::Alfred,
+                    Some(STATE)
+                )
                 .unwrap_err(),
             AuthorizationRegistryError::ProviderMismatch
         );
 
         let once = insert(&registry, Duration::from_secs(30));
         registry
-            .take(&once, AgentProvider::Codex, AgentHarness::Alfred, Some(STATE))
+            .take(
+                &once,
+                AgentProvider::Codex,
+                PRODUCT,
+                AgentHarness::Alfred,
+                Some(STATE),
+            )
             .expect("first completion");
         assert_eq!(
             registry
-                .take(&once, AgentProvider::Codex, AgentHarness::Alfred, Some(STATE))
+                .take(
+                    &once,
+                    AgentProvider::Codex,
+                    PRODUCT,
+                    AgentHarness::Alfred,
+                    Some(STATE)
+                )
                 .unwrap_err(),
             AuthorizationRegistryError::NotFound
         );
 
         let active = insert(&registry, Duration::from_secs(30));
         let active_attempt = registry
-            .take(&active, AgentProvider::Codex, AgentHarness::Alfred, Some(STATE))
+            .take(
+                &active,
+                AgentProvider::Codex,
+                PRODUCT,
+                AgentHarness::Alfred,
+                Some(STATE),
+            )
             .expect("take active");
         registry.cancel(&active).expect("cancel active completion");
         assert!(active_attempt.cancelled.load(Ordering::SeqCst));
@@ -377,6 +450,7 @@ mod tests {
                 registry
                     .insert(
                         AgentProvider::Codex,
+                        PRODUCT,
                         AgentHarness::Alfred,
                         AgentAuthMethod::OAuthPkce,
                         Duration::from_secs(30),
@@ -395,7 +469,13 @@ mod tests {
         let missing = insert(&registry, Duration::from_secs(30));
         assert_eq!(
             registry
-                .take(&missing, AgentProvider::Codex, AgentHarness::Alfred, None)
+                .take(
+                    &missing,
+                    AgentProvider::Codex,
+                    PRODUCT,
+                    AgentHarness::Alfred,
+                    None
+                )
                 .unwrap_err(),
             AuthorizationRegistryError::StateMismatch
         );
@@ -403,7 +483,13 @@ mod tests {
         let empty = insert(&registry, Duration::from_secs(30));
         assert_eq!(
             registry
-                .take(&empty, AgentProvider::Codex, AgentHarness::Alfred, Some(""))
+                .take(
+                    &empty,
+                    AgentProvider::Codex,
+                    PRODUCT,
+                    AgentHarness::Alfred,
+                    Some("")
+                )
                 .unwrap_err(),
             AuthorizationRegistryError::StateMismatch
         );
@@ -411,22 +497,42 @@ mod tests {
         let prefix = insert(&registry, Duration::from_secs(30));
         assert_eq!(
             registry
-                .take(&prefix, AgentProvider::Codex, AgentHarness::Alfred, Some("state"))
+                .take(
+                    &prefix,
+                    AgentProvider::Codex,
+                    PRODUCT,
+                    AgentHarness::Alfred,
+                    Some("state")
+                )
                 .unwrap_err(),
             AuthorizationRegistryError::StateMismatch
         );
 
         let exact = insert(&registry, Duration::from_secs(30));
         registry
-            .take(&exact, AgentProvider::Codex, AgentHarness::Alfred, Some(STATE))
+            .take(
+                &exact,
+                AgentProvider::Codex,
+                PRODUCT,
+                AgentHarness::Alfred,
+                Some(STATE),
+            )
             .expect("exact state completes");
 
         // Runtime and device-code contracts may remain state-less, but still
         // reject an unexpected callback state they did not record.
-        for auth_method in [AgentAuthMethod::Runtime, AgentAuthMethod::DeviceCode] {
+        for (provider, product, auth_method) in [
+            (
+                AgentProvider::ClaudeCode,
+                AgentProductId::ClaudeCodeSubscription,
+                AgentAuthMethod::Runtime,
+            ),
+            (AgentProvider::Codex, PRODUCT, AgentAuthMethod::DeviceCode),
+        ] {
             let (stateless, _) = registry
                 .insert(
-                    AgentProvider::Codex,
+                    provider,
+                    product,
                     AgentHarness::Alfred,
                     auth_method,
                     Duration::from_secs(30),
@@ -437,7 +543,8 @@ mod tests {
                 registry
                     .take(
                         &stateless,
-                        AgentProvider::Codex,
+                        provider,
+                        product,
                         AgentHarness::Alfred,
                         Some("unexpected"),
                     )
@@ -447,7 +554,8 @@ mod tests {
 
             let (stateless_ok, _) = registry
                 .insert(
-                    AgentProvider::Codex,
+                    provider,
+                    product,
                     AgentHarness::Alfred,
                     auth_method,
                     Duration::from_secs(30),
@@ -455,12 +563,7 @@ mod tests {
                 )
                 .expect("insert stateless");
             registry
-                .take(
-                    &stateless_ok,
-                    AgentProvider::Codex,
-                    AgentHarness::Alfred,
-                    None,
-                )
+                .take(&stateless_ok, provider, product, AgentHarness::Alfred, None)
                 .expect("stateless flow completes without a state");
         }
     }
@@ -470,16 +573,33 @@ mod tests {
         let registry = AuthorizationAttemptRegistry::default();
         let id = insert(&registry, Duration::from_secs(30));
         let attempt = registry
-            .take(&id, AgentProvider::Codex, AgentHarness::Alfred, Some(STATE))
+            .take(
+                &id,
+                AgentProvider::Codex,
+                PRODUCT,
+                AgentHarness::Alfred,
+                Some(STATE),
+            )
             .expect("take");
         let output = format!("{attempt:?}");
-        for secret in ["state-secret", "verifier-secret", "nonce-secret", "device-secret"] {
+        for secret in [
+            "state-secret",
+            "verifier-secret",
+            "nonce-secret",
+            "device-secret",
+        ] {
             assert!(!output.contains(secret));
         }
         let restarted = AuthorizationAttemptRegistry::default();
         assert_eq!(
             restarted
-                .take(&id, AgentProvider::Codex, AgentHarness::Alfred, Some(STATE))
+                .take(
+                    &id,
+                    AgentProvider::Codex,
+                    PRODUCT,
+                    AgentHarness::Alfred,
+                    Some(STATE)
+                )
                 .unwrap_err(),
             AuthorizationRegistryError::NotFound
         );
@@ -492,7 +612,13 @@ mod tests {
         for _ in 0..64 {
             let id = insert(&registry, Duration::from_secs(30));
             registry
-                .take(&id, AgentProvider::Codex, AgentHarness::Alfred, Some(STATE))
+                .take(
+                    &id,
+                    AgentProvider::Codex,
+                    PRODUCT,
+                    AgentHarness::Alfred,
+                    Some(STATE),
+                )
                 .expect("complete");
         }
         // One more insert prunes every tombstone whose attempt is gone.

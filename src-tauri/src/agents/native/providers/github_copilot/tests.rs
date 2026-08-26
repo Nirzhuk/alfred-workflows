@@ -206,7 +206,13 @@ fn device_flow_expires_once_the_ttl_elapses() {
         responses: std::sync::Mutex::new(vec![json!({"error": "authorization_pending"})]),
     };
     let start = start_fixture();
-    let outcome = run_device_flow(&http, "Iv1.client", &start, |_| {}, || Duration::from_secs(901));
+    let outcome = run_device_flow(
+        &http,
+        "Iv1.client",
+        &start,
+        |_| {},
+        || Duration::from_secs(901),
+    );
     assert_eq!(outcome, DevicePollOutcome::Expired);
 }
 
@@ -333,7 +339,10 @@ fn reasoning_deltas_are_dropped_not_forwarded() {
     let mut mapper = CopilotEventMapper::new();
     assert_eq!(
         mapper
-            .map(&sdk("assistant.reasoning_delta", json!({"delta": "thinking"})))
+            .map(&sdk(
+                "assistant.reasoning_delta",
+                json!({"delta": "thinking"})
+            ))
             .expect("mapped"),
         MappedEvent::Drop
     );
@@ -391,7 +400,10 @@ fn malformed_identifier_types_are_refused() {
         .is_err());
     let mut mapper = CopilotEventMapper::new();
     assert!(mapper
-        .map(&sdk("session.created", json!({"sessionId": "x".repeat(200)})))
+        .map(&sdk(
+            "session.created",
+            json!({"sessionId": "x".repeat(200)})
+        ))
         .is_err());
 }
 
@@ -408,8 +420,8 @@ fn secret_provider_identifiers_are_opaque_and_correlated_without_raw_retention()
 
     for raw in raw_identifiers {
         let mut mapper = CopilotEventMapper::new();
-        let mut normalizer = NativeEventNormalizer::new(NativeEventLimits::default())
-            .expect("normalizer");
+        let mut normalizer =
+            NativeEventNormalizer::new(NativeEventLimits::default()).expect("normalizer");
         let frames = [
             sdk("session.start", json!({"sessionId": raw})),
             sdk("assistant.turn_start", json!({"turnId": raw})),
@@ -449,22 +461,28 @@ fn secret_provider_identifiers_are_opaque_and_correlated_without_raw_retention()
 
         let session_id = normalized[0].session_id.clone().expect("session id");
         let turn_id = normalized[1].turn_id.clone().expect("turn id");
-        let tool_id = normalized[2]
-            .tool_call_id
-            .clone()
-            .expect("tool call id");
-        let approval_id = normalized[5]
-            .approval_id
-            .clone()
-            .expect("approval id");
+        let tool_id = normalized[2].tool_call_id.clone().expect("tool call id");
+        let approval_id = normalized[5].approval_id.clone().expect("approval id");
         for safe in [&session_id, &turn_id, &tool_id, &approval_id] {
             assert!(safe.starts_with("copilot_opaque_"), "unsafe id {safe}");
             assert!(!safe.contains(raw));
         }
-        assert_eq!(normalized[3].tool_call_id.as_deref(), Some(tool_id.as_str()));
-        assert_eq!(normalized[4].tool_call_id.as_deref(), Some(tool_id.as_str()));
-        assert_eq!(normalized[6].approval_id.as_deref(), Some(approval_id.as_str()));
-        assert_eq!(normalized[7].session_id.as_deref(), Some(session_id.as_str()));
+        assert_eq!(
+            normalized[3].tool_call_id.as_deref(),
+            Some(tool_id.as_str())
+        );
+        assert_eq!(
+            normalized[4].tool_call_id.as_deref(),
+            Some(tool_id.as_str())
+        );
+        assert_eq!(
+            normalized[6].approval_id.as_deref(),
+            Some(approval_id.as_str())
+        );
+        assert_eq!(
+            normalized[7].session_id.as_deref(),
+            Some(session_id.as_str())
+        );
         assert_eq!(normalized[7].turn_id.as_deref(), Some(turn_id.as_str()));
         assert_eq!(mapper.session_id(), Some(session_id.as_str()));
 
@@ -549,7 +567,10 @@ fn abort_and_failure_frames_map_to_their_terminal_kinds() {
 
     let mut mapper = CopilotEventMapper::new();
     let MappedEvent::Emit(failed) = mapper
-        .map(&sdk("turn.failed", json!({"message": "rate limit exceeded"})))
+        .map(&sdk(
+            "turn.failed",
+            json!({"message": "rate limit exceeded"}),
+        ))
         .expect("mapped")
     else {
         panic!("expected an emitted event");
@@ -637,10 +658,8 @@ fn oversized_tool_invocation_is_refused_before_alfred_execution() {
         "name": "alfred_file_write",
         "input": {"content": "x".repeat(70 * 1024)}
     });
-    let error = super::runtime::validate_tool_payload_size(
-        data.as_object().expect("tool object"),
-    )
-    .expect_err("must reject");
+    let error = super::runtime::validate_tool_payload_size(data.as_object().expect("tool object"))
+        .expect_err("must reject");
     assert_eq!(
         error.code,
         crate::agents::native::NativeErrorCode::EventLimitExceeded
@@ -661,10 +680,9 @@ fn every_raw_tool_request_field_rejects_secret_material_before_execution() {
     ];
 
     for fixture in fixtures {
-        let error = super::runtime::reject_secret_tool_fields(
-            fixture.as_object().expect("tool object"),
-        )
-        .expect_err("secret-bearing tool field must fail closed");
+        let error =
+            super::runtime::reject_secret_tool_fields(fixture.as_object().expect("tool object"))
+                .expect_err("secret-bearing tool field must fail closed");
         assert_eq!(
             error.code,
             crate::agents::native::NativeErrorCode::PermissionDenied
@@ -679,7 +697,10 @@ fn malformed_permission_request_is_refused_instead_of_left_pending() {
             data.as_object().expect("permission object"),
         )
         .expect_err("must reject");
-        assert_eq!(error.code, crate::agents::native::NativeErrorCode::InvalidEvent);
+        assert_eq!(
+            error.code,
+            crate::agents::native::NativeErrorCode::InvalidEvent
+        );
     }
 }
 
@@ -738,9 +759,9 @@ fn account_provider_mismatch_fails_before_credential_access() {
     use crate::agents::native::{NativeAgentRuntime, NativeCredential, ResolvedNativeAccount};
     use crate::agents::{AgentProvider, OpaqueAgentAccountRef};
     let account = ResolvedNativeAccount {
-        account_ref: OpaqueAgentAccountRef::parse("account_copilot-mismatch")
-            .expect("account ref"),
+        account_ref: OpaqueAgentAccountRef::parse("account_copilot-mismatch").expect("account ref"),
         provider: AgentProvider::ClaudeCode,
+        product: crate::agent_accounts::models::AgentProductId::ClaudeApi,
         credential: NativeCredential::new("not-a-copilot-credential".to_string()),
     };
     let error = super::runtime::GithubCopilotNativeRuntime::unlinked()
@@ -794,7 +815,10 @@ fn a_copilot_rejection_becomes_an_account_error_not_a_runtime_error() {
 fn the_native_descriptor_declares_only_what_it_implements() {
     use crate::agents::native::NativeAgentRuntime;
     let descriptor = super::runtime::GithubCopilotNativeRuntime::unlinked().descriptor();
-    assert_eq!(descriptor.provider, crate::agents::AgentProvider::GithubCopilot);
+    assert_eq!(
+        descriptor.provider,
+        crate::agents::AgentProvider::GithubCopilot
+    );
     assert_eq!(descriptor.runtime_id, super::runtime::RUNTIME_ID);
     let capabilities = descriptor.capabilities;
     assert!(capabilities.supports_oauth);

@@ -58,15 +58,23 @@ impl std::fmt::Debug for DeviceAuthorizationStart {
 /// Every terminal and non-terminal outcome of one device-code poll.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DevicePollOutcome {
-    Authorized { token: CopilotAccessToken },
-    Pending { retry_in: Duration },
-    SlowDown { retry_in: Duration },
+    Authorized {
+        token: CopilotAccessToken,
+    },
+    Pending {
+        retry_in: Duration,
+    },
+    SlowDown {
+        retry_in: Duration,
+    },
     /// The user (or an org admin) refused the grant. Terminal.
     Denied,
     /// The device code aged out before the user finished. Terminal.
     Expired,
     /// GitHub answered with something that is not a device-flow response.
-    Malformed { code: &'static str },
+    Malformed {
+        code: &'static str,
+    },
 }
 
 /// Token classes the Copilot SDK documents as accepted.
@@ -270,20 +278,12 @@ fn is_github_verification_uri(value: &str) -> bool {
     let Ok(url) = url::Url::parse(value) else {
         return false;
     };
-    url.scheme() == "https"
-        && matches!(
-            url.host_str(),
-            Some("github.com") | Some("www.github.com")
-        )
+    url.scheme() == "https" && matches!(url.host_str(), Some("github.com") | Some("www.github.com"))
 }
 
 /// The network half, kept behind a trait so the flow above is fixture-testable.
 pub trait DeviceFlowHttp: Send + Sync {
-    fn post_form(
-        &self,
-        url: &str,
-        form: &[(&str, &str)],
-    ) -> Result<Value, &'static str>;
+    fn post_form(&self, url: &str, form: &[(&str, &str)]) -> Result<Value, &'static str>;
 }
 
 /// Starts the documented device authorization request.
@@ -296,10 +296,7 @@ pub fn start_device_flow(
         return Err("device_client_id_malformed");
     }
     let url = format!("{GITHUB_AUTH_BASE}{DEVICE_CODE_PATH}");
-    let body = http.post_form(
-        &url,
-        &[("client_id", client_id), ("scope", DEVICE_SCOPES)],
-    )?;
+    let body = http.post_form(&url, &[("client_id", client_id), ("scope", DEVICE_SCOPES)])?;
     parse_device_start(&body)
 }
 

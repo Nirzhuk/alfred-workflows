@@ -67,7 +67,10 @@ impl ClaudeFailure {
     }
 
     pub fn retryable(self) -> bool {
-        matches!(self, Self::RateLimited | Self::Overloaded | Self::ProviderUnavailable)
+        matches!(
+            self,
+            Self::RateLimited | Self::Overloaded | Self::ProviderUnavailable
+        )
     }
 
     /// Alfred-owned copy. The provider's own message never reaches the user, so
@@ -327,7 +330,9 @@ pub fn build_request_body(request: &NativeTurnRequest, messages: &[Value]) -> Va
     let mut system = Vec::new();
     for block in &request.context {
         match block.role {
-            NativeContextRole::System => system.push(json!({"type": "text", "text": block.content})),
+            NativeContextRole::System => {
+                system.push(json!({"type": "text", "text": block.content}))
+            }
             NativeContextRole::Skill => {
                 let name = block.name.as_deref().unwrap_or("skill");
                 system.push(json!({
@@ -497,13 +502,19 @@ impl StreamAccumulator {
     }
 
     pub fn accept(&mut self, event: &Value) -> Result<Vec<StreamSignal>, NativeRuntimeError> {
-        let kind = event.get("type").and_then(Value::as_str).unwrap_or_default();
+        let kind = event
+            .get("type")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
         match kind {
             "error" => Err(classify_stream_error(event).error()),
             "content_block_start" => {
                 let index = block_index(event)?;
                 let block = event.get("content_block").ok_or_else(invalid_stream)?;
-                let block_type = block.get("type").and_then(Value::as_str).unwrap_or_default();
+                let block_type = block
+                    .get("type")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
                 let state = match block_type {
                     "text" => BlockState::Text,
                     "tool_use" => BlockState::ToolUse {
@@ -522,7 +533,10 @@ impl StreamAccumulator {
             "content_block_delta" => {
                 let index = block_index(event)?;
                 let delta = event.get("delta").ok_or_else(invalid_stream)?;
-                let delta_type = delta.get("type").and_then(Value::as_str).unwrap_or_default();
+                let delta_type = delta
+                    .get("type")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
                 let Some(state) = self.blocks.get_mut(&index) else {
                     return Ok(Vec::new());
                 };
@@ -680,7 +694,9 @@ fn invalid_stream() -> NativeRuntimeError {
 
 /// Parses `GET /v1/models`. One page only: the harness caps a catalog at 512
 /// entries and Alfred does not need the long tail of retired snapshots.
-pub fn parse_model_catalog(body: &str) -> Result<Vec<crate::agents::native::NativeModel>, NativeRuntimeError> {
+pub fn parse_model_catalog(
+    body: &str,
+) -> Result<Vec<crate::agents::native::NativeModel>, NativeRuntimeError> {
     let value: Value = serde_json::from_str(body).map_err(|_| {
         NativeRuntimeError::new(
             NativeErrorCode::ModelUnavailable,
@@ -688,16 +704,13 @@ pub fn parse_model_catalog(body: &str) -> Result<Vec<crate::agents::native::Nati
             false,
         )
     })?;
-    let entries = value
-        .get("data")
-        .and_then(Value::as_array)
-        .ok_or_else(|| {
-            NativeRuntimeError::new(
-                NativeErrorCode::ModelUnavailable,
-                "Anthropic model catalog was missing its data array",
-                false,
-            )
-        })?;
+    let entries = value.get("data").and_then(Value::as_array).ok_or_else(|| {
+        NativeRuntimeError::new(
+            NativeErrorCode::ModelUnavailable,
+            "Anthropic model catalog was missing its data array",
+            false,
+        )
+    })?;
     if entries.len() > MAX_MODEL_CATALOG_ENTRIES {
         return Err(NativeRuntimeError::new(
             NativeErrorCode::ModelUnavailable,

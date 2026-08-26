@@ -19,11 +19,11 @@ mod transport;
 #[cfg(test)]
 mod tests;
 
+pub use runtime::{native_gates, native_ready, register};
 pub use surface::{
     blocked_surface_codes, GeminiAuthSurface, GeminiSurfaceEvidence, GeminiSurfaceStatus,
     GEMINI_AUTH_SURFACES, SELECTED_SURFACE,
 };
-pub use runtime::{native_gates, native_ready, register};
 
 /// Version of this harness, independent of the Gemini CLI adapter's version.
 pub const GEMINI_NATIVE_RUNTIME_ID: &str = "gemini-native";

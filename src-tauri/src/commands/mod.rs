@@ -82,8 +82,7 @@ pub fn create_workflow(
     db: State<'_, Db>,
     mut input: CreateWorkflowInput,
 ) -> Result<Workflow, String> {
-    agents::normalize_agent_nodes_in_graph(&mut input.graph)
-        .map_err(|error| error.to_string())?;
+    agents::normalize_agent_nodes_in_graph(&mut input.graph).map_err(|error| error.to_string())?;
     db.create_workflow(input).map_err(|e| e.to_string())
 }
 
@@ -178,12 +177,13 @@ pub fn get_agent_harness_diagnostics(
     provider: Option<agents::AgentProvider>,
     harness: Option<agents::AgentHarness>,
 ) -> Result<agents::capability_manifest::AgentHarnessDiagnostics, String> {
-    let accounts = db
-        .list_agent_accounts()
+    let account_list = db
+        .list_agent_accounts_with_diagnostics()
         .map_err(|_| "agent_harness_diagnostics_unavailable".to_string())?;
     Ok(agents::capability_manifest::support_diagnostics(
         manifest.inner(),
-        &accounts,
+        &account_list.accounts,
+        &account_list.diagnostics,
         native_registry.inner().as_ref(),
         provider,
         harness,
@@ -201,8 +201,8 @@ pub async fn list_agent_models(
     tauri::async_runtime::spawn_blocking(move || {
         agents::models::list_provider_models_with_manifest(harness, &manifest)
     })
-        .await
-        .map_err(|e| e.to_string())
+    .await
+    .map_err(|e| e.to_string())
 }
 
 /// Read subscription quota windows from each provider's own local CLI.
@@ -489,9 +489,7 @@ pub fn clear_memories(db: State<'_, Db>, workflow_id: String) -> Result<usize, S
 }
 
 #[tauri::command]
-pub fn get_memory_review_settings(
-    db: State<'_, Db>,
-) -> Result<MemoryReviewSettings, String> {
+pub fn get_memory_review_settings(db: State<'_, Db>) -> Result<MemoryReviewSettings, String> {
     db.get_memory_review_settings().map_err(|e| e.to_string())
 }
 
@@ -500,7 +498,8 @@ pub fn update_memory_review_settings(
     db: State<'_, Db>,
     input: UpdateMemoryReviewSettingsInput,
 ) -> Result<MemoryReviewSettings, String> {
-    db.update_memory_review_settings(input).map_err(|e| e.to_string())
+    db.update_memory_review_settings(input)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -535,7 +534,9 @@ pub fn approve_memory_candidate(
     db: State<'_, Db>,
     id: String,
 ) -> Result<MemoryCandidate, String> {
-    let candidate = db.approve_memory_candidate(&id).map_err(|e| e.to_string())?;
+    let candidate = db
+        .approve_memory_candidate(&id)
+        .map_err(|e| e.to_string())?;
     emit_candidates_changed(&app, &db, &candidate.workflow_id);
     Ok(candidate)
 }
@@ -610,9 +611,7 @@ pub fn clear_decided_memory_candidates(
 /// Post-commit notification for the Suggestions queue. Carries only the
 /// workflow id and pending count — never candidate text or provider output.
 fn emit_candidates_changed(app: &AppHandle, db: &State<'_, Db>, workflow_id: &str) {
-    let pending = db
-        .count_pending_memory_candidates(workflow_id)
-        .unwrap_or(0);
+    let pending = db.count_pending_memory_candidates(workflow_id).unwrap_or(0);
     let _ = app.emit(
         "memory://candidates-changed",
         serde_json::json!({ "workflowId": workflow_id, "pendingCount": pending }),

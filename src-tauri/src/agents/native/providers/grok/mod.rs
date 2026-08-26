@@ -8,12 +8,12 @@
 
 use crate::agent_accounts::resolver::NativeAgentCredential;
 use crate::agents::native::{
-    redact_text, AlfredToolKind, AlfredToolRequest, NativeAgentRuntime,
-    NativeCapabilities, NativeContentClass, NativeErrorCode, NativeEvent,
-    NativeEventKind, NativeModel, NativeRuntimeDescriptor, NativeRuntimeError,
-    NativeSessionMode, NativeTurnHost, NativeTurnOutcome, NativeTurnRequest,
-    NativeUsageSnapshot, ResolvedNativeAccount, NATIVE_CAPABILITY_CONTRACT_VERSION,
-    NATIVE_EVENT_CONTRACT_VERSION, NATIVE_REQUEST_CONTRACT_VERSION,
+    redact_text, AlfredToolKind, AlfredToolRequest, NativeAgentRuntime, NativeCapabilities,
+    NativeContentClass, NativeErrorCode, NativeEvent, NativeEventKind, NativeModel,
+    NativeRuntimeDescriptor, NativeRuntimeError, NativeSessionMode, NativeToolExecutionOwner,
+    NativeTurnHost, NativeTurnOutcome, NativeTurnRequest, NativeUsageSnapshot,
+    ResolvedNativeAccount, NATIVE_CAPABILITY_CONTRACT_VERSION, NATIVE_EVENT_CONTRACT_VERSION,
+    NATIVE_REQUEST_CONTRACT_VERSION,
 };
 use crate::agents::AgentProvider;
 use serde::Serialize;
@@ -69,7 +69,9 @@ pub struct GrokModelRecord {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum GrokStreamEvent {
-    ResponseCreated { response_id: String },
+    ResponseCreated {
+        response_id: String,
+    },
     TextDelta(String),
     FunctionCall {
         call_id: String,
@@ -145,6 +147,8 @@ impl<T: GrokResponsesTransport> NativeAgentRuntime for GrokNativeRuntime<T> {
             request_contract_version: NATIVE_REQUEST_CONTRACT_VERSION,
             event_contract_version: NATIVE_EVENT_CONTRACT_VERSION,
             provider: AgentProvider::Grok,
+            product: crate::agent_accounts::models::AgentProductId::GrokApi,
+            tool_execution_owner: NativeToolExecutionOwner::AlfredExecuted,
             capabilities: NativeCapabilities {
                 contract_version: NATIVE_CAPABILITY_CONTRACT_VERSION,
                 supports_api_key: true,
@@ -159,10 +163,7 @@ impl<T: GrokResponsesTransport> NativeAgentRuntime for GrokNativeRuntime<T> {
         }
     }
 
-    fn validate_account(
-        &self,
-        account: &ResolvedNativeAccount,
-    ) -> Result<(), NativeRuntimeError> {
+    fn validate_account(&self, account: &ResolvedNativeAccount) -> Result<(), NativeRuntimeError> {
         let api_key = api_key(account)?;
         self.transport
             .validate_api_key(api_key)
@@ -359,7 +360,9 @@ fn test_api_key(account: &ResolvedNativeAccount) -> Option<&str> {
         .map(|credential| credential.api_key.as_str())
 }
 
-fn initial_request(request: &NativeTurnRequest) -> Result<GrokResponsesRequest, NativeRuntimeError> {
+fn initial_request(
+    request: &NativeTurnRequest,
+) -> Result<GrokResponsesRequest, NativeRuntimeError> {
     let mut input = Vec::with_capacity(request.context.len());
     for block in &request.context {
         if redact_xai_text(&block.content) != block.content {
@@ -499,9 +502,8 @@ fn tool_request(
             false,
         ));
     }
-    let mut input = serde_json::from_str::<Map<String, Value>>(arguments).map_err(|_| {
-        invalid_provider_event("xAI function call arguments were malformed")
-    })?;
+    let mut input = serde_json::from_str::<Map<String, Value>>(arguments)
+        .map_err(|_| invalid_provider_event("xAI function call arguments were malformed"))?;
     let path = take_string(&mut input, "path")?.map(PathBuf::from);
     let (kind, arguments) = match name {
         "alfred_file_read" => {
@@ -529,7 +531,11 @@ fn tool_request(
             require_only_string_fields(&input, &["patch"])?;
             (AlfredToolKind::ApplyPatch, Vec::new())
         }
-        _ => return Err(invalid_provider_event("xAI requested an unknown Alfred function")),
+        _ => {
+            return Err(invalid_provider_event(
+                "xAI requested an unknown Alfred function",
+            ))
+        }
     };
     let mut request = AlfredToolRequest::new(call_id, kind, name);
     request.path = path;
@@ -653,20 +659,16 @@ fn redact_xai_text(value: &str) -> String {
     while let Some(offset) = lower[search..].find("xai-") {
         let start = search + offset;
         let at_boundary = start == 0
-            || value[..start]
-                .chars()
-                .next_back()
-                .is_some_and(|character| {
-                    character.is_whitespace()
-                        || matches!(
-                            character,
-                            '"' | '\'' | ',' | ';' | ':' | '(' | ')' | '{' | '}' | '[' | ']'
-                        )
-                });
+            || value[..start].chars().next_back().is_some_and(|character| {
+                character.is_whitespace()
+                    || matches!(
+                        character,
+                        '"' | '\'' | ',' | ';' | ':' | '(' | ')' | '{' | '}' | '[' | ']'
+                    )
+            });
         let end = value[start..]
             .find(|character: char| {
-                character.is_whitespace()
-                    || matches!(character, ',' | ';' | '"' | '\'' | ')' | '}')
+                character.is_whitespace() || matches!(character, ',' | ';' | '"' | '\'' | ')' | '}')
             })
             .map(|offset| start + offset)
             .unwrap_or(value.len());
@@ -775,9 +777,7 @@ pub fn parse_responses_sse_data(data: &str) -> Result<Option<GrokStreamEvent>, G
                 "invalid_api_key" | "unauthorized" => GrokTransportErrorKind::Unauthorized,
                 "api_key_disabled" | "api_key_revoked" => GrokTransportErrorKind::Revoked,
                 "rate_limit_exceeded" => GrokTransportErrorKind::RateLimited,
-                "content_policy_violation"
-                | "safety_violation"
-                | "usage_guidelines_violation" => {
+                "content_policy_violation" | "safety_violation" | "usage_guidelines_violation" => {
                     GrokTransportErrorKind::Safety
                 }
                 _ => GrokTransportErrorKind::Provider,
@@ -810,11 +810,11 @@ struct TestOnlyGrokCredential {
 mod tests {
     use super::*;
     use crate::agents::native::{
-        AlfredApprovalDecision, AlfredApprovalHandler, AlfredApprovalRequest,
-        AlfredToolExecutor, AlfredToolResult, AlfredToolStatus, NativeAccountResolver,
-        NativeApprovalPolicy, NativeCancellation, NativeContextBlock, NativeContextRole,
-        NativeCredential, NativeEventLimits, NativePermissionProfile, NativeRuntimeRegistry,
-        NativeToolCapabilitySet, NativeUsageState, TOOL_CONTRACT_VERSION,
+        AlfredApprovalDecision, AlfredApprovalHandler, AlfredApprovalRequest, AlfredToolExecutor,
+        AlfredToolResult, AlfredToolStatus, NativeAccountResolver, NativeApprovalPolicy,
+        NativeCancellation, NativeContextBlock, NativeContextRole, NativeCredential,
+        NativeEventLimits, NativePermissionProfile, NativeRuntimeRegistry, NativeToolCapabilitySet,
+        NativeUsageState, TOOL_CONTRACT_VERSION,
     };
     use crate::agents::{AgentHarness, OpaqueAgentAccountRef};
     use std::collections::VecDeque;
@@ -828,7 +828,9 @@ mod tests {
     struct FixtureTransport {
         validation: Mutex<Result<(), GrokTransportError>>,
         models: Mutex<Result<Vec<GrokModelRecord>, GrokTransportError>>,
-        streams: Mutex<VecDeque<Result<Vec<Result<GrokStreamEvent, GrokTransportError>>, GrokTransportError>>>,
+        streams: Mutex<
+            VecDeque<Result<Vec<Result<GrokStreamEvent, GrokTransportError>>, GrokTransportError>>,
+        >,
         requests: Mutex<Vec<GrokResponsesRequest>>,
     }
 
@@ -874,16 +876,12 @@ mod tests {
                 ));
             }
             self.requests.lock().unwrap().push(request.clone());
-            self.streams
-                .lock()
-                .unwrap()
-                .pop_front()
-                .unwrap_or_else(|| {
-                    Err(GrokTransportError::new(
-                        GrokTransportErrorKind::Provider,
-                        "missing fixture stream",
-                    ))
-                })
+            self.streams.lock().unwrap().pop_front().unwrap_or_else(|| {
+                Err(GrokTransportError::new(
+                    GrokTransportErrorKind::Provider,
+                    "missing fixture stream",
+                ))
+            })
         }
     }
 
@@ -896,8 +894,12 @@ mod tests {
             &self,
             account_ref: &OpaqueAgentAccountRef,
             provider: AgentProvider,
+            product: crate::agent_accounts::models::AgentProductId,
         ) -> Result<ResolvedNativeAccount, NativeRuntimeError> {
-            if provider != AgentProvider::Grok || account_ref != &self.account_ref {
+            if provider != AgentProvider::Grok
+                || product != crate::agent_accounts::models::AgentProductId::GrokApi
+                || account_ref != &self.account_ref
+            {
                 return Err(NativeRuntimeError::new(
                     NativeErrorCode::AccountMismatch,
                     "fixture account mismatch",
@@ -954,6 +956,7 @@ mod tests {
         ResolvedNativeAccount {
             account_ref,
             provider: AgentProvider::Grok,
+            product: crate::agent_accounts::models::AgentProductId::GrokApi,
             credential: NativeCredential::new(TestOnlyGrokCredential {
                 api_key: TEST_KEY.into(),
             }),
@@ -986,7 +989,9 @@ mod tests {
             session_id: None,
             event_limits: NativeEventLimits::default(),
             timeout_ms: 30_000,
-            cancellation: Some(NativeCancellation::new("grok_fixture", Duration::from_secs(30)).unwrap()),
+            cancellation: Some(
+                NativeCancellation::new("grok_fixture", Duration::from_secs(30)).unwrap(),
+            ),
         }
     }
 
@@ -1072,15 +1077,31 @@ mod tests {
     #[test]
     fn rate_limit_provider_and_safety_errors_are_classified_and_redacted() {
         for (kind, code, retryable) in [
-            (GrokTransportErrorKind::RateLimited, NativeErrorCode::ProviderUnavailable, true),
-            (GrokTransportErrorKind::Safety, NativeErrorCode::ProviderUnavailable, false),
-            (GrokTransportErrorKind::Provider, NativeErrorCode::ProviderUnavailable, true),
+            (
+                GrokTransportErrorKind::RateLimited,
+                NativeErrorCode::ProviderUnavailable,
+                true,
+            ),
+            (
+                GrokTransportErrorKind::Safety,
+                NativeErrorCode::ProviderUnavailable,
+                false,
+            ),
+            (
+                GrokTransportErrorKind::Provider,
+                NativeErrorCode::ProviderUnavailable,
+                true,
+            ),
         ] {
             let transport = Arc::new(FixtureTransport::default());
-            transport.streams.lock().unwrap().push_back(Err(GrokTransportError::new(
-                kind,
-                format!("provider echoed {TEST_KEY} Authorization: Bearer bearer-secret"),
-            )));
+            transport
+                .streams
+                .lock()
+                .unwrap()
+                .push_back(Err(GrokTransportError::new(
+                    kind,
+                    format!("provider echoed {TEST_KEY} Authorization: Bearer bearer-secret"),
+                )));
             let error = execute(
                 transport,
                 &request(),
@@ -1098,10 +1119,14 @@ mod tests {
     #[test]
     fn timeout_and_cancellation_have_stable_codes() {
         let transport = Arc::new(FixtureTransport::default());
-        transport.streams.lock().unwrap().push_back(Err(GrokTransportError::new(
-            GrokTransportErrorKind::Timeout,
-            "deadline",
-        )));
+        transport
+            .streams
+            .lock()
+            .unwrap()
+            .push_back(Err(GrokTransportError::new(
+                GrokTransportErrorKind::Timeout,
+                "deadline",
+            )));
         assert_eq!(
             execute(
                 transport,
@@ -1130,10 +1155,14 @@ mod tests {
         );
 
         let transport = Arc::new(FixtureTransport::default());
-        transport.streams.lock().unwrap().push_back(Err(GrokTransportError::new(
-            GrokTransportErrorKind::Cancelled,
-            "cancelled by transport",
-        )));
+        transport
+            .streams
+            .lock()
+            .unwrap()
+            .push_back(Err(GrokTransportError::new(
+                GrokTransportErrorKind::Cancelled,
+                "cancelled by transport",
+            )));
         assert_eq!(
             execute(
                 transport,
@@ -1167,9 +1196,13 @@ mod tests {
         );
 
         let transport = Arc::new(FixtureTransport::default());
-        transport.streams.lock().unwrap().push_back(Ok(vec![Ok(
-            GrokStreamEvent::TextDelta("stream without completion".into()),
-        )]));
+        transport
+            .streams
+            .lock()
+            .unwrap()
+            .push_back(Ok(vec![Ok(GrokStreamEvent::TextDelta(
+                "stream without completion".into(),
+            ))]));
         assert_eq!(
             execute(
                 transport,
@@ -1241,7 +1274,10 @@ mod tests {
         assert!(!requests[0].store);
         assert!(!requests[0].parallel_tool_calls);
         assert_eq!(requests[0].max_output_tokens, MAX_OUTPUT_TOKENS);
-        assert_eq!(requests[1].previous_response_id.as_deref(), Some("resp_tool"));
+        assert_eq!(
+            requests[1].previous_response_id.as_deref(),
+            Some("resp_tool")
+        );
         let serialized = serde_json::to_string(&requests[1]).unwrap();
         assert!(serialized.contains("denied"));
         assert!(!serialized.contains(TEST_KEY));
@@ -1250,10 +1286,8 @@ mod tests {
     #[test]
     fn sse_parser_accepts_documented_text_tool_completion_and_filters_reasoning() {
         assert_eq!(
-            parse_responses_sse_data(
-                r#"{"type":"response.output_text.delta","delta":"hello"}"#
-            )
-            .unwrap(),
+            parse_responses_sse_data(r#"{"type":"response.output_text.delta","delta":"hello"}"#)
+                .unwrap(),
             Some(GrokStreamEvent::TextDelta("hello".into()))
         );
         assert!(matches!(
@@ -1264,8 +1298,7 @@ mod tests {
             Some(GrokStreamEvent::FunctionCall { .. })
         ));
         assert_eq!(
-            parse_responses_sse_data(r#"{"type":"response.completed","response":{}}"#)
-                .unwrap(),
+            parse_responses_sse_data(r#"{"type":"response.completed","response":{}}"#).unwrap(),
             Some(GrokStreamEvent::Completed)
         );
         assert_eq!(
@@ -1304,7 +1337,9 @@ mod tests {
         )
         .unwrap();
         assert_eq!(result.output, "echoed [REDACTED]");
-        assert!(!serde_json::to_string(&result.events).unwrap().contains(TEST_KEY));
+        assert!(!serde_json::to_string(&result.events)
+            .unwrap()
+            .contains(TEST_KEY));
 
         let transport = Arc::new(FixtureTransport::default());
         let mut secret_context = request();

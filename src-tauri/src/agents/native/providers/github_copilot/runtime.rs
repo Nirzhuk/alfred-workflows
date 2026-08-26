@@ -4,16 +4,16 @@ use super::auth::CopilotAccessToken;
 use super::entitlement::{classify_rejection, CopilotAccountState};
 use super::events::{contains_provider_secret, scrub, CopilotEventMapper, MappedEvent};
 use super::transport::{
-    CopilotPermissionReply, CopilotSession, CopilotSessionPolicy, CopilotStartError, CopilotTransport,
-    UnlinkedSdkTransport,
+    CopilotPermissionReply, CopilotSession, CopilotSessionPolicy, CopilotStartError,
+    CopilotTransport, UnlinkedSdkTransport,
 };
 use crate::agent_accounts::resolver::NativeAgentCredential;
 use crate::agents::native::{
     is_secret_key, AlfredToolKind, AlfredToolRequest, AlfredToolStatus, NativeAgentRuntime,
     NativeCapabilities, NativeErrorCode, NativeEvent, NativeEventKind, NativeModel,
-    NativeRuntimeDescriptor, NativeRuntimeError, NativeTurnHost, NativeTurnOutcome,
-    NativeTurnRequest, NativeUsageSnapshot, ResolvedNativeAccount, NATIVE_EVENT_CONTRACT_VERSION,
-    NATIVE_REQUEST_CONTRACT_VERSION,
+    NativeRuntimeDescriptor, NativeRuntimeError, NativeToolExecutionOwner, NativeTurnHost,
+    NativeTurnOutcome, NativeTurnRequest, NativeUsageSnapshot, ResolvedNativeAccount,
+    NATIVE_EVENT_CONTRACT_VERSION, NATIVE_REQUEST_CONTRACT_VERSION,
 };
 use crate::agents::AgentProvider;
 use serde_json::Value;
@@ -43,9 +43,7 @@ impl GithubCopilotNativeRuntime {
         Self::new(Arc::new(UnlinkedSdkTransport))
     }
 
-    fn token(
-        account: &ResolvedNativeAccount,
-    ) -> Result<CopilotAccessToken, NativeRuntimeError> {
+    fn token(account: &ResolvedNativeAccount) -> Result<CopilotAccessToken, NativeRuntimeError> {
         let credential = account
             .credential
             .downcast_ref::<NativeAgentCredential>()
@@ -81,6 +79,8 @@ impl NativeAgentRuntime for GithubCopilotNativeRuntime {
             request_contract_version: NATIVE_REQUEST_CONTRACT_VERSION,
             event_contract_version: NATIVE_EVENT_CONTRACT_VERSION,
             provider: AgentProvider::GithubCopilot,
+            product: crate::agent_accounts::models::AgentProductId::GithubCopilotSubscription,
+            tool_execution_owner: NativeToolExecutionOwner::AlfredExecuted,
             capabilities: NativeCapabilities {
                 // Alfred's own device flow, not an SDK login.
                 supports_oauth: true,
@@ -107,10 +107,7 @@ impl NativeAgentRuntime for GithubCopilotNativeRuntime {
         }
     }
 
-    fn validate_account(
-        &self,
-        account: &ResolvedNativeAccount,
-    ) -> Result<(), NativeRuntimeError> {
+    fn validate_account(&self, account: &ResolvedNativeAccount) -> Result<(), NativeRuntimeError> {
         if account.provider != AgentProvider::GithubCopilot {
             return Err(NativeRuntimeError::new(
                 NativeErrorCode::AccountMismatch,
@@ -239,7 +236,10 @@ impl NativeAgentRuntime for GithubCopilotNativeRuntime {
         })
     }
 
-    fn cancel(&self, cancellation: &crate::agents::native::NativeCancellation) -> Result<(), NativeRuntimeError> {
+    fn cancel(
+        &self,
+        cancellation: &crate::agents::native::NativeCancellation,
+    ) -> Result<(), NativeRuntimeError> {
         // The cooperative flag is what the run loop checks; the live session's
         // `abort()` is issued from inside `run_turn` on the next checkpoint.
         cancellation.cancel();
@@ -409,7 +409,8 @@ pub(super) fn validate_tool_payload_size(
 pub(super) fn required_permission_request_id(
     data: &serde_json::Map<String, Value>,
 ) -> Result<&str, NativeRuntimeError> {
-    let request_id = data.get("requestId")
+    let request_id = data
+        .get("requestId")
         .and_then(Value::as_str)
         .map(str::trim)
         .filter(|request_id| !request_id.is_empty() && request_id.len() <= 128)

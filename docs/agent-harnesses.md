@@ -23,7 +23,34 @@ reference. Native account credentials are never written to workflow JSON, run
 events, or model/provider capability responses, and CLI credentials are not
 reused as native credentials.
 
-No provider-native runtime or account connection is enabled in this release.
+Native account identity separates provider, product, runtime, and billing. The
+stable products are:
+
+```text
+claude_code_subscription  claude_api
+chatgpt_codex             openai_api
+opencode_go               opencode_zen
+cursor_cloud              github_copilot_subscription
+gemini_api                grok_api
+```
+
+Managed subscription accounts point to an opaque isolated runtime profile and
+do not carry a fake secret credential reference. Direct API/PAYG accounts may
+carry an opaque secret reference. Neither reference crosses the Tauri command
+DTO or enters React state. Billing source/owner is stored separately from a
+sourced entitlement observation (`unknown`, `eligible`, `limited`,
+`exhausted`, or `ineligible`), so exhaustion cannot silently switch products.
+
+Native runtime descriptors also state who executes tools:
+`alfred_executed`, `runtime_executed_with_host_approval`, or `no_tools`.
+Runtime execution is valid only when Alfred approves the bounded request before
+execution; otherwise tools stay disabled. A descriptor identifies one exact
+provider/product pair, and an account for another product is rejected before
+credential access or turn execution.
+
+No provider-native runtime is enabled in this release. The existing dedicated
+Claude API, Gemini API, and Grok API key intake can create isolated native
+account records, but that does not make any corresponding runtime executable.
 The editor reads the same versioned capability manifest as the runner and shows
 each provider's `blocked` or `disabled` reason. Attempting to run an unavailable
 native node returns `native_runtime_unavailable`; Alfred does not fall back to a
@@ -49,14 +76,17 @@ CLI execution or one another:
 
 | Provider | Status | Exact external/release blocker |
 | --- | --- | --- |
-| Codex | No-go | Official app-server production support, Alfred verification of upstream Developer ID/Authenticode/Sigstore signatures, license/NOTICE packaging, and packaged no-CLI smoke are missing for pinned app-server 0.149.1 |
-| Claude | Blocked | Approved non-React API-key intake and live API smoke are missing; Claude.ai subscription login also requires Anthropic approval not on record |
+| ChatGPT Codex | No-go | The stable Python SDK `0.147.0` and exact binary package are not bundled; public approval/cancellation coverage, profile lifecycle, packaging, and no-CLI smoke remain unproved. Raw App Server was rejected for production on 2026-08-26. Diagnostic gate: `codex_cross_platform_signing_and_packaged_smoke_missing`. |
+| OpenAI API | Blocked | Separate API-billed product; no native runtime is registered. |
+| Claude Code subscription | Blocked | The unmodified Claude Code `2.1.246` binary is not bundled; isolated profile/login, host-approved tool ownership, packaging, and no-CLI smoke remain unproved. |
+| Claude API | Blocked | Dedicated key intake exists for this separate Anthropic API-billed product; live runtime smoke and release registration remain gated as `claude_live_api_key_smoke_missing`. |
 | Cursor | Blocked | API-key custody, explicit repository consent persistence, and live end-to-end Cloud Agents validation are missing |
-| OpenCode | Blocked | Runtime artifact/checksum/signing/update ownership, upstream-secret intake, and a typed Alfred tool-result bridge are unresolved |
+| OpenCode Go | Blocked | Commercial ToS clarification, `opencode serve` `1.18.23` package/profile ownership, transient Go-key handoff, and host-approved built-in tool smoke are missing. Diagnostic gate: `opencode_package_account_and_tool_bridge_unverified`. |
+| OpenCode Zen | Blocked | Separate PAYG credential and explicit route have no registered managed server; there is no Go-to-Zen fallback. |
 | GitHub Copilot | Blocked | The pinned SDK/CLI is not linked and packaged with its required license notices and packaged smoke evidence |
-| Gemini | Blocked | Approved API-key intake and live API smoke are missing; desktop OAuth client packaging is a separate unresolved gate |
-| Grok | Blocked | Approved xAI API-key intake and live API smoke are missing |
-| Pi / OMP | Disabled | No Alfred-native provider implementation or release evidence exists |
+| Gemini API | Blocked | Dedicated key intake exists; live API smoke and release registration are missing. Desktop OAuth is a separate product decision. |
+| Grok API | Blocked | Dedicated xAI key intake exists; live API smoke and release registration are missing. |
+| Pi / OMP | CLI only | They are not managed native products and remain unchanged CLI adapters. |
 
 Runtime versions in the manifest are protocol/package targets, not claims that
 an artifact is bundled. Bundled metadata separately reports resource presence,
@@ -71,11 +101,10 @@ connects a native account. If native mode is unavailable:
 
 1. Keep the failed node unchanged while collecting its safe provider/harness
    diagnostic.
-2. This zero-native release cannot establish, refresh, or reconnect a native
-   account. Existing recovery records can only be disconnected or cleaned up
-   from **Settings → Native agent accounts**. When cleanup cannot finish, revoke
-   or rotate the credential at the provider before choosing **Remove local
-   data**.
+2. This zero-native release does not make provider runtimes available. Existing
+   recovery records can only use the lifecycle actions actually exposed by the
+   gated product; a managed profile and a direct API secret have different
+   cleanup owners.
 3. To keep working through the CLI, explicitly edit the node and select
    **Provider CLI**. Confirm the CLI is installed and logged in first.
 

@@ -6,10 +6,10 @@
 mod context;
 mod contract;
 mod events;
+pub mod providers;
 mod redaction;
 mod registry;
 mod tools;
-pub mod providers;
 
 #[cfg(test)]
 mod conformance;
@@ -27,4 +27,4 @@ pub use tools::*;
 
 pub const NATIVE_REQUEST_CONTRACT_VERSION: u16 = 1;
 pub const NATIVE_EVENT_CONTRACT_VERSION: u16 = 1;
-pub const NATIVE_CAPABILITY_CONTRACT_VERSION: u16 = 2;
+pub const NATIVE_CAPABILITY_CONTRACT_VERSION: u16 = 3;

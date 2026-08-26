@@ -26,11 +26,11 @@ mod tests;
 
 use crate::agent_accounts::resolver::NativeAgentCredential;
 use crate::agents::native::{
-    NativeAgentRuntime, NativeCancellation, NativeCapabilities, NativeContentClass, NativeErrorCode,
-    NativeEvent, NativeEventKind, NativeModel, NativeRuntimeDescriptor, NativeRuntimeError,
-    NativeRuntimeRegistry, NativeTurnHost, NativeTurnOutcome, NativeTurnRequest,
-    NativeUsageSnapshot, ResolvedNativeAccount, NATIVE_EVENT_CONTRACT_VERSION,
-    NATIVE_REQUEST_CONTRACT_VERSION,
+    NativeAgentRuntime, NativeCancellation, NativeCapabilities, NativeContentClass,
+    NativeErrorCode, NativeEvent, NativeEventKind, NativeModel, NativeRuntimeDescriptor,
+    NativeRuntimeError, NativeRuntimeRegistry, NativeToolExecutionOwner, NativeTurnHost,
+    NativeTurnOutcome, NativeTurnRequest, NativeUsageSnapshot, ResolvedNativeAccount,
+    NATIVE_EVENT_CONTRACT_VERSION, NATIVE_REQUEST_CONTRACT_VERSION,
 };
 use crate::agents::AgentProvider;
 use serde_json::Value;
@@ -126,6 +126,8 @@ impl NativeAgentRuntime for ClaudeNativeRuntime {
             request_contract_version: NATIVE_REQUEST_CONTRACT_VERSION,
             event_contract_version: NATIVE_EVENT_CONTRACT_VERSION,
             provider: AgentProvider::ClaudeCode,
+            product: crate::agent_accounts::models::AgentProductId::ClaudeApi,
+            tool_execution_owner: NativeToolExecutionOwner::AlfredExecuted,
             capabilities: capabilities(),
         }
     }

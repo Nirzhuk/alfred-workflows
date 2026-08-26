@@ -12,8 +12,9 @@ use crate::agents::native::{
     redact_text, CapabilityReportStatus, NativeAgentRuntime, NativeCancellation,
     NativeCapabilities, NativeContentClass, NativeErrorCode, NativeEvent, NativeEventKind,
     NativeModel, NativeRuntimeDescriptor, NativeRuntimeError, NativeRuntimeRegistry,
-    NativeTurnHost, NativeTurnOutcome, NativeTurnRequest, NativeUsageSnapshot,
-    ResolvedNativeAccount, NATIVE_EVENT_CONTRACT_VERSION, NATIVE_REQUEST_CONTRACT_VERSION,
+    NativeToolExecutionOwner, NativeTurnHost, NativeTurnOutcome, NativeTurnRequest,
+    NativeUsageSnapshot, ResolvedNativeAccount, NATIVE_EVENT_CONTRACT_VERSION,
+    NATIVE_REQUEST_CONTRACT_VERSION,
 };
 use crate::agents::AgentProvider;
 use serde::Serialize;
@@ -124,7 +125,9 @@ impl GeminiNativeRuntime {
                 ));
             }
             "malformed_function_call" | "unexpected_tool_call" | "too_many_tool_calls" => {
-                return Err(invalid_event("gemini could not produce a valid bounded tool call"));
+                return Err(invalid_event(
+                    "gemini could not produce a valid bounded tool call",
+                ));
             }
             _ => {
                 return Err(NativeRuntimeError::new(
@@ -153,6 +156,8 @@ impl NativeAgentRuntime for GeminiNativeRuntime {
             request_contract_version: NATIVE_REQUEST_CONTRACT_VERSION,
             event_contract_version: NATIVE_EVENT_CONTRACT_VERSION,
             provider: AgentProvider::Gemini,
+            product: crate::agent_accounts::models::AgentProductId::GeminiApi,
+            tool_execution_owner: NativeToolExecutionOwner::AlfredExecuted,
             capabilities: NativeCapabilities {
                 supports_api_key: true,
                 supports_model_list: true,
@@ -169,10 +174,7 @@ impl NativeAgentRuntime for GeminiNativeRuntime {
         }
     }
 
-    fn validate_account(
-        &self,
-        account: &ResolvedNativeAccount,
-    ) -> Result<(), NativeRuntimeError> {
+    fn validate_account(&self, account: &ResolvedNativeAccount) -> Result<(), NativeRuntimeError> {
         if account.provider != AgentProvider::Gemini {
             return Err(NativeRuntimeError::new(
                 NativeErrorCode::AccountMismatch,

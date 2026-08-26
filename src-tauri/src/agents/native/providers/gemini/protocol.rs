@@ -32,12 +32,36 @@ pub const TOOL_OUTPUT_BYTES: usize = 128 * 1024;
 /// filesystem or shell, and never forwards a header or secret out of workflow
 /// JSON. Only capabilities the turn actually granted are declared.
 const TOOL_DECLARATIONS: [(&str, AlfredToolKind, &str); 6] = [
-    ("alfred_read_file", AlfredToolKind::FileRead, "Read a UTF-8 file inside the workspace."),
-    ("alfred_list_directory", AlfredToolKind::DirectoryList, "List a directory inside the workspace."),
-    ("alfred_write_file", AlfredToolKind::FileWrite, "Write a UTF-8 file inside the workspace."),
-    ("alfred_edit_file", AlfredToolKind::FileEdit, "Replace a span of a file inside the workspace."),
-    ("alfred_run_shell", AlfredToolKind::Shell, "Run one shell command inside the workspace."),
-    ("alfred_apply_patch", AlfredToolKind::ApplyPatch, "Apply a unified diff inside the workspace."),
+    (
+        "alfred_read_file",
+        AlfredToolKind::FileRead,
+        "Read a UTF-8 file inside the workspace.",
+    ),
+    (
+        "alfred_list_directory",
+        AlfredToolKind::DirectoryList,
+        "List a directory inside the workspace.",
+    ),
+    (
+        "alfred_write_file",
+        AlfredToolKind::FileWrite,
+        "Write a UTF-8 file inside the workspace.",
+    ),
+    (
+        "alfred_edit_file",
+        AlfredToolKind::FileEdit,
+        "Replace a span of a file inside the workspace.",
+    ),
+    (
+        "alfred_run_shell",
+        AlfredToolKind::Shell,
+        "Run one shell command inside the workspace.",
+    ),
+    (
+        "alfred_apply_patch",
+        AlfredToolKind::ApplyPatch,
+        "Apply a unified diff inside the workspace.",
+    ),
 ];
 
 /// Resolves a declared function name back to its Alfred tool kind.
@@ -180,10 +204,7 @@ pub fn build_generate_request(
     for entry in history {
         match entry {
             GeminiHistoryEntry::ModelFunctionCalls(calls) => {
-                let parts = calls
-                    .iter()
-                    .map(function_call_part)
-                    .collect::<Vec<_>>();
+                let parts = calls.iter().map(function_call_part).collect::<Vec<_>>();
                 contents.push(json!({ "role": "model", "parts": parts }));
             }
             GeminiHistoryEntry::ModelResponse { text_parts, calls } => {
@@ -195,10 +216,7 @@ pub fn build_generate_request(
                 contents.push(json!({ "role": "model", "parts": parts }));
             }
             GeminiHistoryEntry::ToolResults(results) => {
-                let parts = results
-                    .iter()
-                    .map(function_result_part)
-                    .collect::<Vec<_>>();
+                let parts = results.iter().map(function_result_part).collect::<Vec<_>>();
                 contents.push(json!({ "role": "user", "parts": parts }));
             }
         }
@@ -246,9 +264,16 @@ pub enum GeminiChunkEvent {
     Text(String),
     FunctionCall(GeminiFunctionCall),
     /// The provider refused. Never a successful empty turn.
-    Blocked { reason: String },
-    Usage { input_tokens: u64, output_tokens: u64 },
-    Finished { reason: String },
+    Blocked {
+        reason: String,
+    },
+    Usage {
+        input_tokens: u64,
+        output_tokens: u64,
+    },
+    Finished {
+        reason: String,
+    },
 }
 
 /// Decodes one SSE `data:` payload.
@@ -495,9 +520,7 @@ impl GeminiSseDecoder {
 
 fn find_sse_delimiter(buffer: &[u8]) -> Option<(usize, usize)> {
     let lf = buffer.windows(2).position(|window| window == b"\n\n");
-    let crlf = buffer
-        .windows(4)
-        .position(|window| window == b"\r\n\r\n");
+    let crlf = buffer.windows(4).position(|window| window == b"\r\n\r\n");
     match (lf, crlf) {
         (Some(left), Some(right)) if left <= right => Some((left, 2)),
         (Some(_), Some(right)) => Some((right, 4)),
@@ -605,9 +628,9 @@ fn optional_safe_id(value: Option<&Value>) -> Result<Option<String>, NativeRunti
     let id = value.as_str().ok_or_else(malformed)?;
     let valid = !id.is_empty()
         && id.len() <= 128
-        && id.bytes().all(|byte| {
-            byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.' | b':')
-        });
+        && id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.' | b':'));
     if valid {
         Ok(Some(id.to_owned()))
     } else {
@@ -659,7 +682,10 @@ pub fn error_for_status(status: u16, detail: &str) -> NativeRuntimeError {
 pub fn blocked_error(reason: &str) -> NativeRuntimeError {
     NativeRuntimeError::new(
         NativeErrorCode::ProviderUnavailable,
-        format!("gemini blocked this turn ({}); no output was produced", sanitize_enum(reason)),
+        format!(
+            "gemini blocked this turn ({}); no output was produced",
+            sanitize_enum(reason)
+        ),
         false,
     )
 }
@@ -677,7 +703,9 @@ fn malformed() -> NativeRuntimeError {
 fn sanitize_enum(value: &str) -> String {
     let cleaned = value
         .chars()
-        .filter(|character| character.is_ascii_alphanumeric() || matches!(character, '_' | '-' | ' '))
+        .filter(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '_' | '-' | ' ')
+        })
         .take(64)
         .collect::<String>();
     if cleaned.trim().is_empty() {
@@ -688,7 +716,9 @@ fn sanitize_enum(value: &str) -> String {
 }
 
 /// Maps the model catalog body onto bounded native models.
-pub fn parse_models(body: &str) -> Result<Vec<crate::agents::native::NativeModel>, NativeRuntimeError> {
+pub fn parse_models(
+    body: &str,
+) -> Result<Vec<crate::agents::native::NativeModel>, NativeRuntimeError> {
     let value: Value = serde_json::from_str(body).map_err(|_| model_catalog_invalid())?;
     let models = value
         .get("models")

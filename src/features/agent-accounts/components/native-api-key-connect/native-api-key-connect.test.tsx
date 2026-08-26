@@ -1,13 +1,9 @@
 import { expect, test } from "bun:test";
-import { isNativeApiKeyProvider } from "./native-api-key-connect";
+import { usesAlfredManagedApiKey } from "../../types";
 
-test("accepts only the approved native API-key providers", () => {
-  expect(isNativeApiKeyProvider("claude_code")).toBe(true);
-  expect(isNativeApiKeyProvider("gemini")).toBe(true);
-  expect(isNativeApiKeyProvider("grok")).toBe(true);
-  expect(isNativeApiKeyProvider("cursor")).toBe(false);
-  expect(isNativeApiKeyProvider("codex")).toBe(false);
-  expect(isNativeApiKeyProvider("toString")).toBe(false);
-  expect(isNativeApiKeyProvider("__proto__")).toBe(false);
+test("classifies local API keys from backend auth and custody metadata", () => {
+  expect(usesAlfredManagedApiKey(["api_key"], "alfred_managed")).toBe(true);
+  expect(usesAlfredManagedApiKey("api_key", "alfred_managed")).toBe(true);
+  expect(usesAlfredManagedApiKey("api_key", "runtime_managed")).toBe(false);
+  expect(usesAlfredManagedApiKey("device_code", "alfred_managed")).toBe(false);
 });
-

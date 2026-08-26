@@ -56,7 +56,9 @@ fn fake_runtime_registers_validates_streams_reports_usage_and_unregisters() {
             .execute_turn(
                 &invalid_model,
                 resolver.as_ref(),
-                &FakeToolExecutor { output: "ok".into() },
+                &FakeToolExecutor {
+                    output: "ok".into()
+                },
                 &FakeApprovalHandler(AlfredApprovalDecision::Allow),
                 &mut |_| {},
             )
@@ -70,7 +72,9 @@ fn fake_runtime_registers_validates_streams_reports_usage_and_unregisters() {
         .execute_turn(
             &request,
             resolver.as_ref(),
-            &FakeToolExecutor { output: "ok".into() },
+            &FakeToolExecutor {
+                output: "ok".into(),
+            },
             &FakeApprovalHandler(AlfredApprovalDecision::Allow),
             &mut |event| streamed.push(event.clone()),
         )
@@ -85,6 +89,14 @@ fn fake_runtime_registers_validates_streams_reports_usage_and_unregisters() {
         NativeUsageState::Supported
     );
     let report = registry.capability_report(AgentProvider::Codex).unwrap();
+    assert_eq!(
+        report.product,
+        crate::agent_accounts::models::AgentProductId::OpenaiApi
+    );
+    assert_eq!(
+        report.tool_execution_owner,
+        NativeToolExecutionOwner::AlfredExecuted
+    );
     assert!(report.entries.iter().any(|entry| {
         entry.capability == "usage" && entry.status == CapabilityReportStatus::Supported
     }));
@@ -121,7 +133,9 @@ fn approval_allow_and_deny_are_explicit_and_bounded() {
         .execute_turn(
             &request,
             resolver.as_ref(),
-            &FakeToolExecutor { output: "workspace".into() },
+            &FakeToolExecutor {
+                output: "workspace".into(),
+            },
             &FakeApprovalHandler(AlfredApprovalDecision::Allow),
             &mut |event| events.push(event.clone()),
         )
@@ -131,14 +145,15 @@ fn approval_allow_and_deny_are_explicit_and_bounded() {
         event.kind == NativeEventKind::ApprovalResolved && event.approved == Some(true)
     }));
 
-    request.cancellation = Some(
-        NativeCancellation::new("cancel_deny", DEFAULT_TURN_TIMEOUT).unwrap(),
-    );
+    request.cancellation =
+        Some(NativeCancellation::new("cancel_deny", DEFAULT_TURN_TIMEOUT).unwrap());
     let denied = registry
         .execute_turn(
             &request,
             resolver.as_ref(),
-            &FakeToolExecutor { output: "must not leak".into() },
+            &FakeToolExecutor {
+                output: "must not leak".into(),
+            },
             &FakeApprovalHandler(AlfredApprovalDecision::Deny),
             &mut |_| {},
         )
@@ -180,9 +195,7 @@ fn cancellation_timeout_and_session_gates_are_visible() {
             .code,
         NativeErrorCode::TimedOut
     );
-    request.cancellation = Some(
-        NativeCancellation::new("session", DEFAULT_TURN_TIMEOUT).unwrap(),
-    );
+    request.cancellation = Some(NativeCancellation::new("session", DEFAULT_TURN_TIMEOUT).unwrap());
     request.session_mode = NativeSessionMode::Resume;
     request.session_id = Some("session_1".into());
     assert_eq!(
@@ -210,9 +223,8 @@ fn registry_cancels_an_active_fake_turn() {
         .delay_ms
         .store(250, std::sync::atomic::Ordering::SeqCst);
     let mut request = fake_request(AgentProvider::Codex, account_ref);
-    request.cancellation = Some(
-        NativeCancellation::new("active_cancel", DEFAULT_TURN_TIMEOUT).unwrap(),
-    );
+    request.cancellation =
+        Some(NativeCancellation::new("active_cancel", DEFAULT_TURN_TIMEOUT).unwrap());
     let worker_registry = registry.clone();
     let worker_resolver = resolver.clone();
     let worker = std::thread::spawn(move || {
@@ -234,9 +246,7 @@ fn registry_cancels_an_active_fake_turn() {
         worker.join().unwrap().unwrap_err().code,
         NativeErrorCode::Cancelled
     );
-    assert!(runtime
-        .cancelled
-        .load(std::sync::atomic::Ordering::SeqCst));
+    assert!(runtime.cancelled.load(std::sync::atomic::Ordering::SeqCst));
 }
 
 #[test]
@@ -558,6 +568,8 @@ impl NativeAgentRuntime for BlockingCancelRuntime {
             request_contract_version: NATIVE_REQUEST_CONTRACT_VERSION,
             event_contract_version: NATIVE_EVENT_CONTRACT_VERSION,
             provider: self.provider,
+            product: crate::agent_accounts::models::AgentProductId::OpenaiApi,
+            tool_execution_owner: NativeToolExecutionOwner::NoTools,
             capabilities: NativeCapabilities {
                 supports_model_list: true,
                 ..NativeCapabilities::default()
@@ -565,10 +577,7 @@ impl NativeAgentRuntime for BlockingCancelRuntime {
         }
     }
 
-    fn validate_account(
-        &self,
-        account: &ResolvedNativeAccount,
-    ) -> Result<(), NativeRuntimeError> {
+    fn validate_account(&self, account: &ResolvedNativeAccount) -> Result<(), NativeRuntimeError> {
         if account.provider == self.provider {
             Ok(())
         } else {
@@ -643,7 +652,9 @@ fn a_runtime_without_a_model_catalog_runs_with_an_explicit_bounded_model() {
         .execute_turn(
             &request,
             &resolver,
-            &FakeToolExecutor { output: "ok".into() },
+            &FakeToolExecutor {
+                output: "ok".into(),
+            },
             &FakeApprovalHandler(AlfredApprovalDecision::Deny),
             &mut |_| {},
         )
@@ -669,7 +680,9 @@ fn a_runtime_without_a_model_catalog_runs_with_an_explicit_bounded_model() {
                 .execute_turn(
                     &invalid,
                     &resolver,
-                    &FakeToolExecutor { output: "ok".into() },
+                    &FakeToolExecutor {
+                        output: "ok".into()
+                    },
                     &FakeApprovalHandler(AlfredApprovalDecision::Deny),
                     &mut |_| {},
                 )
@@ -695,7 +708,9 @@ fn denied_tools_emit_a_terminal_tool_completed_event() {
             .execute_turn(
                 &request,
                 resolver.as_ref(),
-                &FakeToolExecutor { output: "workspace".into() },
+                &FakeToolExecutor {
+                    output: "workspace".into(),
+                },
                 &FakeApprovalHandler(decision),
                 &mut |event| events.push(event.clone()),
             )
@@ -748,7 +763,9 @@ fn apply_patch_requires_a_declared_patch_capability() {
             .execute_turn(
                 &request,
                 &resolver,
-                &FakeToolExecutor { output: "ok".into() },
+                &FakeToolExecutor {
+                    output: "ok".into()
+                },
                 &FakeApprovalHandler(AlfredApprovalDecision::Deny),
                 &mut |_| {},
             )
@@ -772,12 +789,9 @@ fn apply_patch_requires_a_declared_patch_capability() {
         ..NativeToolCapabilitySet::default()
     };
     assert_eq!(
-        super::registry::validate_request_for_capabilities(
-            &patch_request,
-            &filesystem_only,
-        )
-        .unwrap_err()
-        .code,
+        super::registry::validate_request_for_capabilities(&patch_request, &filesystem_only,)
+            .unwrap_err()
+            .code,
         NativeErrorCode::CapabilityUnsupported
     );
 
@@ -903,7 +917,9 @@ fn cancellation_handles_are_unique_per_turn_and_scoped_by_provider() {
         .execute_turn(
             &request,
             resolver.as_ref(),
-            &FakeToolExecutor { output: "ok".into() },
+            &FakeToolExecutor {
+                output: "ok".into(),
+            },
             &FakeApprovalHandler(AlfredApprovalDecision::Deny),
             &mut |_| {},
         )
@@ -1152,7 +1168,9 @@ fn the_execution_router_resolves_streams_activity_and_honours_stop() {
     }
 
     // Stop cancels the live turn instead of being ignored.
-    runtime.delay_ms.store(2_000, std::sync::atomic::Ordering::SeqCst);
+    runtime
+        .delay_ms
+        .store(2_000, std::sync::atomic::Ordering::SeqCst);
     let control = RunControl::new();
     control.request_cancel();
     let error = router
@@ -1230,7 +1248,10 @@ fn live_stop_invokes_the_provider_cancel_hook_before_the_turn_settles() {
         .clone()
         .expect("cancel handle");
     assert_eq!(
-        registry.cancel(provider, &cancellation_id).unwrap_err().code,
+        registry
+            .cancel(provider, &cancellation_id)
+            .unwrap_err()
+            .code,
         NativeErrorCode::InvalidRequest,
         "completed turn left its cancellation handle active"
     );

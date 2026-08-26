@@ -1,4 +1,5 @@
 use super::*;
+use crate::agent_accounts::models::AgentProductId;
 use crate::agents::{AgentProvider, OpaqueAgentAccountRef};
 use serde_json::Map;
 use std::path::PathBuf;
@@ -26,6 +27,7 @@ impl NativeAccountResolver for FakeAccountResolver {
         &self,
         account_ref: &OpaqueAgentAccountRef,
         provider: AgentProvider,
+        product: AgentProductId,
     ) -> Result<ResolvedNativeAccount, NativeRuntimeError> {
         if !self.available.load(Ordering::SeqCst) {
             return Err(NativeRuntimeError::new(
@@ -34,7 +36,10 @@ impl NativeAccountResolver for FakeAccountResolver {
                 false,
             ));
         }
-        if account_ref != &self.account_ref || provider != self.provider {
+        if account_ref != &self.account_ref
+            || provider != self.provider
+            || product != fake_product(provider)
+        {
             return Err(NativeRuntimeError::new(
                 NativeErrorCode::AccountMismatch,
                 "fake account does not match",
@@ -44,8 +49,24 @@ impl NativeAccountResolver for FakeAccountResolver {
         Ok(ResolvedNativeAccount {
             account_ref: account_ref.clone(),
             provider,
+            product: fake_product(provider),
             credential: NativeCredential::new("fake-credential-held-in-memory".to_string()),
         })
+    }
+}
+
+fn fake_product(provider: AgentProvider) -> AgentProductId {
+    match provider {
+        AgentProvider::ClaudeCode => AgentProductId::ClaudeApi,
+        AgentProvider::Cursor => AgentProductId::CursorCloud,
+        AgentProvider::Codex => AgentProductId::OpenaiApi,
+        AgentProvider::Opencode => AgentProductId::OpencodeZen,
+        AgentProvider::GithubCopilot => AgentProductId::GithubCopilotSubscription,
+        AgentProvider::Gemini => AgentProductId::GeminiApi,
+        AgentProvider::Grok => AgentProductId::GrokApi,
+        AgentProvider::Pi | AgentProvider::Omp => {
+            panic!("no native product is registered for a CLI-only provider")
+        }
     }
 }
 
@@ -91,14 +112,13 @@ impl NativeAgentRuntime for FakeNativeRuntime {
             request_contract_version: NATIVE_REQUEST_CONTRACT_VERSION,
             event_contract_version: NATIVE_EVENT_CONTRACT_VERSION,
             provider: self.provider,
+            product: fake_product(self.provider),
+            tool_execution_owner: NativeToolExecutionOwner::AlfredExecuted,
             capabilities: self.capabilities(),
         }
     }
 
-    fn validate_account(
-        &self,
-        account: &ResolvedNativeAccount,
-    ) -> Result<(), NativeRuntimeError> {
+    fn validate_account(&self, account: &ResolvedNativeAccount) -> Result<(), NativeRuntimeError> {
         if account.provider != self.provider
             || account
                 .credential
@@ -195,6 +215,8 @@ impl NativeAgentRuntime for FakeCatalogFreeRuntime {
             request_contract_version: NATIVE_REQUEST_CONTRACT_VERSION,
             event_contract_version: NATIVE_EVENT_CONTRACT_VERSION,
             provider: self.provider,
+            product: fake_product(self.provider),
+            tool_execution_owner: NativeToolExecutionOwner::NoTools,
             capabilities: NativeCapabilities {
                 supports_api_key: true,
                 ..NativeCapabilities::default()

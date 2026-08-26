@@ -223,8 +223,8 @@ impl CodexJsonlTransport {
         if line.len() > MAX_CODEX_FRAME_BYTES {
             return Err(CodexTransportError::OversizedFrame);
         }
-        let value: Value = serde_json::from_slice(line)
-            .map_err(|_| CodexTransportError::MalformedFrame)?;
+        let value: Value =
+            serde_json::from_slice(line).map_err(|_| CodexTransportError::MalformedFrame)?;
         let object = value
             .as_object()
             .ok_or(CodexTransportError::MalformedFrame)?;
@@ -510,7 +510,12 @@ mod tests {
         let now = Instant::now();
         let mut transport = initialized_transport(now);
         let (first, _) = transport
-            .encode_request(CodexMethod::AccountRead, json!({}), now, Duration::from_millis(1))
+            .encode_request(
+                CodexMethod::AccountRead,
+                json!({}),
+                now,
+                Duration::from_millis(1),
+            )
             .unwrap();
         let (second, interrupt) = transport
             .encode_request(
@@ -521,8 +526,13 @@ mod tests {
             )
             .unwrap();
         assert!(second > first);
-        assert!(String::from_utf8(interrupt).unwrap().contains("turn/interrupt"));
-        assert_eq!(transport.expire(now + Duration::from_millis(2))[0].id, first);
+        assert!(String::from_utf8(interrupt)
+            .unwrap()
+            .contains("turn/interrupt"));
+        assert_eq!(
+            transport.expire(now + Duration::from_millis(2))[0].id,
+            first
+        );
         assert_eq!(transport.process_exited()[0].id, second);
         assert_eq!(transport.pending_len(), 0);
     }
@@ -532,7 +542,12 @@ mod tests {
         let now = Instant::now();
         let mut transport = CodexJsonlTransport::default();
         let (id, _) = transport
-            .encode_request(CodexMethod::Initialize, json!({}), now, Duration::from_secs(1))
+            .encode_request(
+                CodexMethod::Initialize,
+                json!({}),
+                now,
+                Duration::from_secs(1),
+            )
             .unwrap();
         transport
             .ingest(
@@ -567,9 +582,14 @@ mod tests {
             CodexTransportError::UnsupportedServerRequest
         );
         transport
-            .ingest(br#"{"id":5,"method":"item/fileChange/requestApproval","params":{"itemId":"i"}}"#)
+            .ingest(
+                br#"{"id":5,"method":"item/fileChange/requestApproval","params":{"itemId":"i"}}"#,
+            )
             .unwrap();
-        assert!(matches!(transport.pop(), Some(CodexIncoming::ServerRequest(_))));
+        assert!(matches!(
+            transport.pop(),
+            Some(CodexIncoming::ServerRequest(_))
+        ));
     }
 
     #[test]

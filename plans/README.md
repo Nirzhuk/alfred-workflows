@@ -359,9 +359,10 @@ Plan 028 writes through all three.
 ## Track I — Dual CLI and Alfred-native agent harnesses
 
 This track keeps every existing provider CLI as a first-class harness while
-adding an Alfred-owned native harness. The two dimensions remain separate:
-provider identity (Codex, Claude, Cursor, OpenCode, GitHub Copilot, Gemini,
-Grok) and harness (`cli` or `alfred`).
+adding an Alfred-owned native harness. Provider, stable product, managed
+runtime, billing owner, and harness are separate dimensions. A provider may
+have both a subscription product and an API/PAYG product without sharing
+credentials, entitlement, or fallback.
 
 ### Product and architecture decisions
 
@@ -371,28 +372,40 @@ Grok) and harness (`cli` or `alfred`).
   `cli`; migration never silently switches billing, credentials, or runtime.
 - Native credentials use a dedicated agent-account store. Alfred never scrapes
   provider CLI keychains, auth files, local databases, or private bundles.
+- Managed subscription products store an opaque runtime profile reference and
+  never a fake secret reference. Both `runtime_profile_ref` and
+  `credential_ref` are excluded from command DTOs and React state.
+- Stable product IDs are `claude_code_subscription`, `claude_api`,
+  `chatgpt_codex`, `openai_api`, `opencode_go`, `opencode_zen`,
+  `cursor_cloud`, `github_copilot_subscription`, `gemini_api`, and `grok_api`.
+- Billing source/owner is independent from entitlement. Entitlement is an
+  observed `unknown|eligible|limited|exhausted|ineligible` state with source
+  and timestamp; it never triggers cross-product fallback.
 - Native provider capabilities are declared per provider, auth method,
   platform, and runtime version. Unsupported capabilities are visible rather
   than emulated silently.
-- ChatGPT/Codex is the first native target because the official Codex
-  app-server exposes ChatGPT OAuth, account/rate-limit methods, threads, turns,
-  events, approvals, and interruption. The packaged-runtime/license gate must
-  pass before release.
-- Claude, Cursor, OpenCode, GitHub Copilot, Gemini, and Grok each require an
-  official API/SDK/runtime decision. Consumer subscription OAuth is never
-  inferred from CLI login or API-key access.
+- ChatGPT Codex targets the stable Python SDK and exact binary package first;
+  raw App Server remains an approval-gated alternative. Claude subscription
+  targets an unmodified isolated Claude Code binary. OpenCode Go targets a
+  managed local server. None is packaged or registered in this phase.
+- Every native descriptor declares `alfred_executed`,
+  `runtime_executed_with_host_approval`, or `no_tools`. Capability flags do not
+  imply execution ownership.
+- Existing dedicated key intake for Claude API, Gemini API, and Grok API
+  remains an account-only surface. It does not register or make a provider
+  runtime available.
 - Native failure never falls through to CLI automatically. The user chooses
   the account and harness explicitly.
 
 | Plan | Title | Priority | Effort | Depends on | Status |
 |------|-------|----------|--------|------------|--------|
 | 030 | Make CLI and Alfred harnesses first-class | P0 | L | — | DONE (reconciled 2026-08-26; graph compatibility and fail-closed routing verified below) |
-| 031 | Add secure native-agent accounts and credential lifecycle | P0 | L | 030 | DONE (reconciled 2026-08-26; dedicated Claude/Gemini/Grok API-key intake and credential boundaries verified below) |
-| 032 | Define the native harness compatibility contract | P0 | L | 030, 031 | DONE (reconciled 2026-08-26; versioned contracts and fake-runtime conformance verified below) |
-| 033 | Run Codex through Alfred with ChatGPT OAuth | P0 | XL | 030–032 | NO-GO (official app-server production support, Alfred signature verification, license/NOTICE packaging, and packaged no-CLI smoke are missing) |
-| 034 | Add a native Claude harness without weakening CLI support | P1 | XL | 030–032 | BLOCKED (live API-key smoke missing; subscription OAuth unapproved) |
+| 031 | Add secure native-agent accounts and credential lifecycle | P0 | L | 030 | FOUNDATION DONE; managed-product contract verification pending |
+| 032 | Define the native harness compatibility contract | P0 | L | 030, 031 | FOUNDATION DONE; capability v3 tool-owner verification pending |
+| 033 | Run Codex through Alfred with ChatGPT Codex | P0 | XL | 030–032 | BLOCKED (stable Python package/lifecycle, public approval/cancellation coverage, packaging, and smoke missing) |
+| 034 | Add managed Claude products without weakening CLI support | P1 | XL | 030–032 | BLOCKED (unmodified binary packaging/profile/tool-approval smoke missing; API route remains separate) |
 | 035 | Add a native Cursor harness | P1 | XL | 030–032 | BLOCKED (API-key intake, repository consent, and per-tool approval missing) |
-| 036 | Add an Alfred-managed OpenCode runtime | P1 | XL | 030–032 | BLOCKED (package signing, secret entry, and typed tool bridge missing) |
+| 036 | Add an Alfred-managed OpenCode server | P1 | XL | 030–032 | BLOCKED (commercial ToS clarification, package/profile lifecycle, transient Go-key handoff, and host-approved tool smoke missing) |
 | 037 | Add a native GitHub Copilot harness | P1 | XL | 030–032 | BLOCKED (SDK package/license notices and live seat/SSO smoke missing) |
 | 038 | Add a native Gemini harness | P1 | L–XL | 030–032 | BLOCKED (live API-key smoke missing; desktop OAuth packaging remains separate) |
 | 039 | Add a native Grok harness | P2 | L–XL | 030–032 | BLOCKED (live API-key smoke missing) |
@@ -404,23 +417,15 @@ Grok) and harness (`cli` or `alfred`).
   defaults missing graph values to `cli`, preserves every CLI adapter, and
   routes native execution without a CLI fallback. The runner, workflow store,
   target-scoped model catalog, and editor consume the same harness choice.
-- **031:** `src-tauri/src/agent_accounts/`, `src-tauri/src/db/agent_accounts.rs`,
-  and the `agent_accounts` migration keep redacted metadata in SQLite, secrets
-  in the isolated OS credential-store namespace, authorization attempts in
-  memory, and refresh/revoke/disconnect recovery states explicit. Native-agent
-  settings remain separate from Connected Apps. Its dedicated API-key command
-  now supports Claude, Gemini, and Grok Connect/Reconnect with transient input,
-  redacted DTOs, and compensating credential/metadata rollback; it does not
-  register or enable those provider runtimes.
-- **032:** `src-tauri/src/agents/native/` defines versioned request, event,
-  capability, tool, approval, cancellation, session, context, and redaction
-  contracts. Its fake-runtime conformance suite exercises registration,
-  streaming, bounds, permissions, cancellation, usage, and no-fallback errors.
-- **Gates:** `cargo test --locked --manifest-path src-tauri/Cargo.toml
-  agent_accounts --no-fail-fast` passed 35 focused tests; `bun test
-  src/features/agent-accounts` passed 15 focused tests. The final `bun run
-  check` passed 414 frontend tests, built the frontend, and passed 706 Rust
-  tests; `git diff --check` also passed before the intake commit.
+- **031:** the managed-product cutover adds registry-validated product/runtime
+  identity, nullable profile/secret references, billing ownership, and sourced
+  entitlement observations. Managed subscription accounts resolve only by
+  profile; both opaque references remain outside command DTOs.
+- **032:** capability contract v3 adds explicit tool execution ownership and
+  rejects contradictory descriptor/capability combinations.
+- **Verification:** the earlier foundation gates remain historical evidence.
+  Per the Phase 1 execution boundary, no formatter, build, or test was run for
+  the 2026-08-26 managed-product cutover; focused and full gates are pending.
 
 ### Required execution order
 
@@ -430,8 +435,9 @@ Grok) and harness (`cli` or `alfred`).
    secure storage, authorization attempts, refresh, revoke, and redaction.
 3. **032 — runtime contract:** freeze normalized events, tools, permissions,
    sessions, capability declarations, and conformance fixtures.
-4. **033 — Codex first:** use the documented app-server/auth surface and
-   package or embed the runtime so users need no Codex CLI installation.
+4. **033 — Codex first:** use the stable Python SDK/package route; keep raw App
+   Server approval-gated and fail closed if public SDK approval/cancellation is
+   insufficient.
 5. **034–039 — provider gates:** run each provider's policy/runtime decision
    independently. A blocked provider does not block CLI support or other native
    providers.
@@ -456,7 +462,7 @@ Grok) and harness (`cli` or `alfred`).
 - Rejected: importing or scraping CLI credential files/keychains.
 - Rejected: silently retrying a failed Alfred-native turn through a CLI.
 - Deferred: cloud execution of Alfred workflows and remote token custody.
-- Deferred: consumer subscription OAuth for any provider without an official
-  external-client contract and policy approval.
+- Deferred: custom third-party subscription renderers or credential
+  intermediation without an official contract and required approval.
 - Deferred: full native parity for provider-specific plugins, subagents, MCP,
   cloud agents, and proprietary UI features until each provider passes Plan 032.

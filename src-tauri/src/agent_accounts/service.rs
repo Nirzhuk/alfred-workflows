@@ -7,9 +7,9 @@ use super::credential_store::{
     OsAgentCredentialStore,
 };
 use super::models::{
-    AgentAccount, AgentAccountCommandError, AgentAccountDto, AgentAccountStatus,
-    AgentAuthMethod, AgentProviderRegistrationDto, AuthorizedAgentAccount,
-    CredentialCustodyMode,
+    AgentAccount, AgentAccountCommandError, AgentAccountDto, AgentAccountStatus, AgentAuthMethod,
+    AgentEntitlementState, AgentProductId, AgentProviderRegistrationDto, AuthorizedAgentAccount,
+    CredentialCustodyMode, ManagedRuntimeId,
 };
 use crate::agents::{AgentHarness, AgentProvider};
 use crate::db::Db;
@@ -18,6 +18,7 @@ use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
+use std::str::FromStr;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 use tokio::sync::{Mutex as AsyncMutex, OwnedMutexGuard};
@@ -40,9 +41,12 @@ pub type ProviderFuture<'a, T> =
 #[derive(Debug, Clone)]
 pub struct AgentProviderRegistration {
     pub provider: AgentProvider,
+    pub product: AgentProductId,
     pub harness: AgentHarness,
     pub auth_method: AgentAuthMethod,
     pub custody_mode: CredentialCustodyMode,
+    pub managed_runtime_id: Option<ManagedRuntimeId>,
+    pub managed_runtime_version: Option<String>,
     pub gate_code: Option<String>,
 }
 
@@ -51,10 +55,22 @@ impl AgentProviderRegistration {
         AgentProviderRegistrationDto {
             provider_id: self.provider.as_str().into(),
             provider_name: self.provider.label().into(),
+            product_id: self.product.as_str().into(),
+            product_name: self.product.label().into(),
             harness: self.harness,
-            auth_methods: Vec::new(),
-            billing_source: "unavailable".into(),
-            credential_custody: "unavailable".into(),
+            auth_methods: self
+                .product
+                .auth_methods()
+                .iter()
+                .map(|method| (*method).into())
+                .collect(),
+            billing_source: self.product.billing_source().into(),
+            billing_owner: self.product.billing_owner().into(),
+            credential_custody: self.custody_mode.as_str().into(),
+            managed_runtime_id: self
+                .managed_runtime_id
+                .map(|runtime| runtime.as_str().into()),
+            managed_runtime_version: self.managed_runtime_version.clone(),
             connect_available: handler_available && self.gate_code.is_none(),
             gate_code: self.gate_code.clone(),
         }
@@ -70,7 +86,28 @@ pub struct ProviderAuthorizationStart {
 
 pub struct ProviderAccountGrant {
     pub account: AuthorizedAgentAccount,
-    pub credential: AgentCredentialEnvelope,
+    pub access: ProviderAccountAccess,
+}
+
+pub struct ProviderAccountAccess {
+    pub credential: Option<AgentCredentialEnvelope>,
+    pub runtime_profile_ref: Option<String>,
+}
+
+impl std::fmt::Debug for ProviderAccountAccess {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("ProviderAccountAccess")
+            .field(
+                "credential",
+                &self.credential.as_ref().map(|_| "[REDACTED]"),
+            )
+            .field(
+                "runtime_profile_ref",
+                &self.runtime_profile_ref.as_ref().map(|_| "[REDACTED]"),
+            )
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -108,12 +145,12 @@ pub trait AgentAccountProvider: Send + Sync {
     fn refresh<'a>(
         &'a self,
         account: &'a AgentAccount,
-        credential: AgentCredentialEnvelope,
-    ) -> ProviderFuture<'a, AgentCredentialEnvelope>;
+        access: ProviderAccountAccess,
+    ) -> ProviderFuture<'a, ProviderAccountAccess>;
     fn revoke<'a>(
         &'a self,
         account: &'a AgentAccount,
-        credential: AgentCredentialEnvelope,
+        access: ProviderAccountAccess,
     ) -> ProviderFuture<'a, ()>;
 }
 
@@ -154,29 +191,23 @@ impl AgentAccountsState {
     }
 
     fn register_gated_defaults(&self) {
-        let defaults = [
-            (AgentProvider::ClaudeCode, AgentAuthMethod::Runtime, CredentialCustodyMode::RuntimeManaged),
-            (AgentProvider::Cursor, AgentAuthMethod::Runtime, CredentialCustodyMode::RuntimeManaged),
-            (AgentProvider::Codex, AgentAuthMethod::OAuthPkce, CredentialCustodyMode::AlfredManaged),
-            (AgentProvider::Opencode, AgentAuthMethod::Runtime, CredentialCustodyMode::RuntimeManaged),
-            (AgentProvider::GithubCopilot, AgentAuthMethod::DeviceCode, CredentialCustodyMode::AlfredManaged),
-            (AgentProvider::Gemini, AgentAuthMethod::OAuthPkce, CredentialCustodyMode::AlfredManaged),
-            (AgentProvider::Grok, AgentAuthMethod::OAuthPkce, CredentialCustodyMode::AlfredManaged),
-            (AgentProvider::Pi, AgentAuthMethod::Runtime, CredentialCustodyMode::RuntimeManaged),
-            (AgentProvider::Omp, AgentAuthMethod::Runtime, CredentialCustodyMode::RuntimeManaged),
-        ];
         let Ok(mut providers) = self.providers.write() else {
             return;
         };
-        for (provider, auth_method, custody_mode) in defaults {
+        for product in AgentProductId::ALL {
             providers.insert(
-                provider.as_str().into(),
+                product.as_str().into(),
                 ProviderEntry {
                     registration: AgentProviderRegistration {
-                        provider,
+                        provider: product.provider(),
+                        product,
                         harness: AgentHarness::Alfred,
-                        auth_method,
-                        custody_mode,
+                        auth_method: product.auth_method(),
+                        custody_mode: product.custody_mode(),
+                        managed_runtime_id: product.managed_runtime(),
+                        managed_runtime_version: product
+                            .managed_runtime_version()
+                            .map(str::to_owned),
                         gate_code: Some("native_provider_not_available".into()),
                     },
                     handler: None,
@@ -186,9 +217,22 @@ impl AgentAccountsState {
     }
 
     #[allow(dead_code)]
-    pub fn register(&self, handler: Arc<dyn AgentAccountProvider>) -> Result<(), AgentAccountCommandError> {
+    pub fn register(
+        &self,
+        handler: Arc<dyn AgentAccountProvider>,
+    ) -> Result<(), AgentAccountCommandError> {
         let registration = handler.registration();
-        if registration.harness != AgentHarness::Alfred {
+        if registration.harness != AgentHarness::Alfred
+            || registration.provider != registration.product.provider()
+            || !registration
+                .product
+                .auth_methods()
+                .contains(&registration.auth_method.as_str())
+            || registration.custody_mode != registration.product.custody_mode()
+            || registration.managed_runtime_id != registration.product.managed_runtime()
+            || registration.managed_runtime_version.as_deref()
+                != registration.product.managed_runtime_version()
+        {
             return Err(command_error(
                 "unsupported_auth_mode",
                 "Native accounts must use the Alfred harness.",
@@ -199,7 +243,7 @@ impl AgentAccountsState {
             .write()
             .map_err(|_| state_unavailable())?
             .insert(
-                registration.provider.as_str().into(),
+                registration.product.as_str().into(),
                 ProviderEntry {
                     registration,
                     handler: Some(handler),
@@ -208,13 +252,15 @@ impl AgentAccountsState {
         Ok(())
     }
 
-    pub fn list_providers(&self) -> Result<Vec<AgentProviderRegistrationDto>, AgentAccountCommandError> {
+    pub fn list_providers(
+        &self,
+    ) -> Result<Vec<AgentProviderRegistrationDto>, AgentAccountCommandError> {
         let providers = self.providers.read().map_err(|_| state_unavailable())?;
         let mut values = providers
             .values()
             .map(|entry| entry.registration.dto(entry.handler.is_some()))
             .collect::<Vec<_>>();
-        values.sort_by(|left, right| left.provider_name.cmp(&right.provider_name));
+        values.sort_by(|left, right| left.product_name.cmp(&right.product_name));
         Ok(values)
     }
 
@@ -227,7 +273,11 @@ impl AgentAccountsState {
             .collect())
     }
 
-    pub fn get_account(&self, db: &Db, id: &str) -> Result<Option<AgentAccountDto>, AgentAccountCommandError> {
+    pub fn get_account(
+        &self,
+        db: &Db,
+        id: &str,
+    ) -> Result<Option<AgentAccountDto>, AgentAccountCommandError> {
         Ok(db
             .get_agent_account(id)
             .map_err(|_| metadata_error())?
@@ -257,12 +307,31 @@ impl AgentAccountsState {
     pub fn start_authorization(
         &self,
         provider_id: &str,
+        product_id: &str,
         harness: AgentHarness,
     ) -> Result<AuthorizationStartedDto, AgentAccountCommandError> {
         let provider = AgentProvider::from_str(provider_id).ok_or_else(|| {
-            command_error("provider_not_found", "The native agent provider is unknown.", false)
+            command_error(
+                "provider_not_found",
+                "The native agent provider is unknown.",
+                false,
+            )
         })?;
-        let (registration, handler) = self.provider(provider)?;
+        let product = AgentProductId::from_str(product_id).map_err(|_| {
+            command_error(
+                "product_not_found",
+                "The native agent product is unknown.",
+                false,
+            )
+        })?;
+        let (registration, handler) = self.registration(product)?;
+        if product.provider() != provider {
+            return Err(command_error(
+                "provider_mismatch",
+                "The product is not registered for this provider.",
+                false,
+            ));
+        }
         if harness != registration.harness {
             return Err(command_error(
                 "provider_mismatch",
@@ -284,11 +353,14 @@ impl AgentAccountsState {
                 false,
             )
         })?;
-        let started = handler.start_authorization().map_err(provider_command_error)?;
+        let started = handler
+            .start_authorization()
+            .map_err(provider_command_error)?;
         let (attempt_id, expires_at) = self
             .attempts
             .insert(
                 provider,
+                product,
                 harness,
                 registration.auth_method,
                 started.ttl,
@@ -298,6 +370,7 @@ impl AgentAccountsState {
         Ok(AuthorizationStartedDto {
             attempt_id,
             provider_id: provider.as_str().into(),
+            product_id: product.as_str().into(),
             authorization_url: started.authorization_url,
             user_code: started.user_code,
             expires_at: expires_at.to_rfc3339(),
@@ -309,28 +382,51 @@ impl AgentAccountsState {
         db: &Db,
         attempt_id: &str,
         provider_id: &str,
+        product_id: &str,
         harness: AgentHarness,
         completion_state: Option<&str>,
     ) -> Result<AgentAccountDto, AgentAccountCommandError> {
         let provider = AgentProvider::from_str(provider_id).ok_or_else(|| {
-            command_error("provider_not_found", "The native agent provider is unknown.", false)
+            command_error(
+                "provider_not_found",
+                "The native agent provider is unknown.",
+                false,
+            )
         })?;
-        let (registration, handler) = self.provider(provider)?;
+        let product = AgentProductId::from_str(product_id).map_err(|_| {
+            command_error(
+                "product_not_found",
+                "The native agent product is unknown.",
+                false,
+            )
+        })?;
+        let (registration, handler) = self.registration(product)?;
+        if product.provider() != provider {
+            return Err(command_error(
+                "provider_mismatch",
+                "The product is not registered for this provider.",
+                false,
+            ));
+        }
         let handler = handler.ok_or_else(|| {
-            command_error("native_provider_not_available", "This provider cannot complete authorization.", false)
+            command_error(
+                "native_provider_not_available",
+                "This provider cannot complete authorization.",
+                false,
+            )
         })?;
         let attempt = self
             .attempts
-            .take(attempt_id, provider, harness, completion_state)
+            .take(attempt_id, provider, product, harness, completion_state)
             .map_err(registry_command_error)?;
         let completion = handler.complete_authorization(attempt).await;
         self.attempts.finish(attempt_id);
         let grant = completion.map_err(provider_command_error)?;
         if grant.account.provider != provider
+            || grant.account.product != product
             || grant.account.harness != harness
             || grant.account.auth_method != registration.auth_method
             || grant.account.custody_mode != registration.custody_mode
-            || grant.credential.custody_mode != registration.custody_mode
         {
             return Err(command_error(
                 "provider_mismatch",
@@ -339,24 +435,48 @@ impl AgentAccountsState {
             ));
         }
 
-        let account = db.prepare_agent_account(grant.account).map_err(|_| metadata_error())?;
-        let credential_ref = account.credential_ref.clone();
-        let store = self.credential_store.clone();
-        let expires_at = grant.credential.expires_at.clone();
-        let persisted = tauri::async_runtime::spawn_blocking(move || {
-            store.put(&credential_ref, &grant.credential)
-        })
-        .await
-        .map_err(|_| state_unavailable())?;
-        if let Err(error) = persisted {
-            let code = credential_error_code(error);
+        let mut metadata = grant.account;
+        metadata.runtime_profile_ref = grant.access.runtime_profile_ref.clone();
+        validate_provider_access(product, registration.custody_mode, &grant.access)?;
+        let expires_at = grant
+            .access
+            .credential
+            .as_ref()
+            .and_then(|credential| credential.expires_at.clone())
+            .or_else(|| metadata.expires_at.clone());
+        let account = db
+            .prepare_agent_account(metadata)
+            .map_err(|_| metadata_error())?;
+        if let Some(credential) = grant.access.credential {
+            let credential_ref = required_credential_ref(&account)?.to_owned();
+            let store = self.credential_store.clone();
+            let persisted = tauri::async_runtime::spawn_blocking(move || {
+                store.put(&credential_ref, &credential)
+            })
+            .await
+            .map_err(|_| state_unavailable())?;
+            if let Err(error) = persisted {
+                let code = credential_error_code(error);
+                let _ = db.set_agent_account_state(
+                    &account.id,
+                    AgentAccountStatus::Error,
+                    account.expires_at.as_deref(),
+                    Some(code),
+                );
+                return Err(credential_command_error(error));
+            }
+        }
+        if let Err(error) = self
+            .drain_agent_account_credential_cleanup(db, &account.id)
+            .await
+        {
             let _ = db.set_agent_account_state(
                 &account.id,
                 AgentAccountStatus::Error,
                 account.expires_at.as_deref(),
-                Some(code),
+                Some(&error.code),
             );
-            return Err(credential_command_error(error));
+            return Err(error);
         }
         db.set_agent_account_state(
             &account.id,
@@ -372,7 +492,9 @@ impl AgentAccountsState {
     }
 
     pub fn cancel_authorization(&self, attempt_id: &str) -> Result<(), AgentAccountCommandError> {
-        self.attempts.cancel(attempt_id).map_err(registry_command_error)
+        self.attempts
+            .cancel(attempt_id)
+            .map_err(registry_command_error)
     }
 
     pub async fn refresh_account(
@@ -385,14 +507,17 @@ impl AgentAccountsState {
             .get_agent_account(account_id)
             .map_err(|_| metadata_error())?
             .ok_or_else(account_not_found)?;
-        if matches!(account.status, AgentAccountStatus::Revoked | AgentAccountStatus::DisconnectPending) {
+        if matches!(
+            account.status,
+            AgentAccountStatus::Revoked | AgentAccountStatus::DisconnectPending
+        ) {
             return Err(command_error(
                 "account_not_refreshable",
                 "This account must finish disconnecting or reconnect.",
                 false,
             ));
         }
-        let (_, handler) = self.provider(account.provider)?;
+        let (registration, handler) = self.registration(account.product)?;
         let Some(handler) = handler else {
             db.set_agent_account_state(
                 &account.id,
@@ -407,30 +532,46 @@ impl AgentAccountsState {
                 false,
             ));
         };
-        let credential = self.read_credential(&account).await?;
-        let refreshed = match handler.refresh(&account, credential).await {
-            Ok(credential) => credential,
+        let access = self.read_access(&account).await?;
+        let refreshed = match handler.refresh(&account, access).await {
+            Ok(access) => access,
             Err(error) => {
                 self.record_provider_failure(db, &account, &error)?;
                 return Err(provider_command_error(error));
             }
         };
 
-        let expires_at = refreshed.expires_at.clone();
-        let credential_ref = account.credential_ref.clone();
-        let store = self.credential_store.clone();
-        let persisted = tauri::async_runtime::spawn_blocking(move || store.put(&credential_ref, &refreshed))
+        validate_provider_access(account.product, registration.custody_mode, &refreshed)?;
+        if refreshed.runtime_profile_ref != account.runtime_profile_ref {
+            return Err(command_error(
+                "runtime_profile_mismatch",
+                "The managed runtime returned a different account profile.",
+                false,
+            ));
+        }
+        let expires_at = refreshed
+            .credential
+            .as_ref()
+            .and_then(|credential| credential.expires_at.clone())
+            .or_else(|| account.expires_at.clone());
+        if let Some(credential) = refreshed.credential {
+            let credential_ref = required_credential_ref(&account)?.to_owned();
+            let store = self.credential_store.clone();
+            let persisted = tauri::async_runtime::spawn_blocking(move || {
+                store.put(&credential_ref, &credential)
+            })
             .await
             .map_err(|_| state_unavailable())?;
-        if let Err(error) = persisted {
-            db.set_agent_account_state(
-                &account.id,
-                AgentAccountStatus::Error,
-                account.expires_at.as_deref(),
-                Some(credential_error_code(error)),
-            )
-            .map_err(|_| metadata_error())?;
-            return Err(credential_command_error(error));
+            if let Err(error) = persisted {
+                db.set_agent_account_state(
+                    &account.id,
+                    AgentAccountStatus::Error,
+                    account.expires_at.as_deref(),
+                    Some(credential_error_code(error)),
+                )
+                .map_err(|_| metadata_error())?;
+                return Err(credential_command_error(error));
+            }
         }
         // This promotion happens only after the rotated credential is durable.
         db.set_agent_account_state(
@@ -440,7 +581,8 @@ impl AgentAccountsState {
             None,
         )
         .map_err(|_| metadata_error())?;
-        self.get_account(db, &account.id)?.ok_or_else(account_not_found)
+        self.get_account(db, &account.id)?
+            .ok_or_else(account_not_found)
     }
 
     /// Dedicated intake for Alfred-managed API keys. Runtime registration is
@@ -450,20 +592,42 @@ impl AgentAccountsState {
         &self,
         db: &Db,
         provider: AgentProvider,
+        product: AgentProductId,
         account_id: Option<&str>,
         api_key: Zeroizing<String>,
     ) -> Result<AgentAccountDto, AgentAccountCommandError> {
-        validate_native_api_key(provider, api_key.as_str())?;
-        let fingerprint = api_key_fingerprint(provider, api_key.as_str());
+        if product.provider() != provider
+            || product.auth_method() != AgentAuthMethod::ApiKey
+            || product.custody_mode() != CredentialCustodyMode::AlfredManaged
+        {
+            return Err(command_error(
+                "provider_mismatch",
+                "That API product is not registered for this provider.",
+                false,
+            ));
+        }
+        validate_native_api_key(product, api_key.as_str())?;
+        let fingerprint = api_key_fingerprint(product, api_key.as_str());
         let metadata = AuthorizedAgentAccount {
             provider,
+            product,
             harness: AgentHarness::Alfred,
             display_name: Some("API key".into()),
             external_account_id: format!("api-key-sha256:{fingerprint}"),
             external_workspace_id: None,
             auth_method: AgentAuthMethod::ApiKey,
             custody_mode: CredentialCustodyMode::AlfredManaged,
+            managed_runtime_id: product.managed_runtime(),
+            managed_runtime_version: product.managed_runtime_version().map(str::to_owned),
+            runtime_profile_ref: product
+                .managed_runtime()
+                .map(|_| format!("managed-api-profile:{}:{fingerprint}", product.as_str())),
             scopes: Vec::new(),
+            billing_source: product.billing_source().into(),
+            billing_owner: product.billing_owner().into(),
+            entitlement_state: AgentEntitlementState::Unknown,
+            entitlement_source: "not_observed".into(),
+            entitlement_observed_at: None,
             expires_at: None,
         };
         let requested = match account_id {
@@ -471,6 +635,7 @@ impl AgentAccountsState {
             None => db
                 .get_agent_account_by_identity(
                     provider,
+                    product,
                     AgentHarness::Alfred,
                     &metadata.identity_key(),
                 )
@@ -478,6 +643,7 @@ impl AgentAccountsState {
         };
         let (account, is_new) = if let Some(account) = requested {
             if account.provider != provider
+                || account.product != product
                 || account.harness != AgentHarness::Alfred
                 || account.auth_method != AgentAuthMethod::ApiKey
                 || account.custody_mode != CredentialCustodyMode::AlfredManaged
@@ -513,7 +679,7 @@ impl AgentAccountsState {
             None
         } else {
             let store = self.credential_store.clone();
-            let credential_ref = account.credential_ref.clone();
+            let credential_ref = required_credential_ref(&account)?.to_owned();
             match tauri::async_runtime::spawn_blocking(move || store.get(&credential_ref))
                 .await
                 .map_err(|_| state_unavailable())?
@@ -526,19 +692,18 @@ impl AgentAccountsState {
             }
         };
 
-        let credential_ref = account.credential_ref.clone();
+        let credential_ref = required_credential_ref(&account)?.to_owned();
         let store = self.credential_store.clone();
         let credential = AgentCredentialEnvelope::alfred_managed(api_key.as_str().to_owned());
-        let persisted = tauri::async_runtime::spawn_blocking(move || {
-            store.put(&credential_ref, &credential)
-        })
-        .await
-        .map_err(|_| state_unavailable())?;
+        let persisted =
+            tauri::async_runtime::spawn_blocking(move || store.put(&credential_ref, &credential))
+                .await
+                .map_err(|_| state_unavailable())?;
         if let Err(error) = persisted {
             let original_error = credential_command_error(error);
             if let Err(rollback_error) = rollback_api_key_credential(
                 self.credential_store.clone(),
-                account.credential_ref.clone(),
+                required_credential_ref(&account)?.to_owned(),
                 previous,
             )
             .await
@@ -559,10 +724,13 @@ impl AgentAccountsState {
             return Err(original_error);
         }
 
-        if db.finalize_api_key_agent_account(&account.id, &metadata).is_err() {
+        if db
+            .finalize_api_key_agent_account(&account.id, &metadata)
+            .is_err()
+        {
             if let Err(rollback_error) = rollback_api_key_credential(
                 self.credential_store.clone(),
-                account.credential_ref.clone(),
+                required_credential_ref(&account)?.to_owned(),
                 previous,
             )
             .await
@@ -583,7 +751,21 @@ impl AgentAccountsState {
             return Err(metadata_error());
         }
 
-        self.get_account(db, &account.id)?.ok_or_else(account_not_found)
+        if let Err(error) = self
+            .drain_agent_account_credential_cleanup(db, &account.id)
+            .await
+        {
+            let _ = db.set_agent_account_state(
+                &account.id,
+                AgentAccountStatus::Error,
+                None,
+                Some(&error.code),
+            );
+            return Err(error);
+        }
+
+        self.get_account(db, &account.id)?
+            .ok_or_else(account_not_found)
     }
 
     pub async fn disconnect_account(
@@ -597,26 +779,40 @@ impl AgentAccountsState {
             .get_agent_account(account_id)
             .map_err(|_| metadata_error())?
             .ok_or_else(account_not_found)?;
+        if let Err(error) = self
+            .drain_agent_account_credential_cleanup(db, account_id)
+            .await
+        {
+            let _ = db.set_agent_account_state(
+                account_id,
+                AgentAccountStatus::DisconnectPending,
+                account.expires_at.as_deref(),
+                Some(&error.code),
+            );
+            return Err(error);
+        }
         if metadata_only {
             // Best-effort credential removal first: the credential reference
             // lives only on this row, so deleting metadata first would strand
             // the secret in the OS store with no way to find it again.
-            let credential_ref = account.credential_ref.clone();
-            let store = self.credential_store.clone();
-            let deletion = tauri::async_runtime::spawn_blocking(move || store.delete(&credential_ref))
-                .await
-                .map_err(|_| state_unavailable())?;
-            match deletion {
-                Ok(()) | Err(AgentCredentialStoreError::Missing) => {}
-                Err(error) => {
-                    // Surface the store failure rather than orphaning a secret.
-                    let _ = db.set_agent_account_state(
-                        account_id,
-                        AgentAccountStatus::DisconnectPending,
-                        account.expires_at.as_deref(),
-                        Some(credential_error_code(error)),
-                    );
-                    return Err(credential_command_error(error));
+            if let Some(credential_ref) = account.credential_ref.clone() {
+                let store = self.credential_store.clone();
+                let deletion =
+                    tauri::async_runtime::spawn_blocking(move || store.delete(&credential_ref))
+                        .await
+                        .map_err(|_| state_unavailable())?;
+                match deletion {
+                    Ok(()) | Err(AgentCredentialStoreError::Missing) => {}
+                    Err(error) => {
+                        // Surface the store failure rather than orphaning a secret.
+                        let _ = db.set_agent_account_state(
+                            account_id,
+                            AgentAccountStatus::DisconnectPending,
+                            account.expires_at.as_deref(),
+                            Some(credential_error_code(error)),
+                        );
+                        return Err(credential_command_error(error));
+                    }
                 }
             }
             let result = db
@@ -628,8 +824,8 @@ impl AgentAccountsState {
             return result;
         }
 
-        let credential = match self.read_credential(&account).await {
-            Ok(credential) => Some(credential),
+        let access = match self.read_access(&account).await {
+            Ok(access) => Some(access),
             Err(error) if error.code == "credential_missing" => None,
             Err(error) => {
                 let _ = db.set_agent_account_state(
@@ -641,13 +837,13 @@ impl AgentAccountsState {
                 return Err(error);
             }
         };
-        if let Some(credential) = credential {
-            if account.auth_method == AgentAuthMethod::ApiKey {
+        if let Some(access) = access {
+            if account.product.uses_alfred_managed_api_key() {
                 // Provider consoles own API-key revocation. Alfred truthfully
                 // performs local deletion only and never claims remote revoke.
-                drop(credential);
+                drop(access);
             } else {
-                let (_, handler) = self.provider(account.provider)?;
+                let (_, handler) = self.registration(account.product)?;
                 let Some(handler) = handler else {
                     db.set_agent_account_state(
                         account_id,
@@ -662,7 +858,7 @@ impl AgentAccountsState {
                         true,
                     ));
                 };
-                if let Err(error) = handler.revoke(&account, credential).await {
+                if let Err(error) = handler.revoke(&account, access).await {
                     if error.kind != AgentProviderFailureKind::TerminalRevoked {
                         db.set_agent_account_state(
                             account_id,
@@ -684,21 +880,23 @@ impl AgentAccountsState {
             None,
         )
         .map_err(|_| metadata_error())?;
-        let credential_ref = account.credential_ref.clone();
-        let store = self.credential_store.clone();
-        let deletion = tauri::async_runtime::spawn_blocking(move || store.delete(&credential_ref))
-            .await
-            .map_err(|_| state_unavailable())?;
-        if let Err(error) = deletion {
-            if error != AgentCredentialStoreError::Missing {
-                db.set_agent_account_state(
-                    account_id,
-                    AgentAccountStatus::DisconnectPending,
-                    account.expires_at.as_deref(),
-                    Some(credential_error_code(error)),
-                )
-                .map_err(|_| metadata_error())?;
-                return Err(credential_command_error(error));
+        if let Some(credential_ref) = account.credential_ref.clone() {
+            let store = self.credential_store.clone();
+            let deletion =
+                tauri::async_runtime::spawn_blocking(move || store.delete(&credential_ref))
+                    .await
+                    .map_err(|_| state_unavailable())?;
+            if let Err(error) = deletion {
+                if error != AgentCredentialStoreError::Missing {
+                    db.set_agent_account_state(
+                        account_id,
+                        AgentAccountStatus::DisconnectPending,
+                        account.expires_at.as_deref(),
+                        Some(credential_error_code(error)),
+                    )
+                    .map_err(|_| metadata_error())?;
+                    return Err(credential_command_error(error));
+                }
             }
         }
         let result = db.delete_agent_account_metadata(account_id).map_err(|_| {
@@ -714,6 +912,37 @@ impl AgentAccountsState {
         result
     }
 
+    async fn drain_agent_account_credential_cleanup(
+        &self,
+        db: &Db,
+        account_id: &str,
+    ) -> Result<(), AgentAccountCommandError> {
+        let Some(cleanup) = db
+            .get_agent_account_credential_cleanup(account_id)
+            .map_err(|_| metadata_error())?
+        else {
+            return Ok(());
+        };
+        if cleanup.cleanup_owner != "legacy_agent_account_migration" {
+            return Err(command_error(
+                "credential_cleanup_owner_unknown",
+                "The migrated credential has no registered cleanup owner.",
+                true,
+            ));
+        }
+        let credential_ref = cleanup.credential_ref;
+        let store = self.credential_store.clone();
+        let deletion = tauri::async_runtime::spawn_blocking(move || store.delete(&credential_ref))
+            .await
+            .map_err(|_| state_unavailable())?;
+        match deletion {
+            Ok(()) | Err(AgentCredentialStoreError::Missing) => db
+                .delete_agent_account_credential_cleanup(account_id)
+                .map_err(|_| metadata_error()),
+            Err(error) => Err(credential_command_error(error)),
+        }
+    }
+
     /// Drops the per-account mutex once the account no longer exists so the
     /// map cannot grow for the life of the process.
     fn release_account_lock(&self, account_id: &str) {
@@ -727,18 +956,31 @@ impl AgentAccountsState {
         }
     }
 
-    fn provider(
+    fn registration(
         &self,
-        provider: AgentProvider,
-    ) -> Result<(AgentProviderRegistration, Option<Arc<dyn AgentAccountProvider>>), AgentAccountCommandError> {
+        product: AgentProductId,
+    ) -> Result<
+        (
+            AgentProviderRegistration,
+            Option<Arc<dyn AgentAccountProvider>>,
+        ),
+        AgentAccountCommandError,
+    > {
         let providers = self.providers.read().map_err(|_| state_unavailable())?;
-        let entry = providers.get(provider.as_str()).ok_or_else(|| {
-            command_error("provider_not_found", "The native agent provider is unknown.", false)
+        let entry = providers.get(product.as_str()).ok_or_else(|| {
+            command_error(
+                "product_not_found",
+                "The native agent product is unknown.",
+                false,
+            )
         })?;
         Ok((entry.registration.clone(), entry.handler.clone()))
     }
 
-    async fn lock_account(&self, account_id: &str) -> Result<OwnedMutexGuard<()>, AgentAccountCommandError> {
+    async fn lock_account(
+        &self,
+        account_id: &str,
+    ) -> Result<OwnedMutexGuard<()>, AgentAccountCommandError> {
         let lock = {
             let mut locks = self.account_locks.lock().map_err(|_| state_unavailable())?;
             if let Some(lock) = locks.get(account_id) {
@@ -765,16 +1007,27 @@ impl AgentAccountsState {
         Ok(lock.lock_owned().await)
     }
 
-    async fn read_credential(
+    async fn read_access(
         &self,
         account: &AgentAccount,
-    ) -> Result<AgentCredentialEnvelope, AgentAccountCommandError> {
-        let store = self.credential_store.clone();
-        let credential_ref = account.credential_ref.clone();
-        let result = tauri::async_runtime::spawn_blocking(move || store.get(&credential_ref))
-            .await
-            .map_err(|_| state_unavailable())?;
-        result.map_err(credential_command_error)
+    ) -> Result<ProviderAccountAccess, AgentAccountCommandError> {
+        let credential = if let Some(credential_ref) = account.credential_ref.clone() {
+            let store = self.credential_store.clone();
+            Some(
+                tauri::async_runtime::spawn_blocking(move || store.get(&credential_ref))
+                    .await
+                    .map_err(|_| state_unavailable())?
+                    .map_err(credential_command_error)?,
+            )
+        } else {
+            None
+        };
+        let access = ProviderAccountAccess {
+            credential,
+            runtime_profile_ref: account.runtime_profile_ref.clone(),
+        };
+        validate_provider_access(account.product, account.custody_mode, &access)?;
+        Ok(access)
     }
 
     fn record_provider_failure(
@@ -802,23 +1055,60 @@ impl AgentAccountsState {
 
 fn registry_command_error(error: AuthorizationRegistryError) -> AgentAccountCommandError {
     match error {
-        AuthorizationRegistryError::NotFound => command_error("authorization_not_found", "The authorization attempt no longer exists. Start again.", false),
-        AuthorizationRegistryError::Expired => command_error("authorization_expired", "The authorization attempt expired. Start again.", false),
-        AuthorizationRegistryError::Cancelled => command_error("authorization_cancelled", "The authorization attempt was cancelled.", false),
-        AuthorizationRegistryError::StateMismatch => command_error("authorization_state_mismatch", "The authorization response could not be verified.", false),
-        AuthorizationRegistryError::StateRequired => command_error("authorization_state_required", "OAuth authorization could not start without a secure state value.", false),
-        AuthorizationRegistryError::ProviderMismatch => command_error("provider_mismatch", "The authorization response belongs to a different provider.", false),
-        AuthorizationRegistryError::Busy => command_error("authorization_busy", "Too many native authorization attempts are active.", true),
+        AuthorizationRegistryError::NotFound => command_error(
+            "authorization_not_found",
+            "The authorization attempt no longer exists. Start again.",
+            false,
+        ),
+        AuthorizationRegistryError::Expired => command_error(
+            "authorization_expired",
+            "The authorization attempt expired. Start again.",
+            false,
+        ),
+        AuthorizationRegistryError::Cancelled => command_error(
+            "authorization_cancelled",
+            "The authorization attempt was cancelled.",
+            false,
+        ),
+        AuthorizationRegistryError::StateMismatch => command_error(
+            "authorization_state_mismatch",
+            "The authorization response could not be verified.",
+            false,
+        ),
+        AuthorizationRegistryError::StateRequired => command_error(
+            "authorization_state_required",
+            "OAuth authorization could not start without a secure state value.",
+            false,
+        ),
+        AuthorizationRegistryError::ProviderMismatch => command_error(
+            "provider_mismatch",
+            "The authorization response belongs to a different provider.",
+            false,
+        ),
+        AuthorizationRegistryError::Busy => command_error(
+            "authorization_busy",
+            "Too many native authorization attempts are active.",
+            true,
+        ),
         AuthorizationRegistryError::Lock => state_unavailable(),
     }
 }
 
 fn provider_command_error(error: AgentProviderError) -> AgentAccountCommandError {
     let (message, recoverable) = match error.kind {
-        AgentProviderFailureKind::Retryable => ("The provider is temporarily unavailable. Try again.", true),
-        AgentProviderFailureKind::TerminalRevoked => ("The provider revoked this account. Reconnect it.", false),
-        AgentProviderFailureKind::UnsupportedAuthMode => ("This build does not support the account's authorization method.", false),
-        AgentProviderFailureKind::PolicyDenied => ("The provider policy denied this operation.", false),
+        AgentProviderFailureKind::Retryable => {
+            ("The provider is temporarily unavailable. Try again.", true)
+        }
+        AgentProviderFailureKind::TerminalRevoked => {
+            ("The provider revoked this account. Reconnect it.", false)
+        }
+        AgentProviderFailureKind::UnsupportedAuthMode => (
+            "This build does not support the account's authorization method.",
+            false,
+        ),
+        AgentProviderFailureKind::PolicyDenied => {
+            ("The provider policy denied this operation.", false)
+        }
     };
     command_error(&error.code, message, recoverable)
 }
@@ -835,10 +1125,16 @@ fn credential_error_code(error: AgentCredentialStoreError) -> &'static str {
 fn credential_command_error(error: AgentCredentialStoreError) -> AgentAccountCommandError {
     let code = credential_error_code(error);
     let message = match error {
-        AgentCredentialStoreError::Missing => "The native-agent credential is missing. Reconnect the account.",
+        AgentCredentialStoreError::Missing => {
+            "The native-agent credential is missing. Reconnect the account."
+        }
         AgentCredentialStoreError::Locked => "Unlock the system credential store and try again.",
-        AgentCredentialStoreError::Invalid => "The saved native-agent credential is invalid. Reconnect the account.",
-        AgentCredentialStoreError::Failed => "The native-agent credential could not be saved or removed.",
+        AgentCredentialStoreError::Invalid => {
+            "The saved native-agent credential is invalid. Reconnect the account."
+        }
+        AgentCredentialStoreError::Failed => {
+            "The native-agent credential could not be saved or removed."
+        }
     };
     command_error(code, message, true)
 }
@@ -848,15 +1144,68 @@ fn command_error(code: &str, message: &str, recoverable: bool) -> AgentAccountCo
 }
 
 fn metadata_error() -> AgentAccountCommandError {
-    command_error("account_store_failed", "Native-agent account metadata could not be read or updated.", true)
+    command_error(
+        "account_store_failed",
+        "Native-agent account metadata could not be read or updated.",
+        true,
+    )
 }
 
 fn state_unavailable() -> AgentAccountCommandError {
-    command_error("agent_account_state_unavailable", "Native-agent account state is temporarily unavailable.", true)
+    command_error(
+        "agent_account_state_unavailable",
+        "Native-agent account state is temporarily unavailable.",
+        true,
+    )
 }
 
 fn account_not_found() -> AgentAccountCommandError {
-    command_error("account_not_found", "The native-agent account no longer exists.", false)
+    command_error(
+        "account_not_found",
+        "The native-agent account no longer exists.",
+        false,
+    )
+}
+
+fn required_credential_ref(account: &AgentAccount) -> Result<&str, AgentAccountCommandError> {
+    account.credential_ref.as_deref().ok_or_else(|| {
+        command_error(
+            "credential_missing",
+            "This credential-backed product has no secret reference. Reconnect the account.",
+            false,
+        )
+    })
+}
+
+fn validate_provider_access(
+    product: AgentProductId,
+    custody_mode: CredentialCustodyMode,
+    access: &ProviderAccountAccess,
+) -> Result<(), AgentAccountCommandError> {
+    let credential_matches = product.requires_credential() == access.credential.is_some();
+    let profile_matches = match product.managed_runtime() {
+        Some(_) => access
+            .runtime_profile_ref
+            .as_deref()
+            .is_some_and(|reference| !reference.trim().is_empty() && reference.len() <= 512),
+        None => access.runtime_profile_ref.is_none(),
+    };
+    let secret_custody_matches = access
+        .credential
+        .as_ref()
+        .is_none_or(|credential| credential.custody_mode == custody_mode);
+    if !credential_matches
+        || !profile_matches
+        || !secret_custody_matches
+        || (product.is_managed_subscription() && access.credential.is_some())
+    {
+        return Err(command_error(
+            "account_access_mismatch",
+            "The provider returned account access for a different product route.",
+            false,
+        ));
+    }
+    Ok(())
 }
 
 async fn rollback_api_key_credential(
@@ -891,49 +1240,61 @@ async fn rollback_api_key_credential(
 fn copy_api_key_metadata(input: &AuthorizedAgentAccount) -> AuthorizedAgentAccount {
     AuthorizedAgentAccount {
         provider: input.provider,
+        product: input.product,
         harness: input.harness,
         display_name: input.display_name.clone(),
         external_account_id: input.external_account_id.clone(),
         external_workspace_id: None,
         auth_method: input.auth_method,
         custody_mode: input.custody_mode,
+        managed_runtime_id: input.managed_runtime_id,
+        managed_runtime_version: input.managed_runtime_version.clone(),
+        runtime_profile_ref: input.runtime_profile_ref.clone(),
         scopes: Vec::new(),
+        billing_source: input.billing_source.clone(),
+        billing_owner: input.billing_owner.clone(),
+        entitlement_state: input.entitlement_state,
+        entitlement_source: input.entitlement_source.clone(),
+        entitlement_observed_at: input.entitlement_observed_at.clone(),
         expires_at: None,
     }
 }
 
-fn api_key_fingerprint(provider: AgentProvider, api_key: &str) -> String {
+fn api_key_fingerprint(product: AgentProductId, api_key: &str) -> String {
     let mut hasher = Sha256::new();
-    hasher.update(provider.as_str().as_bytes());
+    hasher.update(product.as_str().as_bytes());
     hasher.update([0]);
     hasher.update(api_key.as_bytes());
     URL_SAFE_NO_PAD.encode(hasher.finalize())
 }
 
 fn validate_native_api_key(
-    provider: AgentProvider,
+    product: AgentProductId,
     api_key: &str,
 ) -> Result<(), AgentAccountCommandError> {
     let bounded = api_key.len() <= 512 && api_key.trim() == api_key;
-    let valid = match provider {
-        AgentProvider::ClaudeCode => {
+    let valid = match product {
+        AgentProductId::ClaudeApi => {
             bounded
                 && api_key.starts_with("sk-ant-")
                 && api_key.len() > "sk-ant-".len()
                 && api_key.bytes().all(|byte| byte.is_ascii_graphic())
         }
-        AgentProvider::Gemini => {
+        AgentProductId::GeminiApi => {
             bounded
                 && api_key.len() >= 20
-                && api_key.bytes().all(|byte| {
-                    byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.')
-                })
+                && api_key
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.'))
         }
-        AgentProvider::Grok => {
+        AgentProductId::GrokApi => {
             bounded
                 && api_key.len() >= 20
                 && api_key.starts_with("xai-")
                 && !api_key.chars().any(char::is_whitespace)
+        }
+        AgentProductId::OpencodeZen => {
+            bounded && api_key.len() >= 16 && api_key.bytes().all(|byte| byte.is_ascii_graphic())
         }
         _ => false,
     };
@@ -979,10 +1340,13 @@ mod tests {
     impl AgentAccountProvider for FakeProvider {
         fn registration(&self) -> AgentProviderRegistration {
             AgentProviderRegistration {
-                provider: AgentProvider::Codex,
+                provider: AgentProvider::GithubCopilot,
+                product: AgentProductId::GithubCopilotSubscription,
                 harness: AgentHarness::Alfred,
-                auth_method: AgentAuthMethod::OAuthPkce,
+                auth_method: AgentAuthMethod::DeviceCode,
                 custody_mode: CredentialCustodyMode::AlfredManaged,
+                managed_runtime_id: None,
+                managed_runtime_version: None,
                 gate_code: None,
             }
         }
@@ -1001,29 +1365,47 @@ mod tests {
             })
         }
 
-        fn complete_authorization<'a>(&'a self, _attempt: AuthorizationAttempt) -> ProviderFuture<'a, ProviderAccountGrant> {
+        fn complete_authorization<'a>(
+            &'a self,
+            _attempt: AuthorizationAttempt,
+        ) -> ProviderFuture<'a, ProviderAccountGrant> {
             Box::pin(async move {
-                let mut credential =
-                    AgentCredentialEnvelope::alfred_managed("first-secret".into());
+                let mut credential = AgentCredentialEnvelope::alfred_managed("first-secret".into());
                 credential.expires_at = Some("2099-01-01T00:00:00Z".into());
                 Ok(ProviderAccountGrant {
                     account: AuthorizedAgentAccount {
-                        provider: AgentProvider::Codex,
+                        provider: AgentProvider::GithubCopilot,
+                        product: AgentProductId::GithubCopilotSubscription,
                         harness: AgentHarness::Alfred,
                         display_name: Some("Codex User".into()),
                         external_account_id: "user-1".into(),
                         external_workspace_id: Some("workspace-1".into()),
-                        auth_method: AgentAuthMethod::OAuthPkce,
+                        auth_method: AgentAuthMethod::DeviceCode,
                         custody_mode: CredentialCustodyMode::AlfredManaged,
+                        managed_runtime_id: None,
+                        managed_runtime_version: None,
+                        runtime_profile_ref: None,
                         scopes: vec!["models:read".into()],
+                        billing_source: "provider_subscription".into(),
+                        billing_owner: "subscription_account".into(),
+                        entitlement_state: AgentEntitlementState::Eligible,
+                        entitlement_source: "provider_authorization".into(),
+                        entitlement_observed_at: Some("2026-08-26T12:00:00Z".into()),
                         expires_at: Some("2099-01-01T00:00:00Z".into()),
                     },
-                    credential,
+                    access: ProviderAccountAccess {
+                        credential: Some(credential),
+                        runtime_profile_ref: None,
+                    },
                 })
             })
         }
 
-        fn refresh<'a>(&'a self, _account: &'a AgentAccount, mut credential: AgentCredentialEnvelope) -> ProviderFuture<'a, AgentCredentialEnvelope> {
+        fn refresh<'a>(
+            &'a self,
+            _account: &'a AgentAccount,
+            mut access: ProviderAccountAccess,
+        ) -> ProviderFuture<'a, ProviderAccountAccess> {
             Box::pin(async move {
                 let active = self.active.fetch_add(1, Ordering::SeqCst) + 1;
                 self.maximum.fetch_max(active, Ordering::SeqCst);
@@ -1032,13 +1414,18 @@ mod tests {
                 if let Some(error) = self.refresh_failure.lock().expect("failure lock").clone() {
                     return Err(error);
                 }
+                let credential = access.credential.as_mut().expect("fake credential");
                 credential.access_token = Some("rotated-secret".into());
                 credential.expires_at = Some("2100-01-01T00:00:00Z".into());
-                Ok(credential)
+                Ok(access)
             })
         }
 
-        fn revoke<'a>(&'a self, _account: &'a AgentAccount, _credential: AgentCredentialEnvelope) -> ProviderFuture<'a, ()> {
+        fn revoke<'a>(
+            &'a self,
+            _account: &'a AgentAccount,
+            _access: ProviderAccountAccess,
+        ) -> ProviderFuture<'a, ()> {
             Box::pin(async move {
                 if let Some(error) = self.revoke_failure.lock().expect("failure lock").clone() {
                     Err(error)
@@ -1049,18 +1436,31 @@ mod tests {
         }
     }
 
-    async fn connected_fixture() -> (Db, Arc<InMemoryAgentCredentialStore>, AgentAccountsState, Arc<FakeProvider>, AgentAccountDto) {
+    async fn connected_fixture() -> (
+        Db,
+        Arc<InMemoryAgentCredentialStore>,
+        AgentAccountsState,
+        Arc<FakeProvider>,
+        AgentAccountDto,
+    ) {
         let db = Db::open_in_memory().expect("database");
         let store = Arc::new(InMemoryAgentCredentialStore::default());
         let state = AgentAccountsState::new(store.clone());
         let provider = Arc::new(FakeProvider::new());
         state.register(provider.clone()).expect("register");
-        let started = state.start_authorization("codex", AgentHarness::Alfred).expect("start");
+        let started = state
+            .start_authorization(
+                "github_copilot",
+                "github_copilot_subscription",
+                AgentHarness::Alfred,
+            )
+            .expect("start");
         let account = state
             .complete_authorization(
                 &db,
                 &started.attempt_id,
-                "codex",
+                "github_copilot",
+                "github_copilot_subscription",
                 AgentHarness::Alfred,
                 Some(OAUTH_STATE),
             )
@@ -1075,6 +1475,15 @@ mod tests {
             AgentProvider::Gemini => format!("AIza{suffix}FixtureValue1234567890"),
             AgentProvider::Grok => format!("xai-{suffix}-fixture-value-1234567890"),
             _ => panic!("unsupported API-key fixture provider"),
+        }
+    }
+
+    fn api_product(provider: AgentProvider) -> AgentProductId {
+        match provider {
+            AgentProvider::ClaudeCode => AgentProductId::ClaudeApi,
+            AgentProvider::Gemini => AgentProductId::GeminiApi,
+            AgentProvider::Grok => AgentProductId::GrokApi,
+            _ => panic!("unsupported API product fixture provider"),
         }
     }
 
@@ -1107,6 +1516,7 @@ mod tests {
                 .connect_api_key_account(
                     &db,
                     provider,
+                    api_product(provider),
                     None,
                     Zeroizing::new(secret.clone()),
                 )
@@ -1127,7 +1537,7 @@ mod tests {
             assert!(!format!("{backend:?}").contains(&secret));
             assert_eq!(
                 store
-                    .get(&backend.credential_ref)
+                    .get(backend.credential_ref.as_deref().unwrap())
                     .expect("stored key")
                     .access_token
                     .as_deref(),
@@ -1146,6 +1556,7 @@ mod tests {
                 .connect_api_key_account(
                     &db,
                     provider,
+                    api_product(provider),
                     None,
                     Zeroizing::new(invalid_secret.clone()),
                 )
@@ -1159,6 +1570,7 @@ mod tests {
             .connect_api_key_account(
                 &db,
                 AgentProvider::Codex,
+                AgentProductId::OpenaiApi,
                 None,
                 Zeroizing::new("sk-not-approved-secret".into()),
             )
@@ -1178,6 +1590,7 @@ mod tests {
             .connect_api_key_account(
                 &db,
                 AgentProvider::Grok,
+                AgentProductId::GrokApi,
                 None,
                 Zeroizing::new(first_key.clone()),
             )
@@ -1190,6 +1603,7 @@ mod tests {
             .connect_api_key_account(
                 &db,
                 AgentProvider::Grok,
+                AgentProductId::GrokApi,
                 Some(&first.id),
                 Zeroizing::new(second_key.clone()),
             )
@@ -1199,7 +1613,7 @@ mod tests {
         assert_eq!(db.list_agent_accounts().expect("list").len(), 1);
         assert_eq!(
             store
-                .get(&first_backend.credential_ref)
+                .get(first_backend.credential_ref.as_deref().unwrap())
                 .expect("overwritten key")
                 .access_token
                 .as_deref(),
@@ -1211,6 +1625,7 @@ mod tests {
             .connect_api_key_account(
                 &db,
                 AgentProvider::Gemini,
+                AgentProductId::GeminiApi,
                 Some(&first.id),
                 Zeroizing::new(mismatch_key.clone()),
             )
@@ -1220,7 +1635,7 @@ mod tests {
         assert!(!format!("{error:?}").contains(&mismatch_key));
         assert_eq!(
             store
-                .get(&first_backend.credential_ref)
+                .get(first_backend.credential_ref.as_deref().unwrap())
                 .expect("unchanged key")
                 .access_token
                 .as_deref(),
@@ -1233,9 +1648,98 @@ mod tests {
             .expect("local API-key disconnect");
         assert!(db.get_agent_account(&first.id).unwrap().is_none());
         assert_eq!(
-            store.get(&first_backend.credential_ref).unwrap_err(),
+            store
+                .get(first_backend.credential_ref.as_deref().unwrap())
+                .unwrap_err(),
             AgentCredentialStoreError::Missing
         );
+    }
+
+    #[tokio::test]
+    async fn opencode_zen_api_key_has_a_runtime_profile_and_disconnects_locally() {
+        let db = Db::open_in_memory().expect("database");
+        let store = Arc::new(InMemoryAgentCredentialStore::default());
+        let state = AgentAccountsState::new(store.clone());
+        let account = state
+            .connect_api_key_account(
+                &db,
+                AgentProvider::Opencode,
+                AgentProductId::OpencodeZen,
+                None,
+                Zeroizing::new("opencode-zen-fixture-secret".into()),
+            )
+            .await
+            .expect("connect Zen API key");
+        let backend = db.get_agent_account(&account.id).unwrap().unwrap();
+        assert_eq!(
+            backend.managed_runtime_id,
+            Some(ManagedRuntimeId::OpencodeServer)
+        );
+        assert!(backend.runtime_profile_ref.is_some());
+        let credential_ref = backend.credential_ref.expect("Zen credential ref");
+
+        state
+            .disconnect_account(&db, &account.id, false)
+            .await
+            .expect("local Zen disconnect");
+        assert!(db.get_agent_account(&account.id).unwrap().is_none());
+        assert_eq!(
+            store.get(&credential_ref).unwrap_err(),
+            AgentCredentialStoreError::Missing
+        );
+    }
+
+    #[tokio::test]
+    async fn reconnect_drains_a_migrated_legacy_credential_cleanup_reference() {
+        let db = Db::open_in_memory().expect("database");
+        let store = Arc::new(InMemoryAgentCredentialStore::default());
+        let state = AgentAccountsState::new(store.clone());
+        let first = state
+            .connect_api_key_account(
+                &db,
+                AgentProvider::Grok,
+                AgentProductId::GrokApi,
+                None,
+                Zeroizing::new(api_key(AgentProvider::Grok, "cleanup-first")),
+            )
+            .await
+            .expect("first connect");
+        let legacy_ref = "legacy-cleanup-reference";
+        store
+            .put(
+                legacy_ref,
+                &AgentCredentialEnvelope::alfred_managed("legacy-secret".into()),
+            )
+            .expect("store legacy credential");
+        db.with_conn(|conn| {
+            conn.execute(
+                "INSERT INTO agent_account_credential_cleanup (
+                   account_id, credential_ref, cleanup_owner, created_at
+                 ) VALUES (?1, ?2, 'legacy_agent_account_migration', 'now')",
+                rusqlite::params![first.id, legacy_ref],
+            )?;
+            Ok(())
+        })
+        .expect("attach cleanup owner");
+
+        state
+            .connect_api_key_account(
+                &db,
+                AgentProvider::Grok,
+                AgentProductId::GrokApi,
+                Some(&first.id),
+                Zeroizing::new(api_key(AgentProvider::Grok, "cleanup-second")),
+            )
+            .await
+            .expect("reconnect and drain cleanup");
+        assert_eq!(
+            store.get(legacy_ref).unwrap_err(),
+            AgentCredentialStoreError::Missing
+        );
+        assert!(db
+            .get_agent_account_credential_cleanup(&first.id)
+            .expect("read cleanup owner")
+            .is_none());
     }
 
     #[tokio::test]
@@ -1249,6 +1753,7 @@ mod tests {
             .connect_api_key_account(
                 &db,
                 AgentProvider::ClaudeCode,
+                AgentProductId::ClaudeApi,
                 None,
                 Zeroizing::new(rejected_key.clone()),
             )
@@ -1265,6 +1770,7 @@ mod tests {
             .connect_api_key_account(
                 &db,
                 AgentProvider::ClaudeCode,
+                AgentProductId::ClaudeApi,
                 None,
                 Zeroizing::new(ambiguous_key.clone()),
             )
@@ -1281,6 +1787,7 @@ mod tests {
             .connect_api_key_account(
                 &db,
                 AgentProvider::Gemini,
+                AgentProductId::GeminiApi,
                 None,
                 Zeroizing::new(metadata_key.clone()),
             )
@@ -1297,6 +1804,7 @@ mod tests {
             .connect_api_key_account(
                 &db,
                 AgentProvider::Grok,
+                AgentProductId::GrokApi,
                 None,
                 Zeroizing::new(rollback_key.clone()),
             )
@@ -1324,6 +1832,7 @@ mod tests {
             .connect_api_key_account(
                 &db,
                 AgentProvider::Grok,
+                AgentProductId::GrokApi,
                 None,
                 Zeroizing::new(first_key.clone()),
             )
@@ -1337,6 +1846,7 @@ mod tests {
             .connect_api_key_account(
                 &db,
                 AgentProvider::Grok,
+                AgentProductId::GrokApi,
                 Some(&first.id),
                 Zeroizing::new(replacement.clone()),
             )
@@ -1346,7 +1856,7 @@ mod tests {
         assert_eq!(db.get_agent_account(&first.id).unwrap().unwrap(), before);
         assert_eq!(
             store
-                .get(&before.credential_ref)
+                .get(before.credential_ref.as_deref().unwrap())
                 .expect("restored key")
                 .access_token
                 .as_deref(),
@@ -1359,16 +1869,16 @@ mod tests {
     fn default_provider_diagnostics_are_explicit_and_gated() {
         let state = AgentAccountsState::new(Arc::new(InMemoryAgentCredentialStore::default()));
         let providers = state.list_providers().expect("providers");
-        assert_eq!(providers.len(), 9);
+        assert_eq!(providers.len(), AgentProductId::ALL.len());
         assert!(providers.iter().all(|provider| {
             provider.harness == AgentHarness::Alfred
                 && !provider.connect_available
                 && provider.gate_code.as_deref() == Some("native_provider_not_available")
         }));
         assert!(providers.iter().all(|provider| {
-            provider.auth_methods.is_empty()
-                && provider.billing_source == "unavailable"
-                && provider.credential_custody == "unavailable"
+            AgentProductId::from_str(&provider.product_id).is_ok()
+                && provider.billing_source != "unavailable"
+                && provider.credential_custody != "unavailable"
         }));
     }
 
@@ -1378,22 +1888,38 @@ mod tests {
         let store = Arc::new(InMemoryAgentCredentialStore::default());
         store.fail_next_put(AgentCredentialStoreError::Locked);
         let state = AgentAccountsState::new(store);
-        state.register(Arc::new(FakeProvider::new())).expect("register");
-        let started = state.start_authorization("codex", AgentHarness::Alfred).expect("start");
+        state
+            .register(Arc::new(FakeProvider::new()))
+            .expect("register");
+        let started = state
+            .start_authorization(
+                "github_copilot",
+                "github_copilot_subscription",
+                AgentHarness::Alfred,
+            )
+            .expect("start");
         let error = state
             .complete_authorization(
                 &db,
                 &started.attempt_id,
-                "codex",
+                "github_copilot",
+                "github_copilot_subscription",
                 AgentHarness::Alfred,
                 Some(OAUTH_STATE),
             )
             .await
             .unwrap_err();
         assert_eq!(error.code, "credential_store_locked");
-        let saved = db.list_agent_accounts().expect("list").pop().expect("saved metadata");
+        let saved = db
+            .list_agent_accounts()
+            .expect("list")
+            .pop()
+            .expect("saved metadata");
         assert_eq!(saved.status, AgentAccountStatus::Error);
-        assert_eq!(saved.last_error_code.as_deref(), Some("credential_store_locked"));
+        assert_eq!(
+            saved.last_error_code.as_deref(),
+            Some("credential_store_locked")
+        );
     }
 
     #[tokio::test]
@@ -1406,10 +1932,17 @@ mod tests {
         first.expect("first refresh");
         second.expect("second refresh");
         assert_eq!(provider.maximum.load(Ordering::SeqCst), 1);
-        let backend = db.get_agent_account(&account.id).expect("read").expect("account");
+        let backend = db
+            .get_agent_account(&account.id)
+            .expect("read")
+            .expect("account");
         assert_eq!(backend.status, AgentAccountStatus::Connected);
         assert_eq!(
-            store.get(&backend.credential_ref).expect("credential").access_token.as_deref(),
+            store
+                .get(backend.credential_ref.as_deref().unwrap())
+                .expect("credential")
+                .access_token
+                .as_deref(),
             Some("rotated-secret")
         );
     }
@@ -1425,7 +1958,10 @@ mod tests {
         let after = db.get_agent_account(&account.id).unwrap().unwrap();
         assert_eq!(after.status, AgentAccountStatus::Error);
         assert_eq!(after.expires_at, before.expires_at);
-        assert_eq!(after.last_error_code.as_deref(), Some("credential_store_locked"));
+        assert_eq!(
+            after.last_error_code.as_deref(),
+            Some("credential_store_locked")
+        );
     }
 
     #[tokio::test]
@@ -1441,7 +1977,8 @@ mod tests {
             AgentAccountStatus::Revoked
         );
 
-        db.set_agent_account_state(&account.id, AgentAccountStatus::Connected, None, None).unwrap();
+        db.set_agent_account_state(&account.id, AgentAccountStatus::Connected, None, None)
+            .unwrap();
         *provider.refresh_failure.lock().expect("failure") = Some(AgentProviderError::new(
             "provider_unavailable",
             AgentProviderFailureKind::Retryable,
@@ -1460,7 +1997,10 @@ mod tests {
             "provider_unavailable",
             AgentProviderFailureKind::Retryable,
         ));
-        state.disconnect_account(&db, &account.id, false).await.unwrap_err();
+        state
+            .disconnect_account(&db, &account.id, false)
+            .await
+            .unwrap_err();
         assert_eq!(
             db.get_agent_account(&account.id).unwrap().unwrap().status,
             AgentAccountStatus::DisconnectPending
@@ -1468,12 +2008,21 @@ mod tests {
 
         *provider.revoke_failure.lock().expect("failure") = None;
         store.fail_next_delete(AgentCredentialStoreError::Locked);
-        state.disconnect_account(&db, &account.id, false).await.unwrap_err();
+        state
+            .disconnect_account(&db, &account.id, false)
+            .await
+            .unwrap_err();
         let pending = db.get_agent_account(&account.id).unwrap().unwrap();
         assert_eq!(pending.status, AgentAccountStatus::DisconnectPending);
-        assert_eq!(pending.last_error_code.as_deref(), Some("credential_store_locked"));
+        assert_eq!(
+            pending.last_error_code.as_deref(),
+            Some("credential_store_locked")
+        );
 
-        state.disconnect_account(&db, &account.id, false).await.expect("retry disconnect");
+        state
+            .disconnect_account(&db, &account.id, false)
+            .await
+            .expect("retry disconnect");
         assert!(db.get_agent_account(&account.id).unwrap().is_none());
     }
 
@@ -1486,7 +2035,8 @@ mod tests {
             .get_agent_account(&account.id)
             .unwrap()
             .unwrap()
-            .credential_ref;
+            .credential_ref
+            .expect("credential ref");
         assert!(store.get(&credential_ref).is_ok());
 
         state
@@ -1510,7 +2060,8 @@ mod tests {
             .get_agent_account(&account.id)
             .unwrap()
             .unwrap()
-            .credential_ref;
+            .credential_ref
+            .expect("credential ref");
         store.delete(&credential_ref).expect("pre-delete");
 
         state
@@ -1533,7 +2084,9 @@ mod tests {
         let pending = db.get_agent_account(&account.id).unwrap().unwrap();
         assert_eq!(pending.status, AgentAccountStatus::DisconnectPending);
         assert!(
-            store.get(&pending.credential_ref).is_ok(),
+            store
+                .get(pending.credential_ref.as_deref().unwrap())
+                .is_ok(),
             "the credential must remain reachable through its row"
         );
     }
@@ -1543,8 +2096,13 @@ mod tests {
     async fn past_expiry_is_reported_and_persisted_as_expired() {
         let (db, _store, state, _provider, account) = connected_fixture().await;
         let past = (chrono::Utc::now() - chrono::Duration::minutes(1)).to_rfc3339();
-        db.set_agent_account_state(&account.id, AgentAccountStatus::Connected, Some(&past), None)
-            .expect("set expiry");
+        db.set_agent_account_state(
+            &account.id,
+            AgentAccountStatus::Connected,
+            Some(&past),
+            None,
+        )
+        .expect("set expiry");
 
         let listed = state.list_accounts(&db).expect("list");
         let projected = listed
@@ -1552,7 +2110,10 @@ mod tests {
             .find(|item| item.id == account.id)
             .expect("account");
         assert_eq!(projected.status, AgentAccountStatus::Expired);
-        assert_eq!(projected.last_error_code.as_deref(), Some("credential_expired"));
+        assert_eq!(
+            projected.last_error_code.as_deref(),
+            Some("credential_expired")
+        );
 
         // The honest state is durable, not just a view-time projection.
         assert_eq!(
@@ -1605,24 +2166,22 @@ mod tests {
         let store = Arc::new(InMemoryAgentCredentialStore::default());
         let state = AgentAccountsState::new(store);
         let provider = Arc::new(FakeProvider::new());
-        *provider.expected_state.lock().expect("state lock") = None;
         state.register(provider.clone()).expect("register");
-        let missing = state
-            .start_authorization("codex", AgentHarness::Alfred)
-            .unwrap_err();
-        assert_eq!(missing.code, "authorization_state_required");
-
-        *provider.expected_state.lock().expect("state lock") = Some(OAUTH_STATE.into());
 
         for wrong in [None, Some(""), Some("state"), Some("STATE-FIXTURE")] {
             let started = state
-                .start_authorization("codex", AgentHarness::Alfred)
+                .start_authorization(
+                    "github_copilot",
+                    "github_copilot_subscription",
+                    AgentHarness::Alfred,
+                )
                 .expect("start");
             let error = state
                 .complete_authorization(
                     &db,
                     &started.attempt_id,
-                    "codex",
+                    "github_copilot",
+                    "github_copilot_subscription",
                     AgentHarness::Alfred,
                     wrong,
                 )
@@ -1639,13 +2198,18 @@ mod tests {
         }
 
         let started = state
-            .start_authorization("codex", AgentHarness::Alfred)
+            .start_authorization(
+                "github_copilot",
+                "github_copilot_subscription",
+                AgentHarness::Alfred,
+            )
             .expect("start");
         let account = state
             .complete_authorization(
                 &db,
                 &started.attempt_id,
-                "codex",
+                "github_copilot",
+                "github_copilot_subscription",
                 AgentHarness::Alfred,
                 Some(OAUTH_STATE),
             )
@@ -1700,10 +2264,7 @@ mod tests {
                     .await
                     .expect("idle locks are pruned"),
             );
-            assert!(
-                state.account_locks.lock().expect("locks").len()
-                    <= MAX_TRACKED_ACCOUNT_LOCKS
-            );
+            assert!(state.account_locks.lock().expect("locks").len() <= MAX_TRACKED_ACCOUNT_LOCKS);
         }
     }
 }

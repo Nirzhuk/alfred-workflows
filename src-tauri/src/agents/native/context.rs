@@ -1,8 +1,8 @@
 use super::redaction::{contains_cli_permission_flag, contains_secret_marker};
 use super::{
-    NativeCancellation, NativeContextBlock, NativeContextRole, NativeErrorCode,
-    NativeEventLimits, NativePermissionProfile, NativeRuntimeDescriptor, NativeRuntimeError,
-    NativeSessionMode, NativeToolCapabilitySet, NativeTurnRequest, DEFAULT_TURN_TIMEOUT,
+    NativeCancellation, NativeContextBlock, NativeContextRole, NativeErrorCode, NativeEventLimits,
+    NativePermissionProfile, NativeRuntimeDescriptor, NativeRuntimeError, NativeSessionMode,
+    NativeToolCapabilitySet, NativeTurnRequest, DEFAULT_TURN_TIMEOUT,
     NATIVE_REQUEST_CONTRACT_VERSION,
 };
 use crate::agents::{AgentExecutionTarget, AgentHarness, AgentRequest};
@@ -40,15 +40,21 @@ impl NativeContextPolicy {
         let mut total = 0usize;
         for block in blocks {
             if block.content.is_empty() || block.content.len() > self.max_block_bytes {
-                return Err(invalid_context("native context block exceeds its byte limit"));
+                return Err(invalid_context(
+                    "native context block exceeds its byte limit",
+                ));
             }
             total = total.saturating_add(block.content.len());
             if total > self.max_total_bytes {
-                return Err(invalid_context("native context exceeds its total byte limit"));
+                return Err(invalid_context(
+                    "native context exceeds its total byte limit",
+                ));
             }
         }
         if blocks.last().map(|block| &block.role) != Some(&NativeContextRole::User) {
-            return Err(invalid_context("native context must end with the user prompt"));
+            return Err(invalid_context(
+                "native context must end with the user prompt",
+            ));
         }
         Ok(())
     }
@@ -64,10 +70,14 @@ pub fn prepare_native_request(
     context_policy: &NativeContextPolicy,
 ) -> Result<NativeTurnRequest, NativeRuntimeError> {
     if target.harness != AgentHarness::Alfred || target.provider != descriptor.provider {
-        return Err(invalid_context("native execution target does not match the runtime"));
+        return Err(invalid_context(
+            "native execution target does not match the runtime",
+        ));
     }
     if descriptor.request_contract_version != NATIVE_REQUEST_CONTRACT_VERSION {
-        return Err(invalid_context("native runtime request contract version is unsupported"));
+        return Err(invalid_context(
+            "native runtime request contract version is unsupported",
+        ));
     }
     event_limits.validate()?;
     reject_secret_bearing_request(request)?;
@@ -176,9 +186,8 @@ fn resolve_context(
                     false,
                 )
             })?;
-            let content = fs::read_to_string(&skill.path).map_err(|_| {
-                invalid_context(format!("native skill could not be read: {name}"))
-            })?;
+            let content = fs::read_to_string(&skill.path)
+                .map_err(|_| invalid_context(format!("native skill could not be read: {name}")))?;
             if contains_secret_marker(&content) {
                 return Err(invalid_context(format!(
                     "native skill contains secret-looking material: {name}"

@@ -128,7 +128,7 @@ fn validate_component(
         && !contains_cli_permission_flag(value)
         && value
             .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b':' ));
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b':'));
     if valid {
         Ok(())
     } else {
@@ -140,11 +140,7 @@ fn validate_component(
     }
 }
 
-fn validate_label(
-    value: &str,
-    max_bytes: usize,
-    label: &str,
-) -> Result<(), NativeRuntimeError> {
+fn validate_label(value: &str, max_bytes: usize, label: &str) -> Result<(), NativeRuntimeError> {
     let valid = !value.is_empty()
         && value.len() <= max_bytes
         && value.trim() == value

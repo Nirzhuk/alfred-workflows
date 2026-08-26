@@ -1,4 +1,5 @@
 use super::{NativeEvent, NativeEventLimits};
+use crate::agent_accounts::models::AgentProductId;
 use crate::agents::{AgentHarness, AgentProvider, OpaqueAgentAccountRef};
 use serde::Serialize;
 use std::any::Any;
@@ -28,6 +29,14 @@ pub enum NativeCapability {
     Patch,
     Mcp,
     Subagents,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NativeToolExecutionOwner {
+    AlfredExecuted,
+    RuntimeExecutedWithHostApproval,
+    NoTools,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -98,6 +107,8 @@ pub struct NativeRuntimeDescriptor {
     pub request_contract_version: u16,
     pub event_contract_version: u16,
     pub provider: AgentProvider,
+    pub product: AgentProductId,
+    pub tool_execution_owner: NativeToolExecutionOwner,
     pub capabilities: NativeCapabilities,
 }
 
@@ -300,6 +311,7 @@ impl NativeCredential {
 pub struct ResolvedNativeAccount {
     pub account_ref: OpaqueAgentAccountRef,
     pub provider: AgentProvider,
+    pub product: AgentProductId,
     pub credential: NativeCredential,
 }
 
@@ -308,6 +320,7 @@ pub trait NativeAccountResolver: Send + Sync {
         &self,
         account_ref: &OpaqueAgentAccountRef,
         provider: AgentProvider,
+        product: AgentProductId,
     ) -> Result<ResolvedNativeAccount, NativeRuntimeError>;
 }
 
@@ -407,10 +420,7 @@ pub trait NativeTurnHost {
 
 pub trait NativeAgentRuntime: Send + Sync {
     fn descriptor(&self) -> NativeRuntimeDescriptor;
-    fn validate_account(
-        &self,
-        account: &ResolvedNativeAccount,
-    ) -> Result<(), NativeRuntimeError>;
+    fn validate_account(&self, account: &ResolvedNativeAccount) -> Result<(), NativeRuntimeError>;
     fn discover_models(
         &self,
         account: &ResolvedNativeAccount,

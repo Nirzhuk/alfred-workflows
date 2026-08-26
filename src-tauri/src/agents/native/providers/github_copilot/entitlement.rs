@@ -41,7 +41,10 @@ pub enum CopilotAccountState {
 impl CopilotAccountState {
     /// True only for the one state that authorizes running a turn.
     pub fn can_run_turn(&self) -> bool {
-        matches!(self, Self::CopilotEntitled { .. } | Self::ByokConfigured { .. })
+        matches!(
+            self,
+            Self::CopilotEntitled { .. } | Self::ByokConfigured { .. }
+        )
     }
 
     /// Stable code for the account row's `last_error_code`.
@@ -94,10 +97,7 @@ pub struct CopilotSessionRejection {
 /// Matching is on the SDK's stable code first and only falls back to message
 /// text for the phrases GitHub documents, so a reworded message degrades to
 /// "not entitled" rather than silently claiming a seat.
-pub fn classify_rejection(
-    login: &str,
-    rejection: &CopilotSessionRejection,
-) -> CopilotAccountState {
+pub fn classify_rejection(login: &str, rejection: &CopilotSessionRejection) -> CopilotAccountState {
     let code = rejection.code.to_ascii_lowercase();
     let error_type = rejection.error_type.to_ascii_lowercase();
     let message = rejection.message.to_ascii_lowercase();

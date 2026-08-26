@@ -184,7 +184,10 @@ mod tests {
 
     #[test]
     fn auth_requests_only_offer_documented_chatgpt_flows() {
-        assert_eq!(login_start_params(ChatGptLoginKind::Browser)["type"], "chatgpt");
+        assert_eq!(
+            login_start_params(ChatGptLoginKind::Browser)["type"],
+            "chatgpt"
+        );
         assert_eq!(
             login_start_params(ChatGptLoginKind::DeviceCode)["type"],
             "chatgptDeviceCode"

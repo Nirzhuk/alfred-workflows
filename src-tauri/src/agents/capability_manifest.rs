@@ -5,9 +5,10 @@
 //! entry is executable only after every release gate is recorded as passed.
 
 use super::{AgentError, AgentHarness, AgentProvider};
-use crate::agent_accounts::models::AgentAccount;
+use crate::agent_accounts::models::{AgentAccount, AgentProductId};
 use crate::agents::native::NativeRuntimeRegistry;
 use crate::agents::runtime_package::{inspect_runtime_package, RuntimePackageInspection};
+use crate::db::AgentAccountReadDiagnostic;
 use serde::Serialize;
 use std::path::Path;
 
@@ -128,6 +129,8 @@ pub struct PackagedRuntimeMetadata {
 pub struct AgentCapabilityEntry {
     pub provider: AgentProvider,
     pub harness: AgentHarness,
+    pub product: Option<AgentProductId>,
+    pub runtime_id: Option<String>,
     pub runtime_version: Option<String>,
     pub platforms: Vec<DesktopPlatform>,
     pub build_kinds: Vec<DesktopBuildKind>,
@@ -161,24 +164,21 @@ impl AgentCapabilityEntry {
         platform: DesktopPlatform,
         build_kind: DesktopBuildKind,
     ) -> bool {
-        self.execution_permitted
-            && self.execution_decision(platform, build_kind)
+        self.execution_permitted && self.execution_decision(platform, build_kind)
     }
 
-    fn execution_decision(
-        &self,
-        platform: DesktopPlatform,
-        build_kind: DesktopBuildKind,
-    ) -> bool {
+    fn execution_decision(&self, platform: DesktopPlatform, build_kind: DesktopBuildKind) -> bool {
         self.status.permits_execution()
             && self.platforms.contains(&platform)
             && self.build_kinds.contains(&build_kind)
-            && self.platform_gates.iter().any(|gate| {
-                gate.platform == platform && gate.status == GateStatus::Passed
-            })
-            && self.build_gates.iter().any(|gate| {
-                gate.build_kind == build_kind && gate.status == GateStatus::Passed
-            })
+            && self
+                .platform_gates
+                .iter()
+                .any(|gate| gate.platform == platform && gate.status == GateStatus::Passed)
+            && self
+                .build_gates
+                .iter()
+                .any(|gate| gate.build_kind == build_kind && gate.status == GateStatus::Passed)
             && self
                 .auth_method_gates
                 .iter()
@@ -187,9 +187,11 @@ impl AgentCapabilityEntry {
                 .gates
                 .iter()
                 .all(|gate| gate.status != GateStatus::Failed)
-            && self.package.as_ref().zip(self.package_inspection.as_ref()).is_some_and(
-                |(package, inspection)| package_permits_execution(package, inspection),
-            )
+            && self
+                .package
+                .as_ref()
+                .zip(self.package_inspection.as_ref())
+                .is_some_and(|(package, inspection)| package_permits_execution(package, inspection))
     }
 }
 
@@ -213,8 +215,10 @@ impl AgentCapabilityManifest {
             }) {
                 return false;
             }
-            if matches!(entry.status, CapabilityStatus::Blocked | CapabilityStatus::Disabled)
-                && entry.block_reason.as_deref().is_none_or(str::is_empty)
+            if matches!(
+                entry.status,
+                CapabilityStatus::Blocked | CapabilityStatus::Disabled
+            ) && entry.block_reason.as_deref().is_none_or(str::is_empty)
             {
                 return false;
             }
@@ -224,11 +228,40 @@ impl AgentCapabilityManifest {
             {
                 return false;
             }
-            if entry.package.as_ref().is_some_and(|package| package.automatic_fallback) {
+            if entry.harness == AgentHarness::Cli {
+                if entry.product.is_some() || entry.runtime_id.is_some() {
+                    return false;
+                }
+            } else if let Some(product) = native_product(entry.provider) {
+                let expected_auth = product
+                    .auth_methods()
+                    .iter()
+                    .map(|method| (*method).to_owned())
+                    .collect::<Vec<_>>();
+                if entry.product != Some(product)
+                    || entry.runtime_id.as_deref() != Some(product.capability_runtime_id())
+                    || entry.runtime_version.as_deref()
+                        != Some(product.capability_runtime_version())
+                    || entry.auth_methods != expected_auth
+                    || entry.billing_source != product.billing_source()
+                    || entry.credential_custody != product.custody_mode().as_str()
+                {
+                    return false;
+                }
+            } else if entry.product.is_some() || entry.runtime_id.is_some() {
                 return false;
             }
-            let Some((package, inspection)) =
-                entry.package.as_ref().zip(entry.package_inspection.as_ref())
+            if entry
+                .package
+                .as_ref()
+                .is_some_and(|package| package.automatic_fallback)
+            {
+                return false;
+            }
+            let Some((package, inspection)) = entry
+                .package
+                .as_ref()
+                .zip(entry.package_inspection.as_ref())
             else {
                 return false;
             };
@@ -238,9 +271,7 @@ impl AgentCapabilityManifest {
                 {
                     return false;
                 }
-            } else if entry.status.permits_execution()
-                && !package_metadata_is_complete(package)
-            {
+            } else if entry.status.permits_execution() && !package_metadata_is_complete(package) {
                 return false;
             }
             if entry.platforms.iter().any(|platform| {
@@ -267,8 +298,7 @@ impl AgentCapabilityManifest {
             }) {
                 return false;
             }
-            if entry.execution_permitted
-                != entry.execution_decision(self.platform, self.build_kind)
+            if entry.execution_permitted != entry.execution_decision(self.platform, self.build_kind)
             {
                 return false;
             }
@@ -284,6 +314,15 @@ impl AgentCapabilityManifest {
         self.entries
             .iter()
             .find(|entry| entry.provider == provider && entry.harness == harness)
+    }
+
+    pub fn product_entry(
+        &self,
+        product: AgentProductId,
+        harness: AgentHarness,
+    ) -> Option<&AgentCapabilityEntry> {
+        self.entry(product.provider(), harness)
+            .filter(|entry| entry.product == Some(product))
     }
 
     pub fn require_execution(
@@ -316,6 +355,10 @@ pub struct AgentHarnessDiagnostic {
     pub provider: AgentProvider,
     pub harness: AgentHarness,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub product: Option<AgentProductId>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runtime_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub runtime_version: Option<String>,
     pub capability_status: CapabilityStatus,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -328,11 +371,19 @@ pub struct AgentHarnessDiagnostic {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct RedactedAccountStoreWarning {
+    pub identity: String,
+    pub stable_error_code: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AgentHarnessDiagnostics {
     pub schema_version: u16,
     pub platform: DesktopPlatform,
     pub build_kind: DesktopBuildKind,
     pub entries: Vec<AgentHarnessDiagnostic>,
+    pub account_store_warnings: Vec<RedactedAccountStoreWarning>,
 }
 
 pub fn current_platform() -> DesktopPlatform {
@@ -383,7 +434,12 @@ pub fn manifest_for_resource_root(
     ];
     let mut entries = Vec::with_capacity(providers.len() * 2);
     for provider in providers {
-        entries.push(finalize_entry(cli_entry(provider), platform, build_kind, resource_root));
+        entries.push(finalize_entry(
+            cli_entry(provider),
+            platform,
+            build_kind,
+            resource_root,
+        ));
         entries.push(finalize_entry(
             native_entry(provider),
             platform,
@@ -402,6 +458,7 @@ pub fn manifest_for_resource_root(
 pub fn support_diagnostics(
     manifest: &AgentCapabilityManifest,
     accounts: &[AgentAccount],
+    account_read_diagnostics: &[AgentAccountReadDiagnostic],
     registry: &NativeRuntimeRegistry,
     provider_filter: Option<AgentProvider>,
     harness_filter: Option<AgentHarness>,
@@ -415,7 +472,11 @@ pub fn support_diagnostics(
             let account_rows = accounts
                 .iter()
                 .filter(|account| {
-                    account.provider == entry.provider && account.harness == entry.harness
+                    account.provider == entry.provider
+                        && account.harness == entry.harness
+                        && entry
+                            .product
+                            .is_none_or(|product| account.product == product)
                 })
                 .take(MAX_DIAGNOSTIC_ACCOUNTS)
                 .map(|account| RedactedDiagnosticAccount {
@@ -428,11 +489,13 @@ pub fn support_diagnostics(
                         .map(stable_diagnostic_code),
                 })
                 .collect();
-            let runtime_registered = entry.harness == AgentHarness::Alfred
-                && registry.contains(entry.provider);
+            let runtime_registered =
+                entry.harness == AgentHarness::Alfred && registry.contains(entry.provider);
             AgentHarnessDiagnostic {
                 provider: entry.provider,
                 harness: entry.harness,
+                product: entry.product,
+                runtime_id: entry.runtime_id.clone(),
                 runtime_version: entry.runtime_version.clone(),
                 capability_status: entry.status,
                 block_reason: entry.block_reason.clone(),
@@ -453,6 +516,18 @@ pub fn support_diagnostics(
         platform: manifest.platform,
         build_kind: manifest.build_kind,
         entries,
+        account_store_warnings: account_read_diagnostics
+            .iter()
+            .take(MAX_DIAGNOSTIC_ACCOUNTS)
+            .map(|diagnostic| RedactedAccountStoreWarning {
+                identity: diagnostic
+                    .account_id
+                    .as_deref()
+                    .map(redact_account_id)
+                    .unwrap_or_else(|| "account_redacted".into()),
+                stable_error_code: diagnostic.error_code.into(),
+            })
+            .collect(),
     }
 }
 
@@ -460,6 +535,8 @@ fn cli_entry(provider: AgentProvider) -> AgentCapabilityEntry {
     AgentCapabilityEntry {
         provider,
         harness: AgentHarness::Cli,
+        product: None,
+        runtime_id: None,
         runtime_version: None,
         platforms: all_platforms(),
         build_kinds: all_builds(),
@@ -478,149 +555,128 @@ fn cli_entry(provider: AgentProvider) -> AgentCapabilityEntry {
         status: CapabilityStatus::Available,
         block_reason: None,
         execution_permitted: false,
-        gates: vec![passed("compatibility"), passed("cancellation"), passed("redaction")],
+        gates: vec![
+            passed("compatibility"),
+            passed("cancellation"),
+            passed("redaction"),
+        ],
         package: Some(not_applicable_package("user_installed_cli")),
         package_inspection: None,
     }
 }
 
+fn native_product(provider: AgentProvider) -> Option<AgentProductId> {
+    match provider {
+        AgentProvider::ClaudeCode => Some(AgentProductId::ClaudeApi),
+        AgentProvider::Cursor => Some(AgentProductId::CursorCloud),
+        AgentProvider::Codex => Some(AgentProductId::ChatgptCodex),
+        AgentProvider::Opencode => Some(AgentProductId::OpencodeGo),
+        AgentProvider::GithubCopilot => Some(AgentProductId::GithubCopilotSubscription),
+        AgentProvider::Gemini => Some(AgentProductId::GeminiApi),
+        AgentProvider::Grok => Some(AgentProductId::GrokApi),
+        AgentProvider::Pi | AgentProvider::Omp => None,
+    }
+}
+
 fn native_entry(provider: AgentProvider) -> AgentCapabilityEntry {
-    let (
-        status,
-        version,
-        auth,
-        billing,
-        custody,
-        models,
-        usage,
-        tools,
-        approvals,
-        resume,
-        reason,
-        package,
-    ) =
-        match provider {
-            AgentProvider::Codex => (
-                CapabilityStatus::Blocked,
-                Some("0.149.1"),
-                vec!["chatgpt_oauth", "chatgpt_device_code"],
-                "chatgpt_subscription",
-                "runtime_managed",
-                "codex_app_server",
-                "codex_app_server_rate_limits",
-                true,
-                true,
-                true,
-                "codex_cross_platform_signing_and_packaged_smoke_missing",
-                codex_package(),
-            ),
-            AgentProvider::ClaudeCode => (
-                CapabilityStatus::Blocked,
-                Some("anthropic-messages-2023-06-01/alfred-0.1.0"),
-                vec!["api_key"],
-                "anthropic_api_usage_based",
-                "alfred_managed",
-                "anthropic_models_api",
-                "response_tokens_only",
-                true,
-                true,
-                false,
-                "claude_live_api_key_smoke_missing",
-                not_applicable_package("direct_https"),
-            ),
-            AgentProvider::Cursor => (
-                CapabilityStatus::Blocked,
-                Some("cloud-agents-v1-public-beta-2026-08-25"),
-                vec!["api_key"],
-                "cursor_cloud_agents_api",
-                "alfred_managed",
-                "cursor_cloud_agents_api",
-                "cursor_per_run_usage",
-                false,
-                false,
-                false,
-                "cursor_account_repository_consent_and_e2e_gates_missing",
-                not_applicable_package("cloud_https"),
-            ),
-            AgentProvider::Opencode => (
-                CapabilityStatus::Blocked,
-                Some("1.18.23"),
-                vec!["upstream_provider_secret"],
-                "selected_upstream_provider",
-                "alfred_managed",
-                "opencode_server",
-                "selected_upstream_provider",
-                false,
-                false,
-                true,
-                "opencode_package_account_and_tool_bridge_unverified",
-                unavailable_bundled_package("sidecar", "MIT"),
-            ),
-            AgentProvider::GithubCopilot => (
-                CapabilityStatus::Blocked,
-                Some("github-copilot-sdk-1.0.11"),
-                vec!["github_device_code"],
-                "github_copilot_seat",
-                "alfred_managed",
-                "github_copilot_sdk",
-                "unavailable",
-                true,
-                true,
-                false,
-                "copilot_sdk_package_license_and_packaged_smoke_missing",
-                unavailable_bundled_package(
-                    "bundled_sdk_cli",
-                    "GitHub-Copilot-CLI-license",
-                ),
-            ),
-            AgentProvider::Gemini => (
-                CapabilityStatus::Blocked,
-                Some("gemini-v1beta/alfred-1.0.0"),
-                vec!["api_key"],
-                "google_ai_api_usage_based",
-                "alfred_managed",
-                "gemini_models_api",
-                "response_tokens_only",
-                true,
-                true,
-                false,
-                "gemini_live_api_key_smoke_missing",
-                not_applicable_package("direct_https"),
-            ),
-            AgentProvider::Grok => (
-                CapabilityStatus::Blocked,
-                Some("xai-responses/alfred-0.1.0"),
-                vec!["api_key"],
-                "xai_api_usage_based",
-                "alfred_managed",
-                "xai_models_api",
-                "response_tokens_only",
-                true,
-                true,
-                false,
-                "grok_live_api_key_smoke_missing",
-                not_applicable_package("direct_https"),
-            ),
-            AgentProvider::Pi | AgentProvider::Omp => (
-                CapabilityStatus::Disabled,
-                None,
-                vec![],
-                "unavailable",
-                "unavailable",
-                "unavailable",
-                "unavailable",
-                false,
-                false,
-                false,
-                "native_provider_not_implemented",
-                not_applicable_package("none"),
-            ),
-        };
-    let auth_methods = auth.into_iter().map(str::to_owned).collect::<Vec<_>>();
+    let product = native_product(provider);
+    let (status, models, usage, tools, approvals, resume, reason, package) = match provider {
+        AgentProvider::Codex => (
+            CapabilityStatus::Blocked,
+            "codex_python_sdk",
+            "runtime_observation_unavailable",
+            true,
+            true,
+            true,
+            "codex_cross_platform_signing_and_packaged_smoke_missing",
+            unavailable_bundled_package("python_sidecar", "license_unverified"),
+        ),
+        AgentProvider::ClaudeCode => (
+            CapabilityStatus::Blocked,
+            "anthropic_models_api",
+            "response_tokens_only",
+            true,
+            true,
+            false,
+            "claude_live_api_key_smoke_missing",
+            not_applicable_package("direct_https"),
+        ),
+        AgentProvider::Cursor => (
+            CapabilityStatus::Blocked,
+            "cursor_cloud_agents_api",
+            "cursor_per_run_usage",
+            false,
+            false,
+            false,
+            "cursor_account_repository_consent_and_e2e_gates_missing",
+            not_applicable_package("cloud_https"),
+        ),
+        AgentProvider::Opencode => (
+            CapabilityStatus::Blocked,
+            "opencode_server",
+            "runtime_account_observation",
+            false,
+            false,
+            true,
+            "opencode_package_account_and_tool_bridge_unverified",
+            unavailable_bundled_package("sidecar", "MIT"),
+        ),
+        AgentProvider::GithubCopilot => (
+            CapabilityStatus::Blocked,
+            "github_copilot_sdk",
+            "unavailable",
+            true,
+            true,
+            false,
+            "copilot_sdk_package_license_and_packaged_smoke_missing",
+            unavailable_bundled_package("bundled_sdk_cli", "GitHub-Copilot-CLI-license"),
+        ),
+        AgentProvider::Gemini => (
+            CapabilityStatus::Blocked,
+            "gemini_models_api",
+            "response_tokens_only",
+            true,
+            true,
+            false,
+            "gemini_live_api_key_smoke_missing",
+            not_applicable_package("direct_https"),
+        ),
+        AgentProvider::Grok => (
+            CapabilityStatus::Blocked,
+            "xai_models_api",
+            "response_tokens_only",
+            true,
+            true,
+            false,
+            "grok_live_api_key_smoke_missing",
+            not_applicable_package("direct_https"),
+        ),
+        AgentProvider::Pi | AgentProvider::Omp => (
+            CapabilityStatus::Disabled,
+            "unavailable",
+            "unavailable",
+            false,
+            false,
+            false,
+            "native_provider_not_implemented",
+            not_applicable_package("none"),
+        ),
+    };
+    let auth_methods = product
+        .map(|product| {
+            product
+                .auth_methods()
+                .iter()
+                .map(|method| (*method).to_owned())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
     AgentCapabilityEntry {
         provider,
         harness: AgentHarness::Alfred,
-        runtime_version: version.map(str::to_owned),
+        product,
+        runtime_id: product.map(|product| product.capability_runtime_id().into()),
+        runtime_version: product.map(|product| product.capability_runtime_version().into()),
         platforms: all_platforms(),
         build_kinds: all_builds(),
         auth_methods: auth_methods.clone(),
@@ -630,8 +686,14 @@ fn native_entry(provider: AgentProvider) -> AgentCapabilityEntry {
             .collect(),
         platform_gates: platform_gates(GateStatus::Failed, Some(reason)),
         build_gates: build_gates(GateStatus::Failed, Some(reason)),
-        billing_source: billing.into(),
-        credential_custody: custody.into(),
+        billing_source: product
+            .map(|product| product.billing_source())
+            .unwrap_or("unavailable")
+            .into(),
+        credential_custody: product
+            .map(|product| product.custody_mode().as_str())
+            .unwrap_or("unavailable")
+            .into(),
         model_source: models.into(),
         usage_source: usage.into(),
         supports_tools: tools,
@@ -707,11 +769,7 @@ fn not_applicable(gate: &str) -> CapabilityGate {
     }
 }
 
-fn auth_gate(
-    auth_method: &str,
-    status: GateStatus,
-    reason: Option<&str>,
-) -> AuthMethodGate {
+fn auth_gate(auth_method: &str, status: GateStatus, reason: Option<&str>) -> AuthMethodGate {
     AuthMethodGate {
         auth_method: auth_method.into(),
         status,
@@ -779,50 +837,6 @@ fn unavailable_bundled_package(kind: &str, license: &str) -> PackagedRuntimeMeta
     }
 }
 
-fn codex_package() -> PackagedRuntimeMetadata {
-    let artifact = crate::agents::native::providers::codex::CODEX_RUNTIME_ARTIFACTS
-        .iter()
-        .find(|artifact| artifact.target == host_codex_target());
-    PackagedRuntimeMetadata {
-        kind: "sidecar".into(),
-        included: false,
-        resource_path: artifact.map(|artifact| {
-            format!(
-                "agent-runtimes/codex/0.149.1/{}",
-                artifact.archive_name
-            )
-        }),
-        checksum_status: "expected_not_packaged".into(),
-        sha256: artifact.map(|artifact| artifact.sha256.into()),
-        license: "Apache-2.0".into(),
-        license_resource_path: Some("agent-runtimes/codex/0.149.1/LICENSE".into()),
-        notice_resource_path: Some("agent-runtimes/codex/0.149.1/NOTICE".into()),
-        signing_resource_path: None,
-        rollback_resource_path: None,
-        signing_status: "blocked_partial_upstream_sigstore".into(),
-        rollback_status: "not_implemented".into(),
-        data_independent: true,
-        automatic_fallback: false,
-    }
-}
-
-fn host_codex_target() -> &'static str {
-    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-    return "aarch64-apple-darwin";
-    #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
-    return "x86_64-apple-darwin";
-    #[cfg(all(target_os = "windows", target_arch = "aarch64"))]
-    return "aarch64-pc-windows-msvc";
-    #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
-    return "x86_64-pc-windows-msvc";
-    #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
-    return "aarch64-unknown-linux-musl";
-    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-    return "x86_64-unknown-linux-musl";
-    #[allow(unreachable_code)]
-    "unsupported-target"
-}
-
 fn finalize_entry(
     mut entry: AgentCapabilityEntry,
     platform: DesktopPlatform,
@@ -833,7 +847,11 @@ fn finalize_entry(
         resource_root.map_or_else(
             || {
                 if package.kind == "not_applicable" {
-                    inspect_runtime_package(Path::new("."), package, entry.runtime_version.as_deref())
+                    inspect_runtime_package(
+                        Path::new("."),
+                        package,
+                        entry.runtime_version.as_deref(),
+                    )
                 } else {
                     RuntimePackageInspection::missing(entry.runtime_version.as_deref())
                 }
@@ -847,7 +865,10 @@ fn finalize_entry(
 
 fn package_metadata_is_complete(package: &PackagedRuntimeMetadata) -> bool {
     package.included
-        && package.resource_path.as_deref().is_some_and(|value| !value.is_empty())
+        && package
+            .resource_path
+            .as_deref()
+            .is_some_and(|value| !value.is_empty())
         && package.sha256.as_deref().is_some_and(|value| {
             value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
         })
@@ -921,7 +942,8 @@ fn stable_diagnostic_code(value: &str) -> String {
 mod tests {
     use super::*;
     use crate::agent_accounts::models::{
-        AgentAccountStatus, AgentAuthMethod, CredentialCustodyMode,
+        AgentAccountStatus, AgentAuthMethod, AgentEntitlementState, AgentProductId,
+        CredentialCustodyMode,
     };
 
     fn inspected_native_fixture(
@@ -958,9 +980,7 @@ mod tests {
             included: true,
             resource_path: Some("runtime/fixture-runtime.txt".into()),
             checksum_status: "expected".into(),
-            sha256: Some(
-                "cbf38a1c6d10d43e8451d55fc441d491c9055a2ca5d386e1dc467e63cce2e289".into(),
-            ),
+            sha256: Some("cbf38a1c6d10d43e8451d55fc441d491c9055a2ca5d386e1dc467e63cce2e289".into()),
             license: "MIT".into(),
             license_resource_path: Some("runtime/LICENSE.txt".into()),
             notice_resource_path: Some("runtime/NOTICE.txt".into()),
@@ -1047,6 +1067,58 @@ mod tests {
     }
 
     #[test]
+    fn native_capabilities_agree_with_the_authoritative_product_registry() {
+        let manifest = manifest_for(DesktopPlatform::Macos, DesktopBuildKind::Packaged);
+        for entry in manifest
+            .entries
+            .iter()
+            .filter(|entry| entry.harness == AgentHarness::Alfred)
+        {
+            let Some(product) = entry.product else {
+                assert!(matches!(
+                    entry.provider,
+                    AgentProvider::Pi | AgentProvider::Omp
+                ));
+                continue;
+            };
+            assert_eq!(product.provider(), entry.provider);
+            assert_eq!(
+                entry.runtime_id.as_deref(),
+                Some(product.capability_runtime_id())
+            );
+            assert_eq!(
+                entry.runtime_version.as_deref(),
+                Some(product.capability_runtime_version())
+            );
+            assert_eq!(entry.billing_source, product.billing_source());
+            assert_eq!(entry.credential_custody, product.custody_mode().as_str());
+            assert_eq!(
+                entry.auth_methods,
+                product
+                    .auth_methods()
+                    .iter()
+                    .map(|method| (*method).to_owned())
+                    .collect::<Vec<_>>()
+            );
+        }
+
+        let codex = manifest
+            .entry(AgentProvider::Codex, AgentHarness::Alfred)
+            .expect("Codex capability");
+        assert_eq!(codex.product, Some(AgentProductId::ChatgptCodex));
+        assert_eq!(codex.runtime_id.as_deref(), Some("codex_python_sdk"));
+        assert!(!format!("{codex:?}").contains("codex_app_server"));
+
+        let opencode = manifest
+            .entry(AgentProvider::Opencode, AgentHarness::Alfred)
+            .expect("OpenCode capability");
+        assert_eq!(opencode.product, Some(AgentProductId::OpencodeGo));
+        assert_eq!(opencode.credential_custody, "runtime_managed");
+        assert_eq!(opencode.billing_source, "provider_subscription");
+        assert!(!format!("{opencode:?}").contains("upstream_provider_secret"));
+    }
+
+    #[test]
     fn missing_entry_and_failed_native_gate_are_disabled_without_fallback() {
         let mut manifest = manifest_for(DesktopPlatform::Macos, DesktopBuildKind::Packaged);
         manifest.entries.retain(|entry| {
@@ -1089,6 +1161,9 @@ mod tests {
             .iter()
             .find(|entry| entry["provider"] == "codex" && entry["harness"] == "alfred")
             .unwrap();
+        assert_eq!(native["product"], "chatgpt_codex");
+        assert_eq!(native["runtimeId"], "codex_python_sdk");
+        assert_eq!(native["runtimeVersion"], "0.147.0");
         assert_eq!(native["platformGates"].as_array().unwrap().len(), 3);
         assert_eq!(native["buildGates"].as_array().unwrap().len(), 2);
         assert!(native["authMethodGates"]
@@ -1130,20 +1205,29 @@ mod tests {
     fn diagnostics_are_bounded_and_never_serialize_private_account_fields() {
         let account = AgentAccount {
             id: "account_opaque_1234".into(),
-            provider: AgentProvider::Codex,
+            provider: AgentProvider::ClaudeCode,
+            product: AgentProductId::ClaudeApi,
             harness: AgentHarness::Alfred,
             identity_key: "identity-private".into(),
             display_name: Some("private@example.com".into()),
             external_account_id: Some("external-private".into()),
             external_workspace_id: Some("workspace-private".into()),
-            auth_method: AgentAuthMethod::OAuthPkce,
+            auth_method: AgentAuthMethod::ApiKey,
             custody_mode: CredentialCustodyMode::AlfredManaged,
+            managed_runtime_id: None,
+            managed_runtime_version: None,
+            runtime_profile_ref: None,
             scopes: vec!["private-scope".into()],
+            billing_source: "provider_api".into(),
+            billing_owner: "credential_owner".into(),
+            entitlement_state: AgentEntitlementState::Unknown,
+            entitlement_source: "provider_unobserved".into(),
+            entitlement_observed_at: None,
             status: AgentAccountStatus::Error,
             expires_at: None,
             last_checked_at: None,
             last_error_code: Some("credential_invalid".into()),
-            credential_ref: "credential-private".into(),
+            credential_ref: Some("credential-private".into()),
             created_at: "now".into(),
             updated_at: "now".into(),
         };
@@ -1152,12 +1236,18 @@ mod tests {
         let diagnostic = support_diagnostics(
             &manifest,
             &[account],
+            &[AgentAccountReadDiagnostic {
+                account_id: Some("account_corrupt_5678".into()),
+                error_code: "agent_account_row_corrupt",
+            }],
             &registry,
-            Some(AgentProvider::Codex),
+            Some(AgentProvider::ClaudeCode),
             Some(AgentHarness::Alfred),
         );
         let json = serde_json::to_string(&diagnostic).unwrap();
         assert!(json.contains("account_…1234"));
+        assert!(json.contains("account_…5678"));
+        assert!(json.contains("agent_account_row_corrupt"));
         assert!(json.contains("credential_invalid"));
         for private in [
             "identity-private",
