@@ -386,9 +386,9 @@ Grok) and harness (`cli` or `alfred`).
 
 | Plan | Title | Priority | Effort | Depends on | Status |
 |------|-------|----------|--------|------------|--------|
-| 030 | Make CLI and Alfred harnesses first-class | P0 | L | — | DONE |
-| 031 | Add secure native-agent accounts and credential lifecycle | P0 | L | 030 | DONE |
-| 032 | Define the native harness compatibility contract | P0 | L | 030, 031 | DONE |
+| 030 | Make CLI and Alfred harnesses first-class | P0 | L | — | DONE (reconciled 2026-08-26; graph compatibility and fail-closed routing verified below) |
+| 031 | Add secure native-agent accounts and credential lifecycle | P0 | L | 030 | DONE (reconciled 2026-08-26; metadata, credential, and lifecycle boundaries verified below) |
+| 032 | Define the native harness compatibility contract | P0 | L | 030, 031 | DONE (reconciled 2026-08-26; versioned contracts and fake-runtime conformance verified below) |
 | 033 | Run Codex through Alfred with ChatGPT OAuth | P0 | XL | 030–032 | BLOCKED (cross-platform signing and packaged no-CLI smoke missing) |
 | 034 | Add a native Claude harness without weakening CLI support | P1 | XL | 030–032 | BLOCKED (API-key secret entry and live smoke missing; subscription OAuth unapproved) |
 | 035 | Add a native Cursor harness | P1 | XL | 030–032 | BLOCKED (API-key intake, repository consent, and per-tool approval missing) |
@@ -397,6 +397,28 @@ Grok) and harness (`cli` or `alfred`).
 | 038 | Add a native Gemini harness | P1 | L–XL | 030–032 | BLOCKED (API-key intake and live smoke missing) |
 | 039 | Add a native Grok harness | P2 | L–XL | 030–032 | BLOCKED (API-key intake and live smoke missing) |
 | 040 | Release and roll out the dual-harness system | P0 | XL | 030–039 | DONE (zero-native fail-closed rollout verified) |
+
+### Plans 030–032 reconciliation evidence — 2026-08-26
+
+- **030:** `src-tauri/src/agents/mod.rs` keeps `cli` and `alfred` additive,
+  defaults missing graph values to `cli`, preserves every CLI adapter, and
+  routes native execution without a CLI fallback. The runner, workflow store,
+  target-scoped model catalog, and editor consume the same harness choice.
+- **031:** `src-tauri/src/agent_accounts/`, `src-tauri/src/db/agent_accounts.rs`,
+  and the `agent_accounts` migration keep redacted metadata in SQLite, secrets
+  in the isolated OS credential-store namespace, authorization attempts in
+  memory, and refresh/revoke/disconnect recovery states explicit. Native-agent
+  settings remain separate from Connected Apps.
+- **032:** `src-tauri/src/agents/native/` defines versioned request, event,
+  capability, tool, approval, cancellation, session, context, and redaction
+  contracts. Its fake-runtime conformance suite exercises registration,
+  streaming, bounds, permissions, cancellation, usage, and no-fallback errors.
+- **Gates:** `cargo test --locked --manifest-path src-tauri/Cargo.toml
+  agents::native` passed 167 tests; `cargo test --locked --manifest-path
+  src-tauri/Cargo.toml agent_accounts` passed 31 tests; `bun test` passed 411
+  tests. The final `bun run check` repeated 411 frontend tests, built the
+  frontend, and passed 702 Rust tests; `git diff --check` also passed before
+  the reconciliation commit.
 
 ### Required execution order
 
