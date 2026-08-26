@@ -19,8 +19,9 @@ mod fake;
 pub use context::{prepare_native_request, NativeContextPolicy};
 pub use contract::*;
 pub use events::*;
+pub(crate) use redaction::contains_diagnostic_secret;
 pub use redaction::{
-    canonical_key, contains_cli_permission_flag, contains_secret_marker, is_secret_key,
+    canonical_key, contains_cli_permission_flag, contains_secret_marker, is_secret_key, redact_text,
 };
 pub use registry::*;
 pub use tools::*;

@@ -100,11 +100,7 @@ fn is_opaque_activity_id(value: &str) -> bool {
         && suffix.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
-fn safe_label(
-    kind: &AgentActivityKind,
-    state: &AgentActivityState,
-    candidate: &str,
-) -> String {
+fn safe_label(kind: &AgentActivityKind, state: &AgentActivityState, candidate: &str) -> String {
     let label = match (kind, state, candidate) {
         (AgentActivityKind::Status, AgentActivityState::Started, "Thinking") => "Thinking",
         (AgentActivityKind::Status, AgentActivityState::Started, "Working") => "Working",
@@ -117,9 +113,11 @@ fn safe_label(
         (AgentActivityKind::Status, AgentActivityState::Completed, "Gemini session started") => {
             "Gemini session started"
         }
-        (AgentActivityKind::Status, AgentActivityState::Completed, "Claude Code session started") => {
-            "Claude Code session started"
-        }
+        (
+            AgentActivityKind::Status,
+            AgentActivityState::Completed,
+            "Claude Code session started",
+        ) => "Claude Code session started",
         (AgentActivityKind::Status, AgentActivityState::Completed, "Cursor session started") => {
             "Cursor session started"
         }

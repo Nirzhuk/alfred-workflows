@@ -8,6 +8,7 @@ pub mod cursor;
 pub mod gemini;
 pub mod github_copilot;
 pub mod grok;
+pub mod managed_runtime;
 pub mod models;
 #[allow(dead_code, unused_imports)] // Provider plans consume this frozen registration contract.
 pub mod native;
@@ -193,9 +194,9 @@ impl OpaqueAgentAccountRef {
             .find_map(|prefix| value.strip_prefix(prefix))
             .is_some_and(|suffix| suffix.len() >= 4);
         let valid = (8..=MAX_ACCOUNT_REF_CHARS).contains(&value.chars().count())
-            && value.bytes().all(|byte| {
-                byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.')
-            })
+            && value
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.'))
             && (prefixed || uuid::Uuid::parse_str(value).is_ok())
             && !looks_like_secret_value(value);
         valid
@@ -226,7 +227,6 @@ impl AgentRequestMetadata {
             node_id: node_id.to_owned(),
         })
     }
-
 }
 
 /// Bounded, allowlisted metadata safe for run history and UI events. Adapter
@@ -287,11 +287,7 @@ pub struct SafeAgentRunMetadata {
 }
 
 impl SafeAgentRunMetadata {
-    pub fn identity(
-        provider: AgentProvider,
-        harness: AgentHarness,
-        model: Option<&str>,
-    ) -> Self {
+    pub fn identity(provider: AgentProvider, harness: AgentHarness, model: Option<&str>) -> Self {
         Self {
             provider,
             harness,
@@ -317,8 +313,7 @@ impl SafeAgentRunMetadata {
         let mut metadata = Self::identity(provider, harness, model);
         metadata.duration_ms = safe_u64(value, &["durationMs", "duration_ms"], 86_400_000);
         metadata.num_turns = safe_u64(value, &["numTurns", "num_turns"], 1_000_000);
-        metadata.total_cost_usd =
-            safe_f64(value, &["totalCostUsd", "total_cost_usd"], 1_000_000.0);
+        metadata.total_cost_usd = safe_f64(value, &["totalCostUsd", "total_cost_usd"], 1_000_000.0);
         metadata.input_tokens = safe_u64(
             value,
             &["inputTokens", "input_tokens", "input"],
@@ -645,8 +640,14 @@ mod harness_tests {
     #[test]
     fn harness_round_trips_and_missing_defaults_to_cli() {
         assert_eq!(serde_json::to_value(AgentHarness::Cli).unwrap(), "cli");
-        assert_eq!(serde_json::to_value(AgentHarness::Alfred).unwrap(), "alfred");
-        assert_eq!(AgentHarness::parse_persisted(None).unwrap(), AgentHarness::Cli);
+        assert_eq!(
+            serde_json::to_value(AgentHarness::Alfred).unwrap(),
+            "alfred"
+        );
+        assert_eq!(
+            AgentHarness::parse_persisted(None).unwrap(),
+            AgentHarness::Cli
+        );
         assert_eq!(
             AgentHarness::parse_persisted(Some(&serde_json::json!("alfred"))).unwrap(),
             AgentHarness::Alfred
@@ -707,7 +708,10 @@ mod harness_tests {
                 working_directory: None,
                 extra: Value::Null,
             },
-            AgentRunHooks { control: None, on_activity: None },
+            AgentRunHooks {
+                control: None,
+                on_activity: None,
+            },
             None,
             |_| {
                 cli_called.store(true, Ordering::SeqCst);

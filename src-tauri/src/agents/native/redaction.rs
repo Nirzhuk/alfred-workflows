@@ -4,14 +4,31 @@
 //! normalization, and the Alfred tool boundary) shares these helpers so a
 //! provider plan cannot pick up a weaker copy of the same policy.
 
-/// Case-insensitive markers whose trailing value is a secret.
-const SECRET_VALUE_MARKERS: [&str; 6] = [
+/// Case-insensitive markers used by the request-admission gate. Keep this
+/// deliberately narrow: admission must not reject ordinary source code or
+/// prose merely because it names a credential-shaped field.
+const ADMISSION_SECRET_VALUE_MARKERS: [&str; 6] = [
     "bearer ",
     "basic ",
     "cookie: ",
     "set-cookie: ",
     "authorization: ",
     "credential_path=",
+];
+
+/// Field-like markers considered by diagnostic redaction only when their
+/// trailing value is actually credential-shaped.
+const DIAGNOSTIC_CREDENTIAL_VALUE_MARKERS: [&str; 10] = [
+    "password=",
+    "password: ",
+    "secret=",
+    "secret: ",
+    "token=",
+    "token: ",
+    "api_key=",
+    "api_key: ",
+    "credential=",
+    "credential: ",
 ];
 
 /// Case-insensitive token prefixes that are secrets on their own.
@@ -35,7 +52,7 @@ fn has_private_key_block(lower: &str) -> bool {
 /// lowercase HTTP/2 headers (`authorization: bearer ...`) are caught too.
 pub fn contains_secret_marker(value: &str) -> bool {
     let lower = value.to_ascii_lowercase();
-    if SECRET_VALUE_MARKERS
+    if ADMISSION_SECRET_VALUE_MARKERS
         .iter()
         .any(|marker| lower.contains(marker))
         || has_private_key_block(&lower)
@@ -47,6 +64,14 @@ pub fn contains_secret_marker(value: &str) -> bool {
             .iter()
             .any(|prefix| word.starts_with(prefix))
     })
+}
+
+/// True when a diagnostic contains material that [`redact_text`] will remove.
+/// This is intentionally separate from [`contains_secret_marker`]: output
+/// diagnostics need broader credential-value detection than request admission.
+pub(crate) fn contains_diagnostic_secret(value: &str) -> bool {
+    let lower = value.to_ascii_lowercase();
+    has_private_key_block(&lower) || !redaction_spans(value, &lower).is_empty()
 }
 
 /// True when the text carries a CLI permission escape hatch.
@@ -86,28 +111,171 @@ pub fn redact_text(value: &str) -> String {
         return "[REDACTED PRIVATE KEY]".into();
     }
 
-    let mut spans = Vec::new();
-    for marker in SECRET_VALUE_MARKERS {
-        collect_marker_spans(value, &lower, marker, &mut spans);
-    }
-    collect_token_spans(value, &lower, &mut spans);
+    let mut spans = redaction_spans(value, &lower);
     if spans.is_empty() {
         return value.to_string();
     }
 
     spans.sort_by_key(|(start, _)| *start);
+    let mut merged: Vec<(usize, usize)> = Vec::with_capacity(spans.len());
+    for (start, end) in spans {
+        if let Some((_, previous_end)) = merged.last_mut() {
+            if start <= *previous_end
+                || value[*previous_end..start].chars().all(char::is_whitespace)
+            {
+                *previous_end = (*previous_end).max(end);
+                continue;
+            }
+        }
+        merged.push((start, end));
+    }
+
     let mut output = String::with_capacity(value.len());
     let mut cursor = 0usize;
-    for (start, end) in spans {
-        if start < cursor {
-            continue;
-        }
+    for (start, end) in merged {
         output.push_str(&value[cursor..start]);
         output.push_str("[REDACTED]");
         cursor = end;
     }
     output.push_str(&value[cursor..]);
     output
+}
+
+fn redaction_spans(value: &str, lower: &str) -> Vec<(usize, usize)> {
+    let mut spans = Vec::new();
+    for marker in ADMISSION_SECRET_VALUE_MARKERS {
+        collect_marker_spans(value, lower, marker, &mut spans);
+    }
+    for marker in DIAGNOSTIC_CREDENTIAL_VALUE_MARKERS {
+        collect_credential_marker_spans(value, lower, marker, &mut spans);
+    }
+    collect_token_spans(value, lower, &mut spans);
+    spans.extend(credential_shaped_spans(value, lower));
+    spans
+}
+
+/// Finds standalone JWTs and long high-entropy token-shaped values. This is
+/// intentionally conservative: ordinary hashes, UUIDs, paths, and prose do
+/// not meet the mixed-character requirement.
+fn credential_shaped_spans<'a>(
+    value: &'a str,
+    lower: &'a str,
+) -> impl Iterator<Item = (usize, usize)> + 'a {
+    token_ranges(value).filter(move |(start, end)| {
+        let token = &value[*start..*end];
+        let lowered = &lower[*start..*end];
+        looks_like_jwt(token, lowered) || looks_like_high_entropy_secret(token, false)
+    })
+}
+
+fn token_ranges(value: &str) -> impl Iterator<Item = (usize, usize)> + '_ {
+    let mut ranges = Vec::new();
+    let mut start = None;
+    for (index, character) in value.char_indices() {
+        if is_token_boundary(character) {
+            if let Some(begin) = start.take() {
+                ranges.push((begin, index));
+            }
+        } else if start.is_none() {
+            start = Some(index);
+        }
+    }
+    if let Some(begin) = start {
+        ranges.push((begin, value.len()));
+    }
+    ranges.into_iter()
+}
+
+fn looks_like_jwt(token: &str, lower: &str) -> bool {
+    let mut segments = token.split('.');
+    let Some(header) = segments.next() else {
+        return false;
+    };
+    let Some(payload) = segments.next() else {
+        return false;
+    };
+    let Some(signature) = segments.next() else {
+        return false;
+    };
+    segments.next().is_none()
+        && lower.starts_with("eyj")
+        && [header, payload, signature].iter().all(|segment| {
+            segment.len() >= 8
+                && segment
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+        })
+}
+
+fn looks_like_high_entropy_secret(token: &str, marker_context: bool) -> bool {
+    if token.len() < 32
+        || token.len() > 512
+        || token.bytes().any(|byte| matches!(byte, b'/' | b'\\'))
+        || looks_like_uuid(token)
+        || looks_like_integrity_or_hash(token)
+        || looks_like_code_value(token)
+        || !token
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'+' | b'='))
+    {
+        return false;
+    }
+    let has_lower = token.bytes().any(|byte| byte.is_ascii_lowercase());
+    let has_upper = token.bytes().any(|byte| byte.is_ascii_uppercase());
+    let has_digit = token.bytes().any(|byte| byte.is_ascii_digit());
+    let distinct = token.bytes().fold([false; 128], |mut seen, byte| {
+        if byte.is_ascii() {
+            seen[usize::from(byte)] = true;
+        }
+        seen
+    });
+    has_lower
+        && has_upper
+        && has_digit
+        && (marker_context
+            || token
+                .bytes()
+                .any(|byte| matches!(byte, b'-' | b'_' | b'+' | b'=')))
+        && distinct.into_iter().filter(|present| *present).count() >= 12
+}
+
+fn looks_like_uuid(token: &str) -> bool {
+    let bytes = token.as_bytes();
+    bytes.len() == 36
+        && [8, 13, 18, 23]
+            .iter()
+            .all(|index| bytes.get(*index) == Some(&b'-'))
+        && bytes
+            .iter()
+            .enumerate()
+            .all(|(index, byte)| [8, 13, 18, 23].contains(&index) || byte.is_ascii_hexdigit())
+}
+
+fn looks_like_integrity_or_hash(token: &str) -> bool {
+    let lower = token.to_ascii_lowercase();
+    let npm_integrity = ["sha1-", "sha256-", "sha384-", "sha512-"]
+        .iter()
+        .any(|prefix| lower.starts_with(prefix));
+    npm_integrity || (token.len() >= 32 && token.bytes().all(|byte| byte.is_ascii_hexdigit()))
+}
+
+fn looks_like_code_value(token: &str) -> bool {
+    matches!(
+        token.to_ascii_lowercase().as_str(),
+        "any"
+            | "bool"
+            | "boolean"
+            | "nil"
+            | "none"
+            | "null"
+            | "number"
+            | "object"
+            | "str"
+            | "string"
+            | "undefined"
+            | "unknown"
+            | "void"
+    )
 }
 
 /// Records the value that follows each occurrence of `marker` (the marker text
@@ -119,6 +287,35 @@ fn collect_marker_spans(value: &str, lower: &str, marker: &str, spans: &mut Vec<
         let end = value_end(value, start);
         if end > start {
             spans.push((start, end));
+        }
+        search = end.max(start).max(search + offset + 1);
+        if search >= value.len() {
+            break;
+        }
+    }
+}
+
+fn collect_credential_marker_spans(
+    value: &str,
+    lower: &str,
+    marker: &str,
+    spans: &mut Vec<(usize, usize)>,
+) {
+    let mut search = 0usize;
+    while let Some(offset) = lower[search..].find(marker) {
+        let start = search + offset + marker.len();
+        let end = value_end(value, start);
+        if end > start {
+            let token = &value[start..end];
+            let lowered = &lower[start..end];
+            if looks_like_jwt(token, lowered)
+                || looks_like_high_entropy_secret(token, true)
+                || SECRET_TOKEN_PREFIXES
+                    .iter()
+                    .any(|prefix| lowered.starts_with(prefix))
+            {
+                spans.push((start, end));
+            }
         }
         search = end.max(start).max(search + offset + 1);
         if search >= value.len() {
@@ -201,6 +398,32 @@ mod tests {
     }
 
     #[test]
+    fn ordinary_source_paths_hashes_ids_and_prose_survive_byte_identical() {
+        for value in [
+            "token: string;",
+            "export interface Auth { token: string; secret: string }",
+            "refresh_token=None",
+            "where is the refresh token: in auth.ts?",
+            "fix the api_key: undefined bug in config.rs",
+            "run the tool on /Users/nirzhuk/Library/Caches/alfred/v2/session",
+            r#""integrity": "sha512-AbCdEf0123456789hIjKlMnOpQrStUvWxYz+/abcdEFGH""#,
+            "open doc 1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms",
+            "request type/source/path/integrity diagnostics",
+            "request id 550e8400-e29b-41d4-a716-446655440000",
+        ] {
+            assert!(
+                !contains_secret_marker(value),
+                "admission rejected: {value}"
+            );
+            assert!(
+                !contains_diagnostic_secret(value),
+                "diagnostic rejected: {value}"
+            );
+            assert_eq!(redact_text(value), value, "diagnostic changed: {value}");
+        }
+    }
+
+    #[test]
     fn token_prefixes_are_redacted_but_ordinary_text_survives() {
         let redacted = redact_text("use sk-live-123 and ghp_abc plus xoxb-9 now");
         assert!(!redacted.contains("sk-live-123"));
@@ -213,6 +436,36 @@ mod tests {
         assert_eq!(redact_text("task-sk-not-a-token"), "task-sk-not-a-token");
         // A quoted JSON value still is.
         assert!(!redact_text("{\"key\":\"sk-live-1\"}").contains("sk-live-1"));
+    }
+
+    #[test]
+    fn bare_jwts_and_high_entropy_values_are_redacted() {
+        let jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c";
+        let opaque = "Ab3dEf5hIj7lMn9pQr2tUv4xYz6_Bc8D";
+        for secret in [jwt, opaque] {
+            let value = format!("refresh failed: {secret}");
+            assert!(!contains_secret_marker(&value));
+            assert!(contains_diagnostic_secret(&value));
+            assert!(!redact_text(&value).contains(secret));
+        }
+        assert_eq!(
+            redact_text("digest 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"),
+            "digest 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        );
+    }
+
+    #[test]
+    fn credential_markers_require_secret_shaped_values_for_diagnostics() {
+        let jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c";
+        let marked = format!("token: {jwt}");
+        assert!(!contains_secret_marker(&marked));
+        assert!(contains_diagnostic_secret(&marked));
+        assert_eq!(redact_text(&marked), "token: [REDACTED]");
+
+        let bearer = format!("Authorization: Bearer {jwt}");
+        assert!(contains_secret_marker(&bearer));
+        assert!(contains_diagnostic_secret(&bearer));
+        assert_eq!(redact_text(&bearer), "Authorization: [REDACTED]");
     }
 
     #[test]

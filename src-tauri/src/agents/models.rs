@@ -103,9 +103,8 @@ fn unavailable_native_capabilities(
         }),
         supports_usage: entry.is_some_and(|entry| entry.usage_source != "unavailable"),
         account_connected: false,
-        native_runtime_available: entry.is_some_and(|entry| {
-            entry.permits_execution(manifest.platform, manifest.build_kind)
-        }),
+        native_runtime_available: entry
+            .is_some_and(|entry| entry.permits_execution(manifest.platform, manifest.build_kind)),
     }
 }
 
@@ -447,9 +446,8 @@ fn native_unavailable_model_from_manifest(
     manifest: &super::capability_manifest::AgentCapabilityManifest,
 ) -> ProviderModels {
     let entry = manifest.entry(provider, AgentHarness::Alfred);
-    let available = entry.is_some_and(|entry| {
-        entry.permits_execution(manifest.platform, manifest.build_kind)
-    });
+    let available =
+        entry.is_some_and(|entry| entry.permits_execution(manifest.platform, manifest.build_kind));
     ProviderModels {
         provider: provider.as_str().into(),
         capabilities: unavailable_native_capabilities(provider, manifest),
@@ -1322,8 +1320,7 @@ mod pi_family_tests {
     #[test]
     fn model_validation_is_harness_scoped_and_alfred_has_no_cli_default() {
         assert_eq!(
-            resolve_model_for_execution(AgentProvider::Codex, AgentHarness::Alfred, None)
-                .unwrap(),
+            resolve_model_for_execution(AgentProvider::Codex, AgentHarness::Alfred, None).unwrap(),
             None
         );
         assert!(matches!(

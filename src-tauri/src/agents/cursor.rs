@@ -282,8 +282,9 @@ mod tests {
     /// Activity ids are hashed at the boundary, so a provider id never
     /// reaches a run event verbatim.
     fn is_opaque(id: &str) -> bool {
-        id.strip_prefix("agent_activity_")
-            .is_some_and(|suffix| suffix.len() == 24 && suffix.bytes().all(|b| b.is_ascii_hexdigit()))
+        id.strip_prefix("agent_activity_").is_some_and(|suffix| {
+            suffix.len() == 24 && suffix.bytes().all(|b| b.is_ascii_hexdigit())
+        })
     }
 
     #[test]

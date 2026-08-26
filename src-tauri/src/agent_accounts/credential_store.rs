@@ -1,6 +1,6 @@
 use super::models::CredentialCustodyMode;
-use serde::{Deserialize, Serialize};
 use serde::ser::SerializeStruct;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 #[cfg(any(test, target_os = "macos"))]
 use std::collections::HashMap;
@@ -62,7 +62,9 @@ impl AgentCredentialEnvelope {
         }
         match self.custody_mode {
             CredentialCustodyMode::AlfredManaged => {
-                self.access_token.as_deref().is_some_and(|value| !value.is_empty())
+                self.access_token
+                    .as_deref()
+                    .is_some_and(|value| !value.is_empty())
                     && self.runtime_credential_ref.is_none()
             }
             CredentialCustodyMode::RuntimeManaged => {
@@ -81,12 +83,18 @@ impl fmt::Debug for AgentCredentialEnvelope {
         formatter
             .debug_struct("AgentCredentialEnvelope")
             .field("version", &self.version)
-            .field("access_token", &self.access_token.as_ref().map(|_| "[REDACTED]"))
+            .field(
+                "access_token",
+                &self.access_token.as_ref().map(|_| "[REDACTED]"),
+            )
             .field(
                 "runtime_credential_ref",
                 &self.runtime_credential_ref.as_ref().map(|_| "[REDACTED]"),
             )
-            .field("refresh_token", &self.refresh_token.as_ref().map(|_| "[REDACTED]"))
+            .field(
+                "refresh_token",
+                &self.refresh_token.as_ref().map(|_| "[REDACTED]"),
+            )
             .field("expires_at", &self.expires_at)
             .field("provider_fields", &"[REDACTED]")
             .field("custody_mode", &self.custody_mode)
@@ -221,13 +229,17 @@ impl AgentCredentialStore for OsAgentCredentialStore {
             return Err(AgentCredentialStoreError::Invalid);
         }
         let stored = StoredAgentCredential::from_envelope(credential);
-        let mut payload = serde_json::to_vec(&stored).map_err(|_| AgentCredentialStoreError::Invalid)?;
+        let mut payload =
+            serde_json::to_vec(&stored).map_err(|_| AgentCredentialStoreError::Invalid)?;
         let result = write_secret(credential_ref, &payload);
         payload.zeroize();
         result
     }
 
-    fn get(&self, credential_ref: &str) -> Result<AgentCredentialEnvelope, AgentCredentialStoreError> {
+    fn get(
+        &self,
+        credential_ref: &str,
+    ) -> Result<AgentCredentialEnvelope, AgentCredentialStoreError> {
         let mut payload = read_secret(credential_ref)?;
         let result = decode_envelope(&payload);
         payload.zeroize();
@@ -256,23 +268,31 @@ fn platform_entry(credential_ref: &str) -> Result<keyring::Entry, AgentCredentia
 
 #[cfg(not(target_os = "macos"))]
 fn write_secret(credential_ref: &str, payload: &[u8]) -> Result<(), AgentCredentialStoreError> {
-    platform_entry(credential_ref)?.set_secret(payload).map_err(map_keyring_error)
+    platform_entry(credential_ref)?
+        .set_secret(payload)
+        .map_err(map_keyring_error)
 }
 
 #[cfg(not(target_os = "macos"))]
 fn read_secret(credential_ref: &str) -> Result<Vec<u8>, AgentCredentialStoreError> {
-    platform_entry(credential_ref)?.get_secret().map_err(map_keyring_error)
+    platform_entry(credential_ref)?
+        .get_secret()
+        .map_err(map_keyring_error)
 }
 
 #[cfg(not(target_os = "macos"))]
 fn delete_secret(credential_ref: &str) -> Result<(), AgentCredentialStoreError> {
-    platform_entry(credential_ref)?.delete_credential().map_err(map_keyring_error)
+    platform_entry(credential_ref)?
+        .delete_credential()
+        .map_err(map_keyring_error)
 }
 
 #[cfg(target_os = "macos")]
 fn protected_store() -> &'static std::sync::Arc<apple_native_keyring_store::protected::Store> {
     static STORE: LazyLock<std::sync::Arc<apple_native_keyring_store::protected::Store>> =
-        LazyLock::new(|| apple_native_keyring_store::protected::Store::new().expect("protected keychain store"));
+        LazyLock::new(|| {
+            apple_native_keyring_store::protected::Store::new().expect("protected keychain store")
+        });
     &STORE
 }
 
@@ -280,24 +300,34 @@ fn protected_store() -> &'static std::sync::Arc<apple_native_keyring_store::prot
 fn protected_entry(credential_ref: &str) -> Result<keyring::Entry, AgentCredentialStoreError> {
     let modifiers = HashMap::from([("access-policy", "after-first-unlock-this-device-only")]);
     let inner = protected_store()
-        .build(AGENT_CREDENTIAL_STORE_SERVICE, credential_ref, Some(&modifiers))
+        .build(
+            AGENT_CREDENTIAL_STORE_SERVICE,
+            credential_ref,
+            Some(&modifiers),
+        )
         .map_err(map_keyring_error)?;
     Ok(keyring::Entry { inner })
 }
 
 #[cfg(target_os = "macos")]
 fn write_secret(credential_ref: &str, payload: &[u8]) -> Result<(), AgentCredentialStoreError> {
-    protected_entry(credential_ref)?.set_secret(payload).map_err(map_keyring_error)
+    protected_entry(credential_ref)?
+        .set_secret(payload)
+        .map_err(map_keyring_error)
 }
 
 #[cfg(target_os = "macos")]
 fn read_secret(credential_ref: &str) -> Result<Vec<u8>, AgentCredentialStoreError> {
-    protected_entry(credential_ref)?.get_secret().map_err(map_keyring_error)
+    protected_entry(credential_ref)?
+        .get_secret()
+        .map_err(map_keyring_error)
 }
 
 #[cfg(target_os = "macos")]
 fn delete_secret(credential_ref: &str) -> Result<(), AgentCredentialStoreError> {
-    protected_entry(credential_ref)?.delete_credential().map_err(map_keyring_error)
+    protected_entry(credential_ref)?
+        .delete_credential()
+        .map_err(map_keyring_error)
 }
 
 fn map_keyring_error(error: keyring::Error) -> AgentCredentialStoreError {
@@ -343,7 +373,11 @@ impl InMemoryAgentCredentialStore {
 
 #[cfg(test)]
 impl AgentCredentialStore for InMemoryAgentCredentialStore {
-    fn put(&self, credential_ref: &str, credential: &AgentCredentialEnvelope) -> Result<(), AgentCredentialStoreError> {
+    fn put(
+        &self,
+        credential_ref: &str,
+        credential: &AgentCredentialEnvelope,
+    ) -> Result<(), AgentCredentialStoreError> {
         if let Some(error) = self
             .put_failure
             .lock()
@@ -356,8 +390,12 @@ impl AgentCredentialStore for InMemoryAgentCredentialStore {
             return Err(AgentCredentialStoreError::Invalid);
         }
         let stored = StoredAgentCredential::from_envelope(credential);
-        let payload = serde_json::to_vec(&stored).map_err(|_| AgentCredentialStoreError::Invalid)?;
-        let mut entries = self.entries.lock().map_err(|_| AgentCredentialStoreError::Failed)?;
+        let payload =
+            serde_json::to_vec(&stored).map_err(|_| AgentCredentialStoreError::Invalid)?;
+        let mut entries = self
+            .entries
+            .lock()
+            .map_err(|_| AgentCredentialStoreError::Failed)?;
         if let Some(mut previous) = entries.insert(credential_ref.into(), payload) {
             previous.zeroize();
         }
@@ -372,9 +410,19 @@ impl AgentCredentialStore for InMemoryAgentCredentialStore {
         Ok(())
     }
 
-    fn get(&self, credential_ref: &str) -> Result<AgentCredentialEnvelope, AgentCredentialStoreError> {
-        let entries = self.entries.lock().map_err(|_| AgentCredentialStoreError::Failed)?;
-        decode_envelope(entries.get(credential_ref).ok_or(AgentCredentialStoreError::Missing)?)
+    fn get(
+        &self,
+        credential_ref: &str,
+    ) -> Result<AgentCredentialEnvelope, AgentCredentialStoreError> {
+        let entries = self
+            .entries
+            .lock()
+            .map_err(|_| AgentCredentialStoreError::Failed)?;
+        decode_envelope(
+            entries
+                .get(credential_ref)
+                .ok_or(AgentCredentialStoreError::Missing)?,
+        )
     }
 
     fn delete(&self, credential_ref: &str) -> Result<(), AgentCredentialStoreError> {
@@ -386,7 +434,11 @@ impl AgentCredentialStore for InMemoryAgentCredentialStore {
         {
             return Err(error);
         }
-        let mut removed = self.entries.lock().map_err(|_| AgentCredentialStoreError::Failed)?.remove(credential_ref);
+        let mut removed = self
+            .entries
+            .lock()
+            .map_err(|_| AgentCredentialStoreError::Failed)?
+            .remove(credential_ref);
         if let Some(payload) = removed.as_mut() {
             payload.zeroize();
             Ok(())
@@ -414,7 +466,9 @@ mod tests {
     fn fixture(secret: &str) -> AgentCredentialEnvelope {
         let mut credential = AgentCredentialEnvelope::alfred_managed(secret.into());
         credential.refresh_token = Some(format!("refresh-{secret}"));
-        credential.provider_fields.insert("proof".into(), format!("proof-{secret}"));
+        credential
+            .provider_fields
+            .insert("proof".into(), format!("proof-{secret}"));
         credential
     }
 
@@ -424,16 +478,30 @@ mod tests {
         assert_ne!(AGENT_CREDENTIAL_STORE_SERVICE, "com.alfred.connected-apps");
         let store = InMemoryAgentCredentialStore::default();
         store.put("account:a", &fixture("first")).expect("put");
-        assert_eq!(store.get("account:a").expect("get").access_token.as_deref(), Some("first"));
-        store.put("account:a", &fixture("second")).expect("overwrite");
-        assert_eq!(store.get("account:a").expect("get").access_token.as_deref(), Some("second"));
+        assert_eq!(
+            store.get("account:a").expect("get").access_token.as_deref(),
+            Some("first")
+        );
+        store
+            .put("account:a", &fixture("second"))
+            .expect("overwrite");
+        assert_eq!(
+            store.get("account:a").expect("get").access_token.as_deref(),
+            Some("second")
+        );
         store.delete("account:a").expect("delete");
-        assert_eq!(store.get("account:a").unwrap_err(), AgentCredentialStoreError::Missing);
+        assert_eq!(
+            store.get("account:a").unwrap_err(),
+            AgentCredentialStoreError::Missing
+        );
     }
 
     #[test]
     fn malformed_wrong_version_and_custody_mismatch_are_rejected() {
-        assert_eq!(decode_envelope(b"not-json").unwrap_err(), AgentCredentialStoreError::Invalid);
+        assert_eq!(
+            decode_envelope(b"not-json").unwrap_err(),
+            AgentCredentialStoreError::Invalid
+        );
         let wrong = serde_json::json!({
             "version": 2,
             "accessToken": "secret",
@@ -443,9 +511,17 @@ mod tests {
             "providerFields": {},
             "custodyMode": "alfred_managed"
         });
-        assert_eq!(decode_envelope(&serde_json::to_vec(&wrong).unwrap()).unwrap_err(), AgentCredentialStoreError::Invalid);
+        assert_eq!(
+            decode_envelope(&serde_json::to_vec(&wrong).unwrap()).unwrap_err(),
+            AgentCredentialStoreError::Invalid
+        );
         let invalid = AgentCredentialEnvelope::runtime_managed(String::new());
-        assert_eq!(InMemoryAgentCredentialStore::default().put("x", &invalid).unwrap_err(), AgentCredentialStoreError::Invalid);
+        assert_eq!(
+            InMemoryAgentCredentialStore::default()
+                .put("x", &invalid)
+                .unwrap_err(),
+            AgentCredentialStoreError::Invalid
+        );
     }
 
     #[test]
@@ -454,7 +530,11 @@ mod tests {
         let output = format!("{credential:?}");
         let serialized = serde_json::to_string(&credential).expect("serialize redacted envelope");
         assert!(output.contains("[REDACTED]"));
-        for secret in ["access-secret-fixture", "refresh-access-secret-fixture", "proof-access-secret-fixture"] {
+        for secret in [
+            "access-secret-fixture",
+            "refresh-access-secret-fixture",
+            "proof-access-secret-fixture",
+        ] {
             assert!(!output.contains(secret));
             assert!(!serialized.contains(secret));
         }

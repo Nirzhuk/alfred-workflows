@@ -67,6 +67,7 @@ dependencies = [
  "jsonwebtoken",
  "keyring",
  "keyring-core",
+ "libc",
  "log",
  "notify",
  "notify-rust",

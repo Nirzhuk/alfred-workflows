@@ -50,6 +50,7 @@ bytes = "1"
 wacore-appstate = { version = "=0.7.0", default-features = false }
 qrcode = { version = "0.14", default-features = false, features = ["svg"] }
 log = { version = "0.4", features = ["std"] }
+libc = "0.2"
 
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
 tauri-plugin-global-shortcut = "2"
