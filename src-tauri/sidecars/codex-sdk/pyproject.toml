@@ -1,0 +1,25 @@
+[build-system]
+requires = ["hatchling==1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "alfred-codex-sdk-sidecar"
+version = "0.1.0"
+description = "Alfred's bounded managed bridge to the public OpenAI Codex Python SDK"
+requires-python = ">=3.10"
+license = { text = "Proprietary" }
+dependencies = [
+  "openai-codex==0.147.0",
+  "openai-codex-cli-bin==0.147.0",
+  "pydantic==2.13.4",
+  "pydantic-core==2.46.4",
+  "annotated-types==0.7.0",
+  "typing-extensions==4.15.0",
+  "typing-inspection==0.4.2",
+]
+
+[project.scripts]
+alfred-codex-sdk-sidecar = "alfred_codex_sidecar.main:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/alfred_codex_sidecar"]

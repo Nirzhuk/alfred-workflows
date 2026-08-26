@@ -62,7 +62,8 @@
       "icons/icon.ico"
     ],
     "resources": {
-      "icons/128x128.png": "notification-icon.png"
+      "icons/128x128.png": "notification-icon.png",
+      "sidecars/managed-runtimes": "managed-runtimes"
     },
     "macOS": {
       "minimumSystemVersion": "11.0",

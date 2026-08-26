@@ -1,0 +1,137 @@
+{
+  "schemaVersion": 1,
+  "runtimeId": "opencode_server",
+  "runtimeVersion": "1.18.23",
+  "source": {
+    "kind": "github_release_asset",
+    "releaseUrl": "https://github.com/anomalyco/opencode/releases/tag/v1.18.23",
+    "releaseBaseUrl": "https://github.com/anomalyco/opencode/releases/download/v1.18.23",
+    "publisher": "anomalyco/opencode",
+    "digestSource": "GitHub immutable release asset digest recorded in provider package contract"
+  },
+  "updatePolicy": {
+    "alfredManaged": true,
+    "selfUpdateAllowed": false,
+    "pathLookupAllowed": false,
+    "automaticFallback": false
+  },
+  "legal": {
+    "licenseExpression": "MIT",
+    "licenseResourcePath": "legal/LICENSE",
+    "licenseSha256": "625f0f619133f89bbbb2abe37369613dfa1885eba1e50d02170deb62bb42cb6b",
+    "noticeResourcePath": "legal/NOTICE.md",
+    "noticeSha256": "b223bb239d3b29b67b9e921570e2107d2e592148e8498561067a5d013559a07f",
+    "licenseSource": "src-tauri/src/agents/native/providers/opencode/legal/LICENSE",
+    "noticeSource": "src-tauri/src/agents/native/providers/opencode/legal/NOTICE.md"
+  },
+  "targets": [
+    {
+      "target": "aarch64-apple-darwin",
+      "artifact": {
+        "url": "https://github.com/anomalyco/opencode/releases/download/v1.18.23/opencode-darwin-arm64.zip",
+        "fileName": "opencode-darwin-arm64.zip",
+        "sha256": "373cf36673836f2ce8847295a0bb2cd2447d03c769b44d84185916bd471b4274",
+        "extractedFileName": "opencode",
+        "extractedSha256": "f7c45939a895e5a9febf141ab16307418bc41da31879aa0b2e65223190ca1c1a",
+        "extractedSize": 144024674
+      },
+      "package": { "executable": "opencode" },
+      "publisherVerification": {
+        "scheme": "platform_package_signature",
+        "publisher": "Alfred verified OpenCode runtime package",
+        "required": true,
+        "hook": "opencode_external_platform_attestation"
+      }
+    },
+    {
+      "target": "x86_64-apple-darwin",
+      "artifact": {
+        "url": "https://github.com/anomalyco/opencode/releases/download/v1.18.23/opencode-darwin-x64.zip",
+        "fileName": "opencode-darwin-x64.zip",
+        "sha256": "6b617da75b5773836fcdc7247d7ea2bd39aec942a58b89a041bafb3d4d2a8c23",
+        "extractedFileName": "opencode",
+        "extractedSha256": "00f71a32da3c05c9170380f673100a9dc4aea7f0e5cce90daad847d7cd8d3641",
+        "extractedSize": 149504080
+      },
+      "package": { "executable": "opencode" },
+      "publisherVerification": {
+        "scheme": "platform_package_signature",
+        "publisher": "Alfred verified OpenCode runtime package",
+        "required": true,
+        "hook": "opencode_external_platform_attestation"
+      }
+    },
+    {
+      "target": "aarch64-unknown-linux-gnu",
+      "artifact": {
+        "url": "https://github.com/anomalyco/opencode/releases/download/v1.18.23/opencode-linux-arm64.tar.gz",
+        "fileName": "opencode-linux-arm64.tar.gz",
+        "sha256": "86d3afaf4e8784f9adab189be2a315c12b27ec40a04b70defbe70595c3cc7c65",
+        "extractedFileName": "opencode",
+        "extractedSha256": "ef8514274321679d97f1c7f2ad251890d7f073f2fca743859f379bff55085ac8",
+        "extractedSize": 184068240
+      },
+      "package": { "executable": "opencode" },
+      "publisherVerification": {
+        "scheme": "platform_package_signature",
+        "publisher": "Alfred verified OpenCode runtime package",
+        "required": true,
+        "hook": "opencode_external_platform_attestation"
+      }
+    },
+    {
+      "target": "x86_64-unknown-linux-gnu",
+      "artifact": {
+        "url": "https://github.com/anomalyco/opencode/releases/download/v1.18.23/opencode-linux-x64.tar.gz",
+        "fileName": "opencode-linux-x64.tar.gz",
+        "sha256": "ab7015cd8113e011a461f30a0c2b77d8299a144ff688cb62e93e8802835d7288",
+        "extractedFileName": "opencode",
+        "extractedSha256": "de0724a36eaf3166e7f1ff38d0f4478b95ccc47725e9597b3fe66d3d3e18baa2",
+        "extractedSize": 184584320
+      },
+      "package": { "executable": "opencode" },
+      "publisherVerification": {
+        "scheme": "platform_package_signature",
+        "publisher": "Alfred verified OpenCode runtime package",
+        "required": true,
+        "hook": "opencode_external_platform_attestation"
+      }
+    },
+    {
+      "target": "aarch64-pc-windows-msvc",
+      "artifact": {
+        "url": "https://github.com/anomalyco/opencode/releases/download/v1.18.23/opencode-windows-arm64.zip",
+        "fileName": "opencode-windows-arm64.zip",
+        "sha256": "3ff8c553ae270e89499808fbce7635535762f75cfaae4b0bb818b10d7eb18d9b",
+        "extractedFileName": "opencode.exe",
+        "extractedSha256": "a7471b91fc91146f09ed82a7df499c9c07dfdd0a851f0c2885e941bf8caecfb5",
+        "extractedSize": 175446568
+      },
+      "package": { "executable": "opencode.exe" },
+      "publisherVerification": {
+        "scheme": "platform_package_signature",
+        "publisher": "Alfred verified OpenCode runtime package",
+        "required": true,
+        "hook": "opencode_external_platform_attestation"
+      }
+    },
+    {
+      "target": "x86_64-pc-windows-msvc",
+      "artifact": {
+        "url": "https://github.com/anomalyco/opencode/releases/download/v1.18.23/opencode-windows-x64.zip",
+        "fileName": "opencode-windows-x64.zip",
+        "sha256": "a2fe9e8c2d074d26975024d494927b966680b3efdc3e0377eadb9afb05f7e191",
+        "extractedFileName": "opencode.exe",
+        "extractedSha256": "f831518278ded5090c41cc532b16ab80629e980f710a0b46d1e5b605808bb1d9",
+        "extractedSize": 179550760
+      },
+      "package": { "executable": "opencode.exe" },
+      "publisherVerification": {
+        "scheme": "platform_package_signature",
+        "publisher": "Alfred verified OpenCode runtime package",
+        "required": true,
+        "hook": "opencode_external_platform_attestation"
+      }
+    }
+  ]
+}

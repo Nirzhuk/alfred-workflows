@@ -3138,6 +3138,178 @@ button.history-card:hover:not(:disabled) {
   align-items: center;
 }
 
+.managed-runtime-settings {
+  margin-bottom: var(--space-6);
+}
+
+.managed-runtime-card {
+  overflow: hidden;
+}
+
+.managed-runtime-product-row {
+  align-items: center;
+  gap: var(--space-5);
+  transition: background var(--duration-fast) var(--ease-standard);
+}
+
+.managed-runtime-product-row:hover {
+  background: var(--surface-hover);
+}
+
+.managed-runtime-product-copy {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: flex-start;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.managed-runtime-product-text {
+  min-width: 0;
+}
+
+.managed-runtime-state-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-1-5);
+}
+
+.managed-runtime-state-line .integration-scopes::before {
+  margin-right: var(--space-2);
+}
+
+.managed-runtime-status.is-connecting,
+.integration-status.is-connecting {
+  color: var(--accent);
+}
+
+.managed-runtime-status.is-limited,
+.integration-status.is-limited {
+  color: var(--warning);
+}
+
+.managed-runtime-status.is-disconnected,
+.integration-status.is-disconnected {
+  color: var(--muted);
+}
+
+.managed-runtime-account-label {
+  margin-top: var(--space-1);
+}
+
+.managed-runtime-gates {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.managed-runtime-actions {
+  align-items: center;
+}
+
+.managed-runtime-preparing {
+  color: var(--muted);
+  font-size: var(--text-sm);
+  line-height: var(--leading-default);
+}
+
+.managed-runtime-ceremony-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-5);
+  background: var(--surface-card);
+}
+
+.managed-runtime-safe-url {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--control-height-default);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius-md);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: var(--text-md);
+  line-height: var(--leading-default);
+  text-decoration: none;
+}
+
+.managed-runtime-safe-url:hover {
+  border-color: var(--accent);
+  background: var(--accent-mid);
+}
+
+.managed-runtime-safe-url:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.managed-runtime-terminal-body {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--surface-inset);
+}
+
+.managed-runtime-terminal-output {
+  /* geometry: a 288px well keeps the PTY readable while leaving room for input and status. */
+  min-height: 18rem;
+  max-height: 50vh;
+  margin: 0;
+  padding: var(--space-3);
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: var(--leading-relaxed);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.managed-runtime-terminal-output:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.managed-runtime-terminal-input-label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
+  color: var(--muted);
+  font-size: var(--text-sm);
+  line-height: var(--leading-default);
+}
+
+.managed-runtime-terminal-input-label textarea {
+  min-height: var(--control-height-comfortable);
+  resize: vertical;
+  font-family: var(--font-mono);
+}
+
+.managed-runtime-inline-error {
+  margin: 0;
+  color: var(--danger);
+  font-size: var(--text-sm);
+  line-height: var(--leading-default);
+}
+
+.managed-runtime-terminal-closed {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-sm);
+  line-height: var(--leading-default);
+}
+
 .native-agent-user-code {
   padding: var(--space-1) var(--space-2);
   border: 1px solid var(--line);
@@ -3476,7 +3648,8 @@ button.history-card:hover:not(:disabled) {
 
 @media (max-width: 720px) {
   .integration-provider-row,
-  .integration-connection {
+  .integration-connection,
+  .managed-runtime-product-row {
     align-items: stretch;
     flex-direction: column;
     gap: var(--space-3);
@@ -3485,6 +3658,10 @@ button.history-card:hover:not(:disabled) {
   .integration-connection-copy {
     align-items: flex-start;
     text-align: left;
+  }
+
+  .managed-runtime-product-copy {
+    align-items: flex-start;
   }
 
   .integration-connection-meta {

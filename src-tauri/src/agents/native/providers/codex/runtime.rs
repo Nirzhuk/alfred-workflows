@@ -169,7 +169,9 @@ pub fn packaged_runtime_decision() -> CodexPackagedRuntimeDecision {
 /// Production registration is structurally fail-closed. The official app-server
 /// remains unsupported for production, and Alfred has not shipped or smoked the
 /// required signature and license/NOTICE checks on every desktop target.
-pub fn register(_registry: &NativeRuntimeRegistry) -> Result<(), NativeRuntimeError> {
+pub fn register_app_server_evidence(
+    _registry: &NativeRuntimeRegistry,
+) -> Result<(), NativeRuntimeError> {
     Err(NativeRuntimeError::new(
         NativeErrorCode::ProviderUnavailable,
         format!(
@@ -372,7 +374,8 @@ mod tests {
                 .signature,
             CodexArtifactSignature::SigstoreBundle
         );
-        let error = register(&NativeRuntimeRegistry::default()).expect_err("registration blocked");
+        let error = register_app_server_evidence(&NativeRuntimeRegistry::default())
+            .expect_err("registration blocked");
         for gate in [
             PRODUCTION_SUPPORT_BLOCKED_CODE,
             SIGNATURE_VERIFICATION_BLOCKED_CODE,

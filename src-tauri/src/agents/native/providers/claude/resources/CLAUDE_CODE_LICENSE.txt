@@ -1,0 +1,11 @@
+Claude Code 2.1.246 is proprietary software published by Anthropic PBC.
+
+Alfred may distribute or run this exact, unmodified publisher binary only when
+the applicable Anthropic Commercial Terms, Consumer Terms, and any separately
+required distribution permission allow it. This file is a packaging notice,
+not a grant of rights and not a replacement for Anthropic's current terms.
+
+Official terms:
+https://www.anthropic.com/legal/commercial-terms
+https://www.anthropic.com/legal/consumer-terms
+https://code.claude.com/docs/en/legal-and-compliance

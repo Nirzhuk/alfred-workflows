@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "purpose": "code-owned release inventory; each sealed package still carries ordinary license and notice files",
+  "components": [
+    {
+      "name": "Claude Code 2.1.246",
+      "runtimeId": "claude_code_managed",
+      "licenseExpression": "LicenseRef-Anthropic-Claude-Code",
+      "licensePath": "src-tauri/src/agents/native/providers/claude/resources/CLAUDE_CODE_LICENSE.txt",
+      "licenseSha256": "08edffd8a6fa739c2888b68b23c63ee0ee76a3cf960f0532e882579f6d517f08",
+      "noticePath": "src-tauri/src/agents/native/providers/claude/resources/NOTICE.txt",
+      "noticeSha256": "6ae41b35b33b23e2f4c4f3f370498c9cba247e5953fc01cb6a9a76d3d66faec5"
+    },
+    {
+      "name": "OpenCode 1.18.23",
+      "runtimeId": "opencode_server",
+      "licenseExpression": "MIT",
+      "licensePath": "src-tauri/src/agents/native/providers/opencode/legal/LICENSE",
+      "licenseSha256": "625f0f619133f89bbbb2abe37369613dfa1885eba1e50d02170deb62bb42cb6b",
+      "noticePath": "src-tauri/src/agents/native/providers/opencode/legal/NOTICE.md",
+      "noticeSha256": "b223bb239d3b29b67b9e921570e2107d2e592148e8498561067a5d013559a07f"
+    },
+    {
+      "name": "openai-codex 0.147.0",
+      "runtimeId": "codex_python_sdk",
+      "licenseExpression": "Apache-2.0",
+      "licensePath": "release-input/codex/openai-codex/LICENSE",
+      "licenseSha256": "d17f227e4df5da1600391338865ce0f3055211760a36688f816941d58232d8dc",
+      "noticePath": "release-input/codex/openai-codex/NOTICE",
+      "noticeSha256": "9d71575ecfd9a843fc1677b0efb08053c6ba9fd686a0de1a6f5382fd3c220915"
+    },
+    {
+      "name": "CPython 3.11.16",
+      "runtimeId": "codex_python_sdk",
+      "licenseExpression": "Python-2.0",
+      "licensePath": "release-input/codex/CPython/LICENSE",
+      "noticePath": "release-input/codex/CPython/NOTICE",
+      "evidence": "The python-build-standalone archive's bundled legal files must be copied and hashed during release preparation."
+    },
+    {
+      "name": "pydantic 2.13.4, pydantic-core 2.46.4, annotated-types 0.7.0, typing-extensions 4.15.0, typing-inspection 0.4.2",
+      "runtimeId": "codex_python_sdk",
+      "licenseExpression": "MIT AND PSF-2.0",
+      "licensePath": "release-input/codex/third-party/LICENSE",
+      "noticePath": "release-input/codex/third-party/NOTICE",
+      "evidence": "The target legal inventory must enumerate and hash one license and notice file for every locked wheel."
+    }
+  ]
+}

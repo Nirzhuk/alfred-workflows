@@ -18,6 +18,9 @@
     "check": "bun run test:frontend && bun run build:frontend && bun run test:rust",
     "verify:polar-sandbox": "bun run ./scripts/polar/verify-sandbox.ts",
     "verify:release-hygiene": "bun run ./scripts/release/verify-release-hygiene.ts",
+    "prepare:managed-runtimes": "bun run ./scripts/managed-runtimes/prepare.ts",
+    "verify:managed-runtimes": "bun run ./scripts/managed-runtimes/verify.ts",
+    "test:managed-runtimes": "bun test scripts/managed-runtimes",
     "tauri": "node ./scripts/guard-desktop-tauri.mjs"
   },
   "dependencies": {

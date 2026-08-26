@@ -1,5 +1,5 @@
-mod agents;
 mod agent_accounts;
+mod agents;
 mod commands;
 mod db;
 // Provider-neutral seams are intentionally consumed by follow-on connector plans.
@@ -22,10 +22,11 @@ use agent_accounts::{AgentAccountResolver, AgentAccountsState};
 use agents::native::{
     DenyAllApprovalHandler, DenyAllToolExecutor, NativeExecutionRouter, NativeRuntimeRegistry,
 };
+use commands::managed_runtime::ManagedRuntimeControlPlane;
 use db::Db;
-use std::sync::Arc;
 use integrations::IntegrationsState;
 use licensing::LicensingState;
+use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::Duration;
 use tauri::{Emitter, Manager, State, WindowEvent};
@@ -109,6 +110,13 @@ pub fn run() {
     // provider plan registers one; until then Alfred-harness steps surface
     // `native_runtime_unavailable` and never fall back to a CLI adapter.
     let agent_accounts = AgentAccountsState::default();
+    let managed_runtime = Arc::new(ManagedRuntimeControlPlane::new());
+    // Register all managed product handlers for diagnostics and lifecycle
+    // ownership.  Each handler remains explicitly gate-blocked until its
+    // provider package, profile, auth, and smoke evidence is complete.
+    for handler in managed_runtime.provider_handlers() {
+        let _ = agent_accounts.register(handler);
+    }
     let native_registry = Arc::new(NativeRuntimeRegistry::default());
     // The resolver needs its own handle because the managed `Db` is owned by
     // Tauri state; SQLite is safe to open twice against the same file.
@@ -127,6 +135,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(database)
         .manage(agent_accounts)
+        .manage(Arc::clone(&managed_runtime))
         .manage(native_registry)
         .manage(native_router)
         .manage(IntegrationsState::default())
@@ -175,6 +184,15 @@ pub fn run() {
 
     builder
         .setup(|app| {
+            if let Some(root) = app.path().app_data_dir().ok() {
+                let resource_root = app.path().resource_dir().ok();
+                if let Err(error) = app
+                    .state::<Arc<ManagedRuntimeControlPlane>>()
+                    .initialize(&root, resource_root.as_deref())
+                {
+                    eprintln!("managed runtime state unavailable: {error}");
+                }
+            }
             let resource_root = app.path().resource_dir().ok();
             let capability_manifest = agents::capability_manifest::manifest_for_resource_root(
                 agents::capability_manifest::current_platform(),
@@ -392,6 +410,15 @@ pub fn run() {
             commands::list_agent_providers,
             commands::get_agent_capability_manifest,
             commands::get_agent_harness_diagnostics,
+            commands::managed_runtime::list_managed_runtime_products,
+            commands::managed_runtime::prepare_managed_runtime_product,
+            commands::managed_runtime::start_managed_runtime_connection,
+            commands::managed_runtime::connect_managed_runtime_api_key,
+            commands::managed_runtime::managed_runtime_connection_status,
+            commands::managed_runtime::read_managed_runtime_terminal,
+            commands::managed_runtime::write_managed_runtime_terminal,
+            commands::managed_runtime::resize_managed_runtime_terminal,
+            commands::managed_runtime::close_managed_runtime_terminal,
             commands::list_agent_models,
             commands::get_agent_usage,
             commands::list_skills,

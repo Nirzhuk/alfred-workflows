@@ -8,7 +8,7 @@ use crate::agents::process::{
     find_bin, prefer_stdout, run_cmd, run_cmd_with_stdin, run_cmd_with_stdin_env,
 };
 use crate::agents::{
-    auth_required, execute_target, adapter_for, AgentActivity, AgentActivityKind,
+    adapter_for, auth_required, execute_target, AgentActivity, AgentActivityKind,
     AgentActivityState, AgentAuthRequired, AgentError, AgentExecutionTarget, AgentHarness,
     AgentProvider, AgentRequest, AgentRequestMetadata, AgentResponse, AgentRunHooks,
     OpaqueAgentAccountRef, SafeAgentRunMetadata,
@@ -17,9 +17,8 @@ use crate::db::{
     build_review_digest, build_review_prompt, candidate_existing_memory_context,
     parse_reviewer_output, validate_candidate_suggestion, CandidateReviewContext, Db,
     FormattedMemoryContext, MemoryContext, MemoryRetrievalRequest, RetrievalReason,
-    RetrievedMemoryUse, REVIEW_DIGEST_MAX_BYTES, REVIEW_ERROR_AUTH_REQUIRED,
-    REVIEW_ERROR_INTERNAL, REVIEW_ERROR_INVALID_RESPONSE, REVIEW_ERROR_PROVIDER_UNAVAILABLE,
-    REVIEW_ERROR_TIMEOUT,
+    RetrievedMemoryUse, REVIEW_DIGEST_MAX_BYTES, REVIEW_ERROR_AUTH_REQUIRED, REVIEW_ERROR_INTERNAL,
+    REVIEW_ERROR_INVALID_RESPONSE, REVIEW_ERROR_PROVIDER_UNAVAILABLE, REVIEW_ERROR_TIMEOUT,
 };
 use crate::integrations::actions::{
     ActionCancellation, ActionDescriptor, ActionErrorCode, ActionRequest, ActionResult,
@@ -338,10 +337,7 @@ fn safe_metadata_value(metadata: &SafeAgentRunMetadata) -> Value {
     serde_json::to_value(metadata).unwrap_or_else(|_| serde_json::json!({}))
 }
 
-fn safe_activity_for_run_event(
-    activity: &AgentActivity,
-    harness: AgentHarness,
-) -> AgentActivity {
+fn safe_activity_for_run_event(activity: &AgentActivity, harness: AgentHarness) -> AgentActivity {
     activity.safe_for_emission(match harness {
         AgentHarness::Cli => "CLI",
         AgentHarness::Alfred => "Alfred",
@@ -1109,58 +1105,60 @@ pub fn execute_run(
                     } else {
                         None
                     };
-                let base_prompt = if context_prompt.is_empty() {
-                    last_output.clone()
-                } else {
-                    context_prompt.clone()
-                };
-                let prepared = prepare_agent_prompt(
-                    db,
-                    workflow_id,
-                    working_directory.as_deref(),
-                    run_id,
-                    &node_id,
-                    &base_prompt,
-                    &formatted_memory,
-                    &trigger_context,
-                    &automatic_memory_exclusions,
-                    workflow.memory_retrieval_enabled,
-                );
-                if workflow.memory_retrieval_enabled {
-                    let message = if prepared.recall_unavailable {
-                        "Memory recall unavailable; continuing without recalled context".to_string()
+                    let base_prompt = if context_prompt.is_empty() {
+                        last_output.clone()
                     } else {
-                        format!(
-                            "Recalled {} memories ({} context bytes)",
-                            prepared.recalled_count, prepared.recalled_bytes
-                        )
+                        context_prompt.clone()
                     };
-                    emit(
-                        app,
-                        RunEvent {
-                            run_id: run_id.into(),
-                            workflow_id: workflow_id.into(),
-                            kind: "step_log".into(),
-                            node_id: Some(node_id.clone()),
-                            node_type: Some(node_type.clone()),
-                            node_label: Some(label.clone()),
-                            status: Some("running".into()),
-                            message,
-                            output: None,
-                            stats: None,
-                            activity: None,
-                            auth_required: None,
-                            at: Utc::now().to_rfc3339(),
-                        },
-                    ).map_err(|error| error.to_string())?;
-                }
-                let prompt = prepared.prompt;
-                let prompt = if html_report_agents.contains(&node_id) {
-                    with_html_report_instruction(&prompt)
-                } else {
-                    prompt
-                };
-                persisted_input_prompt = prompt.clone();
+                    let prepared = prepare_agent_prompt(
+                        db,
+                        workflow_id,
+                        working_directory.as_deref(),
+                        run_id,
+                        &node_id,
+                        &base_prompt,
+                        &formatted_memory,
+                        &trigger_context,
+                        &automatic_memory_exclusions,
+                        workflow.memory_retrieval_enabled,
+                    );
+                    if workflow.memory_retrieval_enabled {
+                        let message = if prepared.recall_unavailable {
+                            "Memory recall unavailable; continuing without recalled context"
+                                .to_string()
+                        } else {
+                            format!(
+                                "Recalled {} memories ({} context bytes)",
+                                prepared.recalled_count, prepared.recalled_bytes
+                            )
+                        };
+                        emit(
+                            app,
+                            RunEvent {
+                                run_id: run_id.into(),
+                                workflow_id: workflow_id.into(),
+                                kind: "step_log".into(),
+                                node_id: Some(node_id.clone()),
+                                node_type: Some(node_type.clone()),
+                                node_label: Some(label.clone()),
+                                status: Some("running".into()),
+                                message,
+                                output: None,
+                                stats: None,
+                                activity: None,
+                                auth_required: None,
+                                at: Utc::now().to_rfc3339(),
+                            },
+                        )
+                        .map_err(|error| error.to_string())?;
+                    }
+                    let prompt = prepared.prompt;
+                    let prompt = if html_report_agents.contains(&node_id) {
+                        with_html_report_instruction(&prompt)
+                    } else {
+                        prompt
+                    };
+                    persisted_input_prompt = prompt.clone();
                     let request = AgentRequest {
                         prompt,
                         model: resolved_model.clone(),
@@ -1240,7 +1238,8 @@ pub fn execute_run(
 
                     // The Alfred harness resolves through the managed native
                     // router; the CLI path is untouched and never falls back.
-                    let native_router = app.try_state::<crate::agents::native::NativeExecutionRouter>();
+                    let native_router =
+                        app.try_state::<crate::agents::native::NativeExecutionRouter>();
                     match execute_target(
                         &target,
                         request,
@@ -2281,7 +2280,11 @@ pub(crate) fn execute_memory_review(db: &Db, ctx: &MemoryReviewContext, run_id: 
     }
 }
 
-fn run_memory_review_job(db: &Db, ctx: &MemoryReviewContext, run_id: &str) -> Result<(), &'static str> {
+fn run_memory_review_job(
+    db: &Db,
+    ctx: &MemoryReviewContext,
+    run_id: &str,
+) -> Result<(), &'static str> {
     // ---- Gather inputs (each read takes and releases the SQLite mutex) ----
     let job = db
         .get_memory_review_job(run_id)
@@ -2292,7 +2295,9 @@ fn run_memory_review_job(db: &Db, ctx: &MemoryReviewContext, run_id: &str) -> Re
         .get_run_history(run_id)
         .map_err(|_| REVIEW_ERROR_INTERNAL)?
         .ok_or(REVIEW_ERROR_INTERNAL)?;
-    let context = db.memory_context(&job.workflow_id).map_err(|_| REVIEW_ERROR_INTERNAL)?;
+    let context = db
+        .memory_context(&job.workflow_id)
+        .map_err(|_| REVIEW_ERROR_INTERNAL)?;
 
     // Bounded digest of canonical steps + existing-memory context, both later
     // framed as untrusted data by the prompt contract.
@@ -2331,8 +2336,8 @@ fn run_memory_review_job(db: &Db, ctx: &MemoryReviewContext, run_id: &str) -> Re
     })?;
 
     // ---- Strict parse + central validation; no repair call ever happens. ----
-    let suggestions = parse_reviewer_output(&response.output)
-        .map_err(|_| REVIEW_ERROR_INVALID_RESPONSE)?;
+    let suggestions =
+        parse_reviewer_output(&response.output).map_err(|_| REVIEW_ERROR_INVALID_RESPONSE)?;
     let review_ctx = CandidateReviewContext {
         workflow_id: &job.workflow_id,
         working_directory: context.working_directory.as_deref(),
@@ -2941,9 +2946,8 @@ mod tests {
         use std::sync::mpsc;
         use std::time::{Duration, Instant};
 
-        type ReviewBehavior = std::sync::Arc<
-            dyn Fn() -> Result<AgentResponse, AgentError> + Send + Sync,
-        >;
+        type ReviewBehavior =
+            std::sync::Arc<dyn Fn() -> Result<AgentResponse, AgentError> + Send + Sync>;
 
         /// Records every (provider, model) invocation; optionally blocks on a
         /// gate so tests can observe the system while the provider call is in
@@ -3099,11 +3103,7 @@ mod tests {
                 })
                 .unwrap();
             let agent = std::sync::Arc::new(FakeAgent::ok_json(ONE_CREATE));
-            assert!(!schedule_memory_review_with(
-                &fx.db,
-                "run",
-                &fx.workflow_id
-            ));
+            assert!(!schedule_memory_review_with(&fx.db, "run", &fx.workflow_id));
             assert!(job_status(&fx.db).is_none(), "no job may be created");
             assert!(agent.calls.lock().unwrap().is_empty());
 
@@ -3112,11 +3112,7 @@ mod tests {
             fx.db
                 .set_workflow_memory_review(&fx.workflow_id, false)
                 .unwrap();
-            assert!(!schedule_memory_review_with(
-                &fx.db,
-                "run",
-                &fx.workflow_id
-            ));
+            assert!(!schedule_memory_review_with(&fx.db, "run", &fx.workflow_id));
             assert!(job_status(&fx.db).is_none());
 
             // Enabled but provider missing (raw SQL to bypass the command guard).
@@ -3127,11 +3123,7 @@ mod tests {
                     Ok(())
                 })
                 .unwrap();
-            assert!(!schedule_memory_review_with(
-                &fx.db,
-                "run",
-                &fx.workflow_id
-            ));
+            assert!(!schedule_memory_review_with(&fx.db, "run", &fx.workflow_id));
             assert!(job_status(&fx.db).is_none());
         }
 
@@ -3337,10 +3329,7 @@ mod tests {
 
             // Manual retry resets exactly one row to pending…
             let retried = fx.db.retry_memory_review("run").expect("retry allowed");
-            assert_eq!(
-                retried.status,
-                crate::db::ReviewJobStatus::Pending
-            );
+            assert_eq!(retried.status, crate::db::ReviewJobStatus::Pending);
             assert!(
                 fx.db.retry_memory_review("run").is_err(),
                 "a second retry of a pending job must be rejected"

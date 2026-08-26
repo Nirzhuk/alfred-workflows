@@ -1,0 +1,82 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.5",
+  "serialNumber": "urn:uuid:68c331d5-f91a-49bf-abfe-c23ac787dad4",
+  "version": 1,
+  "metadata": {
+    "component": {
+      "type": "application",
+      "name": "alfred-codex-sdk-sidecar",
+      "version": "0.1.0"
+    },
+    "properties": [
+      {
+        "name": "alfred:sbom-status",
+        "value": "source-component-expectation-not-a-sealed-target-sbom"
+      },
+      {
+        "name": "alfred:experimental-api",
+        "value": "false"
+      }
+    ]
+  },
+  "components": [
+    {
+      "type": "library",
+      "bom-ref": "pkg:pypi/openai-codex@0.147.0",
+      "name": "openai-codex",
+      "version": "0.147.0",
+      "purl": "pkg:pypi/openai-codex@0.147.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "ab2e0b3a41dba5a62be8561397cf3e7913afb53b5372ad881002a6f0b77e6a0a"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "pkg:pypi/openai-codex-cli-bin@0.147.0",
+      "name": "openai-codex-cli-bin",
+      "version": "0.147.0",
+      "purl": "pkg:pypi/openai-codex-cli-bin@0.147.0"
+    },
+    {
+      "type": "library",
+      "name": "pydantic",
+      "version": "2.13.4",
+      "purl": "pkg:pypi/pydantic@2.13.4"
+    },
+    {
+      "type": "library",
+      "name": "pydantic-core",
+      "version": "2.46.4",
+      "purl": "pkg:pypi/pydantic-core@2.46.4"
+    },
+    {
+      "type": "library",
+      "name": "annotated-types",
+      "version": "0.7.0",
+      "purl": "pkg:pypi/annotated-types@0.7.0"
+    },
+    {
+      "type": "library",
+      "name": "typing-extensions",
+      "version": "4.15.0",
+      "purl": "pkg:pypi/typing-extensions@4.15.0"
+    },
+    {
+      "type": "library",
+      "name": "typing-inspection",
+      "version": "0.4.2",
+      "purl": "pkg:pypi/typing-inspection@0.4.2"
+    }
+  ]
+}

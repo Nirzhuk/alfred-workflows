@@ -1,15 +1,20 @@
-//! Alfred-native Claude runtime (Anthropic API, usage-based billing).
+//! Alfred-native Claude products.
 //!
-//! This runtime is **not** Claude Code and is not a Claude.ai subscription
-//! surface. It calls the documented Anthropic Messages API with an
-//! Alfred-managed API key and owns the tool loop itself.
+//! The existing runtime in this file remains the separate `claude_api`
+//! product: it is **not** Claude Code and is not subscription billed. The
+//! `subscription` module adds a fail-closed managed product around the exact,
+//! unmodified Claude Code 2.1.246 terminal binary. Neither product can fall
+//! back to the other or to a user-installed CLI.
 //!
 //! Deliberately absent, and why:
 //!
-//! - No Claude.ai / Claude Code subscription login. The Agent SDK overview
-//!   states: "Unless previously approved, Anthropic does not allow third party
-//!   developers to offer claude.ai login or rate limits for their products."
-//!   Alfred has no such approval on record, so that capability is BLOCKED.
+//! - The direct API runtime has no Claude.ai / Claude Code subscription login.
+//!   The Agent SDK overview states: "Unless previously approved, Anthropic does
+//!   not allow third party developers to offer claude.ai login or rate limits
+//!   for their products."
+//!   Alfred has no custom-renderer approval on record. Managed interactive
+//!   login, when commercially permitted, stays entirely inside the unmodified
+//!   publisher PTY.
 //! - No `~/.claude/.credentials.json`, keychain scrape, `CLAUDE_CODE_OAUTH_TOKEN`,
 //!   or `claude` subprocess. The runtime never looks at CLI state.
 //! - No Agent SDK bridge. The SDK ships for Python and TypeScript only; a
@@ -18,11 +23,25 @@
 //!
 //! See `plans/034-claude-native-harness.md` for the recorded provider decision.
 
+mod auth;
+mod package;
+mod status;
+mod subscription;
+mod terminal;
 mod transport;
 mod wire;
 
+pub use auth::*;
+pub use package::*;
+pub use status::*;
+pub use subscription::*;
+pub use terminal::*;
+
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod subscription_tests;
 
 use crate::agent_accounts::resolver::NativeAgentCredential;
 use crate::agents::native::{

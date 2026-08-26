@@ -36,6 +36,8 @@ Thumbs.db
 # Rust / Tauri (also covered by src-tauri/.gitignore)
 src-tauri/target
 src-tauri/gen/schemas
+src-tauri/sidecars/managed-runtimes/*
+!src-tauri/sidecars/managed-runtimes/.gitkeep
 **/target/
 
 # OS / tooling noise

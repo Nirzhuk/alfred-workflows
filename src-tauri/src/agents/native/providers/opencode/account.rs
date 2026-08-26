@@ -1,179 +1,197 @@
+//! Transient OpenCode Go key intake and managed-profile custody.
+
+use super::launch::OpenCodeServerProvider;
+use super::protocol::parse_go_models;
+use crate::agent_accounts::models::{AgentProductId, CredentialCustodyMode, ManagedRuntimeId};
+use crate::agent_accounts::resolver::NativeAgentCredential;
+use crate::agent_accounts::runtime_profile::RuntimeProfileRef;
 use crate::agents::native::{
-    contains_cli_permission_flag, contains_secret_marker, NativeErrorCode, NativeRuntimeError,
+    NativeCancellation, NativeErrorCode, NativeRuntimeError, ResolvedNativeAccount,
 };
+use crate::agents::{AgentProvider, OpaqueAgentAccountRef};
+use std::fmt;
+use std::path::Path;
+use std::sync::Arc;
+use zeroize::{Zeroize, Zeroizing};
 
-pub const MAX_UPSTREAM_ID_BYTES: usize = 96;
-pub const MAX_BILLING_OWNER_BYTES: usize = 128;
-const MAX_MODEL_ID_BYTES: usize = 256;
+pub const OPENCODE_GO_PROVIDER_ID: &str = "opencode-go";
+pub const OPENCODE_GO_USAGE_URL: &str = "https://opencode.ai/auth";
+const MAX_GO_KEY_BYTES: usize = 4 * 1024;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OpenCodeAuthKind {
-    ProviderApiKey,
-    ProviderOAuth,
-    LocalProvider,
-}
+/// Secret-entry value that is consumed by the runtime auth endpoint and then
+/// zeroized. It is intentionally neither `Clone`, `Serialize`, nor printable.
+pub struct OpenCodeGoKey(Zeroizing<String>);
 
-/// Non-secret identity that must accompany an opaque Alfred account reference.
-///
-/// `upstream_provider_id` is the OpenCode provider id used on the wire. It is
-/// not inferred from a model catalog or from OpenCode's local auth store.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OpenCodeAccountBinding {
-    upstream_provider_id: String,
-    billing_owner: String,
-    auth_kind: OpenCodeAuthKind,
-}
-
-impl OpenCodeAccountBinding {
-    pub fn new(
-        upstream_provider_id: impl Into<String>,
-        billing_owner: impl Into<String>,
-        auth_kind: OpenCodeAuthKind,
-    ) -> Result<Self, NativeRuntimeError> {
-        let upstream_provider_id = upstream_provider_id.into();
-        let billing_owner = billing_owner.into();
-        validate_component(
-            &upstream_provider_id,
-            MAX_UPSTREAM_ID_BYTES,
-            "OpenCode upstream provider id",
-        )?;
-        validate_label(
-            &billing_owner,
-            MAX_BILLING_OWNER_BYTES,
-            "OpenCode billing owner",
-        )?;
-        Ok(Self {
-            upstream_provider_id,
-            billing_owner,
-            auth_kind,
-        })
-    }
-
-    pub fn upstream_provider_id(&self) -> &str {
-        &self.upstream_provider_id
-    }
-
-    pub fn billing_owner(&self) -> &str {
-        &self.billing_owner
-    }
-
-    pub fn auth_kind(&self) -> OpenCodeAuthKind {
-        self.auth_kind
-    }
-
-    pub fn validate_route(&self, route: &OpenCodeRoute) -> Result<(), NativeRuntimeError> {
-        if route.upstream_provider_id != self.upstream_provider_id {
-            return Err(NativeRuntimeError::new(
-                NativeErrorCode::AccountMismatch,
-                "OpenCode model route does not match the account's explicit upstream provider",
+impl OpenCodeGoKey {
+    pub fn parse(mut value: String) -> Result<Self, NativeRuntimeError> {
+        let valid = value.len() >= 16
+            && value.len() <= MAX_GO_KEY_BYTES
+            && value.trim() == value
+            && value
+                .bytes()
+                .all(|byte| byte.is_ascii_graphic() && byte != b'\0');
+        if valid {
+            Ok(Self(Zeroizing::new(value)))
+        } else {
+            value.zeroize();
+            Err(NativeRuntimeError::new(
+                NativeErrorCode::AccountUnavailable,
+                "OpenCode Go key is invalid",
                 false,
-            ));
+            ))
         }
-        Ok(())
+    }
+
+    pub(crate) fn expose(&self) -> &str {
+        self.0.as_str()
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OpenCodeRoute {
-    upstream_provider_id: String,
-    model_id: String,
-}
-
-impl OpenCodeRoute {
-    /// OpenCode's documented prompt contract uses separate `providerID` and
-    /// `modelID` fields. Alfred stores them as the unambiguous
-    /// `<provider-id>/<model-id>` string and splits only at the first slash.
-    pub fn parse(value: &str) -> Result<Self, NativeRuntimeError> {
-        let (upstream_provider_id, model_id) = value.split_once('/').ok_or_else(|| {
-            NativeRuntimeError::new(
-                NativeErrorCode::InvalidRequest,
-                "OpenCode models must use the explicit upstream/model route format",
-                false,
-            )
-        })?;
-        validate_component(
-            upstream_provider_id,
-            MAX_UPSTREAM_ID_BYTES,
-            "OpenCode upstream provider id",
-        )?;
-        validate_model_id(model_id)?;
-        Ok(Self {
-            upstream_provider_id: upstream_provider_id.into(),
-            model_id: model_id.into(),
-        })
-    }
-
-    pub fn upstream_provider_id(&self) -> &str {
-        &self.upstream_provider_id
-    }
-
-    pub fn model_id(&self) -> &str {
-        &self.model_id
-    }
-
-    pub fn id(&self) -> String {
-        format!("{}/{}", self.upstream_provider_id, self.model_id)
+impl fmt::Debug for OpenCodeGoKey {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("OpenCodeGoKey([REDACTED])")
     }
 }
 
-fn validate_component(
-    value: &str,
-    max_bytes: usize,
-    label: &str,
-) -> Result<(), NativeRuntimeError> {
-    let valid = !value.is_empty()
-        && value.len() <= max_bytes
-        && value.trim() == value
-        && !contains_secret_marker(value)
-        && !contains_cli_permission_flag(value)
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b':'));
-    if valid {
-        Ok(())
-    } else {
-        Err(NativeRuntimeError::new(
-            NativeErrorCode::InvalidRequest,
-            format!("{label} is invalid"),
+/// Backend-only account operation boundary. Command DTOs must never retain the
+/// key or the returned opaque profile reference.
+pub struct OpenCodeAccountManager {
+    servers: Arc<dyn OpenCodeServerProvider>,
+}
+
+impl OpenCodeAccountManager {
+    pub fn new(servers: Arc<dyn OpenCodeServerProvider>) -> Self {
+        Self { servers }
+    }
+
+    pub fn connect(
+        &self,
+        account_ref: &OpaqueAgentAccountRef,
+        repository: &Path,
+        key: OpenCodeGoKey,
+        cancellation: &NativeCancellation,
+    ) -> Result<RuntimeProfileRef, NativeRuntimeError> {
+        cancellation.checkpoint()?;
+        let (profile_ref, server) =
+            self.servers
+                .create_and_launch(account_ref, repository, cancellation)?;
+        let result = (|| {
+            server.api().set_go_key(&key)?;
+            // `/provider` is the only catalog authority. Successful intake is
+            // not allowed to infer or select Zen/another provider.
+            let catalog = server.api().list_providers(path_text(repository)?)?;
+            if parse_go_models(&catalog)?.is_empty() {
+                return Err(NativeRuntimeError::new(
+                    NativeErrorCode::AccountUnavailable,
+                    "OpenCode Go key did not expose any OpenCode Go models",
+                    false,
+                ));
+            }
+            Ok(())
+        })();
+        drop(key);
+        let stop = server.stop();
+        let completed = result.and(stop);
+        if let Err(error) = completed {
+            let _ = self.servers.purge_profile(account_ref, &profile_ref);
+            return Err(error);
+        }
+        Ok(profile_ref)
+    }
+
+    pub fn disconnect(
+        &self,
+        account_ref: &OpaqueAgentAccountRef,
+        profile_ref: &RuntimeProfileRef,
+        repository: &Path,
+        cancellation: &NativeCancellation,
+    ) -> Result<(), NativeRuntimeError> {
+        cancellation.checkpoint()?;
+        let launched =
+            self.servers
+                .launch_existing(account_ref, profile_ref, repository, cancellation);
+        let endpoint_result = match launched {
+            Ok(server) => {
+                let result = server.api().delete_go_key();
+                let stop = server.stop();
+                result.and(stop)
+            }
+            Err(error) => Err(error),
+        };
+        // Purging the isolated profile is the authoritative credential
+        // deletion. It is attempted even when the runtime is already broken.
+        let purge_result = self.servers.purge_profile(account_ref, profile_ref);
+        match (endpoint_result, purge_result) {
+            (_, Err(error)) => Err(error),
+            (Err(error), Ok(())) => Err(error),
+            (Ok(()), Ok(())) => Ok(()),
+        }
+    }
+}
+
+pub(crate) fn profile_ref_for_account(
+    account: &ResolvedNativeAccount,
+) -> Result<RuntimeProfileRef, NativeRuntimeError> {
+    if account.provider != AgentProvider::Opencode || account.product != AgentProductId::OpencodeGo
+    {
+        return Err(account_mismatch());
+    }
+
+    #[cfg(test)]
+    if let Some(credential) = account
+        .credential
+        .downcast_ref::<TestOpenCodeProfileCredential>()
+    {
+        return Ok(credential.0.clone());
+    }
+
+    let credential = account
+        .credential
+        .downcast_ref::<NativeAgentCredential>()
+        .ok_or_else(account_mismatch)?;
+    if credential.custody_mode() != CredentialCustodyMode::RuntimeManaged
+        || credential.managed_runtime_id() != Some(ManagedRuntimeId::OpencodeServer)
+        || credential.managed_runtime_version() != Some(super::package::OPENCODE_RUNTIME_VERSION)
+        || credential.access_token().is_some()
+        || credential.refresh_token().is_some()
+        || credential.runtime_credential_ref().is_some()
+        || credential.expires_at().is_some()
+    {
+        return Err(account_mismatch());
+    }
+    let value = credential.runtime_profile_ref().ok_or_else(|| {
+        NativeRuntimeError::new(
+            NativeErrorCode::AccountUnavailable,
+            "OpenCode Go managed profile is missing",
             false,
-        ))
-    }
+        )
+    })?;
+    RuntimeProfileRef::parse(value).map_err(|_| {
+        NativeRuntimeError::new(
+            NativeErrorCode::AccountUnavailable,
+            "OpenCode Go managed profile is invalid",
+            false,
+        )
+    })
 }
 
-fn validate_label(value: &str, max_bytes: usize, label: &str) -> Result<(), NativeRuntimeError> {
-    let valid = !value.is_empty()
-        && value.len() <= max_bytes
-        && value.trim() == value
-        && !contains_secret_marker(value)
-        && !contains_cli_permission_flag(value)
-        && !value.chars().any(char::is_control);
-    if valid {
-        Ok(())
-    } else {
-        Err(NativeRuntimeError::new(
+#[cfg(test)]
+pub(crate) struct TestOpenCodeProfileCredential(pub RuntimeProfileRef);
+
+fn path_text(path: &Path) -> Result<&str, NativeRuntimeError> {
+    path.to_str().ok_or_else(|| {
+        NativeRuntimeError::new(
             NativeErrorCode::InvalidRequest,
-            format!("{label} is invalid"),
+            "OpenCode repository path is not valid UTF-8",
             false,
-        ))
-    }
+        )
+    })
 }
 
-fn validate_model_id(value: &str) -> Result<(), NativeRuntimeError> {
-    let valid = !value.is_empty()
-        && value.len() <= MAX_MODEL_ID_BYTES
-        && value.trim() == value
-        && !contains_secret_marker(value)
-        && !contains_cli_permission_flag(value)
-        && value.bytes().all(|byte| {
-            byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b':' | b'/')
-        });
-    if valid {
-        Ok(())
-    } else {
-        Err(NativeRuntimeError::new(
-            NativeErrorCode::InvalidRequest,
-            "OpenCode model id is invalid",
-            false,
-        ))
-    }
+fn account_mismatch() -> NativeRuntimeError {
+    NativeRuntimeError::new(
+        NativeErrorCode::AccountMismatch,
+        "OpenCode Go runtime received an incompatible account",
+        false,
+    )
 }

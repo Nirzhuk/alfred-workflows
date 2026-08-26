@@ -792,6 +792,25 @@ impl AgentAccountsState {
             return Err(error);
         }
         if metadata_only {
+            // Runtime-managed profiles can contain provider-owned auth state
+            // even though they have no Alfred credential reference. Keep the
+            // row reachable for the provider logout ceremony; deleting only
+            // its metadata would strand the profile and violate the
+            // logout-before-purge contract.
+            if account.product.is_managed_subscription() && account.runtime_profile_ref.is_some() {
+                let code = "managed_runtime_logout_required";
+                let _ = db.set_agent_account_state(
+                    account_id,
+                    AgentAccountStatus::DisconnectPending,
+                    account.expires_at.as_deref(),
+                    Some(code),
+                );
+                return Err(command_error(
+                    code,
+                    "This managed runtime account must log out before its profile can be removed.",
+                    true,
+                ));
+            }
             // Best-effort credential removal first: the credential reference
             // lives only on this row, so deleting metadata first would strand
             // the secret in the OS store with no way to find it again.

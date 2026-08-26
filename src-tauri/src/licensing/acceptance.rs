@@ -456,12 +456,7 @@ async fn w1_an_in_window_build_is_active_and_entitled() {
     // A deadline a year out from the injected clock: day(7) is inside it.
     let (config, thread) = spawn_server(vec![(
         200,
-        validation_body(
-            "granted",
-            BENEFIT,
-            Some(day(365).to_rfc3339()).as_deref(),
-        )
-        .to_string(),
+        validation_body("granted", BENEFIT, Some(day(365).to_rfc3339()).as_deref()).to_string(),
     )]);
     let store = Arc::new(InMemoryLicenseCredentialStore::default());
     let db = Db::open_in_memory().expect("database");
@@ -489,8 +484,12 @@ async fn w2_exactly_at_the_deadline_is_in_window_and_never_ends_entitlement() {
 
     let (config, thread) = spawn_server(vec![(
         200,
-        validation_body("granted", BENEFIT, Some(validated_at().to_rfc3339()).as_deref())
-            .to_string(),
+        validation_body(
+            "granted",
+            BENEFIT,
+            Some(validated_at().to_rfc3339()).as_deref(),
+        )
+        .to_string(),
     )]);
     let store = Arc::new(InMemoryLicenseCredentialStore::default());
     let db = Db::open_in_memory().expect("database");
@@ -504,7 +503,10 @@ async fn w2_exactly_at_the_deadline_is_in_window_and_never_ends_entitlement() {
         LicenseStatus::Expired,
         "Polar's own rule is now >= expires_at, so equality lapses the key"
     );
-    assert!(status.state.is_entitled(), "equality never ends entitlement");
+    assert!(
+        status.state.is_entitled(),
+        "equality never ends entitlement"
+    );
     assert!(
         status.in_update_window,
         "a build of the deadline day is still inside the window"

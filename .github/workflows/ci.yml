@@ -54,3 +54,6 @@ jobs:
 
       - name: Test and build
         run: bun run check
+
+      - name: Verify managed runtime packaging fixtures offline
+        run: bun run test:managed-runtimes

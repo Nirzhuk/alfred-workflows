@@ -358,6 +358,98 @@ pub struct RuntimePackageVerification {
     publisher: PublisherVerificationEvidence,
 }
 
+/// The result of an independent, code-owned platform publisher check.
+///
+/// This type is intentionally opaque.  Provider manifests and release
+/// checksums are useful inputs to a verifier, but they are not themselves
+/// publisher evidence and cannot construct this value.  A platform verifier
+/// must create it while checking the exact package artifact against the
+/// platform's signing/notarization/authenticode evidence.
+pub struct RuntimePlatformPublisherEvidence {
+    runtime_id: ManagedRuntimeId,
+    runtime_version: String,
+    target: String,
+    executable_sha256: String,
+    scheme: PublisherVerificationScheme,
+    publisher: String,
+}
+
+impl RuntimePlatformPublisherEvidence {
+    /// Constructs evidence only for code-owned platform verification. The
+    /// caller must have already authenticated the artifact against the exact
+    /// manifest target; the sealed verification step repeats the binding and
+    /// digest checks before returning a launch capability.
+    #[allow(dead_code)]
+    pub(crate) fn verified(
+        runtime_id: ManagedRuntimeId,
+        runtime_version: impl Into<String>,
+        target: impl Into<String>,
+        executable_sha256: impl Into<String>,
+        scheme: PublisherVerificationScheme,
+        publisher: impl Into<String>,
+    ) -> Self {
+        Self {
+            runtime_id,
+            runtime_version: runtime_version.into(),
+            target: target.into(),
+            executable_sha256: executable_sha256.into(),
+            scheme,
+            publisher: publisher.into(),
+        }
+    }
+}
+
+impl fmt::Debug for RuntimePlatformPublisherEvidence {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("RuntimePlatformPublisherEvidence")
+            .field("runtime_id", &self.runtime_id)
+            .field("runtime_version", &self.runtime_version)
+            .field("target", &self.target)
+            .field("scheme", &self.scheme)
+            .field("publisher", &self.publisher)
+            .finish()
+    }
+}
+
+/// Inputs supplied to a platform publisher verifier.  `publisher_proof` and
+/// `platform_signature` are opaque bytes owned by the provider/platform
+/// integration; this shared layer never interprets a downloaded `verified`
+/// flag as proof.
+pub struct RuntimePlatformPublisherRequest<'a> {
+    pub package_root: &'a Path,
+    pub manifest: &'a RuntimePackageManifest,
+    pub expectation: &'a RuntimePackageExpectation,
+    pub publisher_proof: &'a [u8],
+    pub platform_signature: &'a [u8],
+}
+
+/// Code-owned platform evidence boundary.  Provider packages can request a
+/// verification, but only the shared verifier implementation may return the
+/// opaque evidence value used to mint [`RuntimePackageVerification`].
+pub trait RuntimePlatformPublisherVerifier: Send + Sync {
+    fn verify(
+        &self,
+        request: RuntimePlatformPublisherRequest<'_>,
+    ) -> Result<RuntimePlatformPublisherEvidence, RuntimePackageErrorCode>;
+}
+
+/// Fail-closed production default until platform signing/notarization
+/// verification is wired for the target package.  Keeping this explicit lets
+/// product status expose a stable gate instead of claiming a package is
+/// installed from descriptive metadata alone.
+#[derive(Debug, Default)]
+pub struct UnavailableRuntimePlatformPublisherVerifier;
+
+impl RuntimePlatformPublisherVerifier for UnavailableRuntimePlatformPublisherVerifier {
+    fn verify(
+        &self,
+        _request: RuntimePlatformPublisherRequest<'_>,
+    ) -> Result<RuntimePlatformPublisherEvidence, RuntimePackageErrorCode> {
+        Err(RuntimePackageErrorCode::PublisherUnverified)
+    }
+}
+
 impl RuntimePackageVerification {
     /// The production constructor intentionally lives with the future
     /// code-owned platform verifier. Downloaded manifest JSON cannot create
@@ -367,15 +459,44 @@ impl RuntimePackageVerification {
         manifest: RuntimePackageManifest,
         expectation: RuntimePackageExpectation,
     ) -> Result<Self, RuntimePackageError> {
-        let target = manifest.select_target(expectation.target())?;
-        let verification = Self {
-            publisher: PublisherVerificationEvidence {
+        let publisher = {
+            let target = manifest.select_target(expectation.target())?;
+            PublisherVerificationEvidence {
                 runtime_id: expectation.runtime_id,
                 runtime_version: expectation.runtime_version.clone(),
                 target: expectation.target.clone(),
                 executable_sha256: target.executable.sha256.clone(),
                 scheme: target.publisher_verification.scheme,
                 publisher: target.publisher_verification.publisher.clone(),
+                status: PublisherVerificationStatus::Verified,
+            }
+        };
+        let verification = Self {
+            publisher,
+            manifest,
+            expectation,
+        };
+        validate_verification(&verification)?;
+        Ok(verification)
+    }
+
+    /// Mints the sealed verification capability from an independently
+    /// verified platform result.  This is crate-private by design: provider
+    /// modules must use a shared verifier hook and cannot assert `Verified`
+    /// from release metadata or a serialized boolean.
+    pub(crate) fn from_platform_evidence(
+        manifest: RuntimePackageManifest,
+        expectation: RuntimePackageExpectation,
+        evidence: RuntimePlatformPublisherEvidence,
+    ) -> PackageResult<Self> {
+        let verification = Self {
+            publisher: PublisherVerificationEvidence {
+                runtime_id: evidence.runtime_id,
+                runtime_version: evidence.runtime_version,
+                target: evidence.target,
+                executable_sha256: evidence.executable_sha256,
+                scheme: evidence.scheme,
+                publisher: evidence.publisher,
                 status: PublisherVerificationStatus::Verified,
             },
             manifest,
@@ -392,6 +513,39 @@ impl RuntimePackageVerification {
     pub fn expectation(&self) -> &RuntimePackageExpectation {
         &self.expectation
     }
+}
+
+/// Shared trust hook used by each provider's pinned package verifier.  The
+/// provider supplies its exact manifest and publisher proof; this function
+/// delegates platform evidence to the code-owned verifier, mints the sealed
+/// capability, then hashes every declared package file before returning it.
+pub fn verify_runtime_package_with_platform_evidence(
+    package_root: &Path,
+    manifest: &RuntimePackageManifest,
+    expectation: &RuntimePackageExpectation,
+    publisher_proof: &[u8],
+    platform_signature: &[u8],
+    verifier: &dyn RuntimePlatformPublisherVerifier,
+) -> Result<RuntimePackageVerification, RuntimePackageError> {
+    let evidence = verifier
+        .verify(RuntimePlatformPublisherRequest {
+            package_root,
+            manifest,
+            expectation,
+            publisher_proof,
+            platform_signature,
+        })
+        .map_err(package_error)?;
+    let verification = RuntimePackageVerification::from_platform_evidence(
+        manifest.clone(),
+        expectation.clone(),
+        evidence,
+    )?;
+    // Finish the borrowed inspection before moving the verification into the
+    // result. Keeping these as separate statements avoids extending the
+    // borrow through the `map` closure on older Rust borrow-checkers.
+    inspect_managed_runtime_package(package_root, &verification)?;
+    Ok(verification)
 }
 
 impl fmt::Debug for RuntimePackageVerification {

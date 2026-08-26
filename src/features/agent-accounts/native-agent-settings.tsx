@@ -5,8 +5,16 @@ import { AgentMark } from "../../components/agent-mark";
 import { CursorNativeDisclosure } from "./cursor-native-disclosure";
 import { GrokNativeDisclosure } from "./grok-native-disclosure";
 import { NativeApiKeyConnect } from "./components/native-api-key-connect";
+import {
+  isManagedProductId,
+  ManagedRuntimeSettings,
+} from "./components/managed-runtime-settings";
 import { OpenCodeNativeDisclosure } from "./opencode-native-disclosure";
 import { useAgentAccountsStore } from "./store";
+import type {
+  ManagedRuntimeConnectionStatus,
+  ManagedRuntimeProduct,
+} from "./managed-runtime-types";
 import type {
   AgentAccount,
   AgentAccountStatus,
@@ -46,6 +54,10 @@ type NativeAgentSettingsProps = {
   snapshot?: {
     providers: AgentProviderRegistration[];
     accounts: AgentAccount[];
+    managedRuntime?: {
+      products: ManagedRuntimeProduct[];
+      statuses?: ManagedRuntimeConnectionStatus[];
+    };
   };
 };
 
@@ -81,15 +93,24 @@ export function NativeAgentSettings({ snapshot }: NativeAgentSettingsProps = {})
   }, [load]);
 
   const rows = useMemo(
-    () =>
-      (snapshot?.providers ?? providers).map((provider) => ({
-        provider,
-        accounts: (snapshot?.accounts ?? accounts).filter(
-          (account) =>
-            account.providerId === provider.providerId &&
-            account.productId === provider.productId,
-        ),
-      })),
+    () => {
+      const managedSourceAvailable =
+        snapshot === undefined || snapshot.managedRuntime !== undefined;
+      return (snapshot?.providers ?? providers)
+        .filter(
+          (provider) =>
+            !managedSourceAvailable || !isManagedProductId(provider.productId),
+        )
+        .map((provider) => ({
+          provider,
+          accounts: (snapshot?.accounts ?? accounts).filter(
+            (account) =>
+              (!managedSourceAvailable || !isManagedProductId(account.productId)) &&
+              account.providerId === provider.providerId &&
+              account.productId === provider.productId,
+          ),
+        }));
+    },
     [accounts, providers, snapshot],
   );
 
@@ -122,6 +143,11 @@ export function NativeAgentSettings({ snapshot }: NativeAgentSettingsProps = {})
         Accounts here belong only to Alfred's native agent harness. Connected
         Apps and command-line tool sign-ins stay separate.
       </p>
+
+      <ManagedRuntimeSettings
+        accounts={snapshot?.accounts ?? accounts}
+        snapshot={snapshot?.managedRuntime}
+      />
 
       {error ? (
         <div className="integrations-error" role="alert">

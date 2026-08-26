@@ -211,7 +211,9 @@ impl AgentCapabilityManifest {
         }
         for (index, entry) in self.entries.iter().enumerate() {
             if self.entries[..index].iter().any(|candidate| {
-                candidate.provider == entry.provider && candidate.harness == entry.harness
+                candidate.provider == entry.provider
+                    && candidate.harness == entry.harness
+                    && candidate.product == entry.product
             }) {
                 return false;
             }
@@ -232,13 +234,13 @@ impl AgentCapabilityManifest {
                 if entry.product.is_some() || entry.runtime_id.is_some() {
                     return false;
                 }
-            } else if let Some(product) = native_product(entry.provider) {
+            } else if let Some(product) = entry.product {
                 let expected_auth = product
                     .auth_methods()
                     .iter()
                     .map(|method| (*method).to_owned())
                     .collect::<Vec<_>>();
-                if entry.product != Some(product)
+                if !native_products(entry.provider).contains(&product)
                     || entry.runtime_id.as_deref() != Some(product.capability_runtime_id())
                     || entry.runtime_version.as_deref()
                         != Some(product.capability_runtime_version())
@@ -446,6 +448,18 @@ pub fn manifest_for_resource_root(
             build_kind,
             resource_root,
         ));
+        // Claude has two intentionally separate Alfred products: the existing
+        // direct API route and the managed subscription runtime.  Keep both
+        // entries in the same manifest so account commands can gate each
+        // product independently without inferring a product from its provider.
+        if provider == AgentProvider::ClaudeCode {
+            entries.push(finalize_entry(
+                managed_claude_subscription_entry(),
+                platform,
+                build_kind,
+                resource_root,
+            ));
+        }
     }
     AgentCapabilityManifest {
         schema_version: AGENT_CAPABILITY_MANIFEST_VERSION,
@@ -575,6 +589,76 @@ fn native_product(provider: AgentProvider) -> Option<AgentProductId> {
         AgentProvider::Gemini => Some(AgentProductId::GeminiApi),
         AgentProvider::Grok => Some(AgentProductId::GrokApi),
         AgentProvider::Pi | AgentProvider::Omp => None,
+    }
+}
+
+fn native_products(provider: AgentProvider) -> Vec<AgentProductId> {
+    match provider {
+        AgentProvider::ClaudeCode => vec![
+            AgentProductId::ClaudeApi,
+            AgentProductId::ClaudeCodeSubscription,
+        ],
+        AgentProvider::Cursor => vec![AgentProductId::CursorCloud],
+        AgentProvider::Codex => vec![AgentProductId::ChatgptCodex],
+        AgentProvider::Opencode => vec![AgentProductId::OpencodeGo],
+        AgentProvider::GithubCopilot => vec![AgentProductId::GithubCopilotSubscription],
+        AgentProvider::Gemini => vec![AgentProductId::GeminiApi],
+        AgentProvider::Grok => vec![AgentProductId::GrokApi],
+        AgentProvider::Pi | AgentProvider::Omp => Vec::new(),
+    }
+}
+
+fn managed_claude_subscription_entry() -> AgentCapabilityEntry {
+    let product = AgentProductId::ClaudeCodeSubscription;
+    let reason = crate::agents::native::providers::claude::COMMERCIAL_TERMS_BLOCKED_CODE;
+    let auth_methods = product
+        .auth_methods()
+        .iter()
+        .map(|method| (*method).to_owned())
+        .collect::<Vec<_>>();
+    AgentCapabilityEntry {
+        provider: AgentProvider::ClaudeCode,
+        harness: AgentHarness::Alfred,
+        product: Some(product),
+        runtime_id: Some(product.capability_runtime_id().into()),
+        runtime_version: Some(product.capability_runtime_version().into()),
+        platforms: all_platforms(),
+        build_kinds: all_builds(),
+        auth_methods: auth_methods.clone(),
+        auth_method_gates: auth_methods
+            .iter()
+            .map(|method| auth_gate(method, GateStatus::Failed, Some(reason)))
+            .collect(),
+        platform_gates: platform_gates(GateStatus::Failed, Some(reason)),
+        build_gates: build_gates(GateStatus::Failed, Some(reason)),
+        billing_source: product.billing_source().into(),
+        credential_custody: product.custody_mode().as_str().into(),
+        model_source: "claude_code_runtime".into(),
+        usage_source: "runtime_observation".into(),
+        supports_tools: false,
+        supports_approvals: false,
+        supports_resume: false,
+        supports_cancellation: true,
+        status: CapabilityStatus::Blocked,
+        block_reason: Some(reason.into()),
+        execution_permitted: false,
+        gates: crate::agents::native::providers::claude::subscription_release_gates()
+            .into_iter()
+            .map(|gate| CapabilityGate {
+                gate: gate.gate.into(),
+                status: match gate.status {
+                    crate::agents::native::CapabilityReportStatus::Supported => GateStatus::Passed,
+                    crate::agents::native::CapabilityReportStatus::Unsupported
+                    | crate::agents::native::CapabilityReportStatus::Blocked => GateStatus::Failed,
+                },
+                reason: Some(gate.evidence.into()),
+            })
+            .collect(),
+        package: Some(unavailable_bundled_package(
+            "claude_code_binary",
+            crate::agents::native::providers::claude::CLAUDE_CODE_LICENSE_EXPRESSION,
+        )),
+        package_inspection: None,
     }
 }
 
@@ -1051,7 +1135,7 @@ mod tests {
                 let manifest = manifest_for(platform, build);
                 assert!(manifest.is_valid());
                 assert_eq!(manifest.schema_version, 1);
-                assert_eq!(manifest.entries.len(), 18);
+                assert_eq!(manifest.entries.len(), 19);
                 for (provider, expected_status, expected_reason) in native_expectations {
                     assert!(manifest
                         .entry(provider, AgentHarness::Cli)

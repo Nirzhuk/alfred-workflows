@@ -460,6 +460,7 @@ impl ManagedRuntimeSupervisor {
             validated.shutdown_timeout,
             validated.sensitive_values.clone(),
             profile_lease,
+            validated.readiness.opencode_password().map(str::to_owned),
         ));
         {
             let mut entries = self
@@ -544,6 +545,27 @@ impl ManagedRuntimeSupervisor {
         }
     }
 
+    /// Launches an OpenCode server and transfers its per-process Basic-auth
+    /// password directly to the trusted HTTP bridge.  The password is only
+    /// available from the authenticated readiness path; callers cannot supply
+    /// one, derive one from a runtime response, or retrieve it via a DTO.
+    pub(crate) fn launch_opencode_authenticated(
+        &self,
+        package: &RuntimePackageSelection,
+        profile: &RuntimeProfile,
+        spec: ManagedRuntimeLaunchSpec,
+        cancellation: ManagedRuntimeCancellation,
+    ) -> ManagedRuntimeResult<(ManagedRuntimeHandle, String)> {
+        let handle = self.launch(package, profile, spec, cancellation)?;
+        let Some(password) = handle.take_opencode_password() else {
+            let _ = handle.stop();
+            return Err(runtime_error(
+                ManagedRuntimeErrorCode::ReadinessHandshakeFailed,
+            ));
+        };
+        Ok((handle, password))
+    }
+
     fn remove_entry(&self, key: &RuntimeKey, expected: &Arc<RuntimeEntry>) {
         if let Ok(mut entries) = self.inner.entries.lock() {
             if entries
@@ -589,6 +611,18 @@ impl ManagedRuntimeHandle {
 
     pub fn process_id(&self) -> u32 {
         self.entry.process_id.load(Ordering::SeqCst)
+    }
+
+    /// Transfers the one-launch OpenCode Basic-auth password to the trusted
+    /// provider bridge.  It is never serialized, logged, or exposed through a
+    /// command DTO.  A caller that does not need this capability simply drops
+    /// the handle and the password with it.
+    pub(crate) fn take_opencode_password(&self) -> Option<String> {
+        self.entry
+            .opencode_password
+            .lock()
+            .ok()
+            .and_then(|mut password| password.take())
     }
 
     pub fn stop(&self) -> ManagedRuntimeResult<ManagedRuntimeSnapshot> {
@@ -927,6 +961,7 @@ struct RuntimeEntry {
     stop_reason: AtomicU8,
     shutdown_timeout: Duration,
     sensitive_values: Vec<String>,
+    opencode_password: Mutex<Option<String>>,
     _profile_lease: RuntimeProfileSupervisorLease,
 }
 
@@ -943,6 +978,7 @@ impl RuntimeEntry {
         shutdown_timeout: Duration,
         sensitive_values: Vec<String>,
         profile_lease: RuntimeProfileSupervisorLease,
+        opencode_password: Option<String>,
     ) -> Self {
         Self {
             process_id: AtomicU32::new(0),
@@ -958,6 +994,7 @@ impl RuntimeEntry {
             stop_reason: AtomicU8::new(StopReason::None as u8),
             shutdown_timeout,
             sensitive_values,
+            opencode_password: Mutex::new(opencode_password),
             _profile_lease: profile_lease,
         }
     }

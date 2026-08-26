@@ -1,26 +1,33 @@
-//! Codex app-server protocol support for the Alfred native harness.
+//! Stable Codex Python SDK candidate plus retained raw app-server evidence.
 //!
-//! This module intentionally does not register a runtime yet. The pinned
-//! upstream artifacts have platform signing inputs, but Alfred does not have a
-//! production-supported app-server contract or verified package path carrying
-//! the required license/NOTICE files on every desktop target. The bounded
-//! protocol, account, event, and runtime-home primitives remain usable by
-//! fake-server tests without consulting a user Codex installation or
-//! credential home.
+//! The shipping candidate is the hermetic Python sidecar backed only by the
+//! public exported `openai-codex==0.147.0` surface with experimental APIs
+//! disabled. Production registration is still blocked by the audited missing
+//! host-approval surface and release/package gates. The version-specific raw
+//! app-server implementation remains here only as non-shipping research
+//! evidence and never supplies the module's `register()` function.
 
 mod account;
 mod events;
 mod protocol;
 mod runtime;
+mod sdk_package;
+mod sdk_protocol;
+mod sdk_runtime;
 mod transport;
 
 #[cfg(test)]
 mod fake_app_server;
+#[cfg(test)]
+mod fake_sdk_sidecar;
 
 pub use account::*;
 pub use events::*;
 pub use protocol::*;
 pub use runtime::*;
+pub use sdk_package::*;
+pub use sdk_protocol::*;
+pub use sdk_runtime::*;
 pub use transport::*;
 
 /// Official stable release frozen for Plan 033 on 2026-08-25.

@@ -116,10 +116,12 @@ jobs:
           - platform: ubuntu-22.04
             name: Linux
             args: ""
+            target: x86_64-unknown-linux-gnu
             bundles: deb,rpm,appimage
           - platform: windows-latest
             name: Windows
             args: ""
+            target: x86_64-pc-windows-msvc
             bundles: nsis,msi
 
     runs-on: ${{ matrix.platform }}
@@ -161,6 +163,36 @@ jobs:
 
       - name: Install frontend dependencies
         run: bun install --frozen-lockfile
+
+      - name: Prepare and verify exact managed runtime inputs
+        shell: bash
+        env:
+          ALFRED_RUNTIME_CACHE: ${{ runner.temp }}/alfred-managed-runtime-cache
+          ALFRED_RUNTIME_EVIDENCE_DIR: ${{ runner.temp }}/alfred-managed-runtime-evidence
+          ALFRED_RUNTIME_PUBLISHER_VERIFY: ${{ vars.ALFRED_RUNTIME_PUBLISHER_VERIFY }}
+          ALFRED_CODEX_SIDECAR_EXECUTABLE: ${{ vars.ALFRED_CODEX_SIDECAR_EXECUTABLE }}
+          ALFRED_CODEX_LEGAL_DIR: ${{ vars.ALFRED_CODEX_LEGAL_DIR }}
+          ALFRED_CODEX_TARGET_SBOM: ${{ vars.ALFRED_CODEX_TARGET_SBOM }}
+        run: |
+          set -euo pipefail
+          # Source validation is offline and proves the release cannot drift to
+          # latest/fallback semantics before any artifact is fetched.
+          bun run verify:managed-runtimes -- --sources-only
+          # Strict preparation requires every exact artifact, legal input,
+          # publisher signature/attestation, and a target Codex sidecar. The
+          # release is intentionally blocked when any one is absent.
+          bun run prepare:managed-runtimes -- \
+            --target "${{ matrix.target }}" \
+            --release \
+            --codex-sidecar "${ALFRED_CODEX_SIDECAR_EXECUTABLE:?set the target Codex sidecar executable}" \
+            --codex-legal-dir "${ALFRED_CODEX_LEGAL_DIR:?set the Codex legal inventory directory}" \
+            --codex-sbom "${ALFRED_CODEX_TARGET_SBOM:?set the final target Codex SBOM}" \
+            --output src-tauri/sidecars/managed-runtimes
+          test -n "${ALFRED_RUNTIME_PUBLISHER_VERIFY:?set the reviewed offline publisher verifier}"
+          bun run verify:managed-runtimes -- \
+            --target "${{ matrix.target }}" \
+            --root src-tauri/sidecars/managed-runtimes \
+            --offline
 
       - name: Import Apple Developer certificate
         if: matrix.platform == 'macos-latest'

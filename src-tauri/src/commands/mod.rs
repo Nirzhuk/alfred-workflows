@@ -1,5 +1,6 @@
 pub mod agent_accounts;
 pub mod integrations;
+pub mod managed_runtime;
 
 use crate::agents;
 use crate::db::{

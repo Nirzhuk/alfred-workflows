@@ -1,0 +1,12 @@
+Alfred managed Claude Code runtime
+
+Publisher: Anthropic PBC
+Pinned version: 2.1.246
+Pinned upstream commit: 1ba9d2211ae14e591bd1d60451c217c51f415e86
+Release manifest: https://downloads.claude.ai/claude-code-releases/2.1.246/manifest.json
+Detached manifest signature: https://downloads.claude.ai/claude-code-releases/2.1.246/manifest.json.sig
+Release signing fingerprint: 31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE
+
+The executable must remain byte-for-byte identical to the binary identified by
+the signed publisher manifest. Alfred disables the runtime's updater and does
+not patch, rewrite, relabel, or substitute a user-installed `claude` executable.
