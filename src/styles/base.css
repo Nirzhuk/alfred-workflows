@@ -1,0 +1,317 @@
+/* Shared base layer: the reset, document surface, and control primitives every
+   Alfred window needs before any component rule runs.
+
+   Import `./tokens.css` before this file — everything here resolves tokens and
+   nothing here defines them. Split out of App.css so the Quick Access popover
+   can take the foundation without the main window's component rules. */
+
+/* Native vibrancy can only reach the webview when its root layers remain
+   transparent. Opaque workspace surfaces below deliberately mask the system
+   material everywhere except Alfred's translucent chrome. */
+html[data-platform="macos"],
+html[data-platform="macos"] body,
+html[data-platform="macos"] #root {
+  background-color: transparent;
+}
+
+html[data-platform="macos"] body {
+  background-image: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* Color-only fades after first paint. Do NOT include .sidebar / .run-panel /
+     rails here — that would replace their width/transform slide transitions. */
+  html[data-theme-transition] body,
+  html[data-theme-transition] #root,
+  html[data-theme-transition] .app-frame,
+  html[data-theme-transition] .canvas,
+  html[data-theme-transition] .settings-page,
+  html[data-theme-transition] .settings-card,
+  html[data-theme-transition] .wf-node,
+  html[data-theme-transition] .workflow-tab,
+  html[data-theme-transition] .modal,
+  html[data-theme-transition] .output-modal,
+  html[data-theme-transition] .memories-inspector,
+  html[data-theme-transition] .ui-menu,
+  html[data-theme-transition] button,
+  html[data-theme-transition] input,
+  html[data-theme-transition] textarea,
+  html[data-theme-transition] select {
+    transition:
+      background-color 220ms ease,
+      background 220ms ease,
+      color 220ms ease,
+      border-color 220ms ease,
+      box-shadow 220ms ease;
+  }
+
+  html[data-theme-transition] .sidebar {
+    transition:
+      transform var(--panel-dur, 280ms)
+        var(--panel-ease, cubic-bezier(0.23, 1, 0.32, 1)),
+      background-color 220ms ease,
+      background 220ms ease,
+      border-color 220ms ease,
+      box-shadow 220ms ease;
+  }
+
+  html[data-theme-transition] .run-panel {
+    transition:
+      transform 280ms var(--panel-ease, cubic-bezier(0.23, 1, 0.32, 1)),
+      opacity 180ms var(--panel-ease, cubic-bezier(0.23, 1, 0.32, 1)),
+      background-color 220ms ease,
+      background 220ms ease,
+      border-color 220ms ease,
+      box-shadow 220ms ease;
+  }
+
+  html[data-theme-transition] .sidebar-rail {
+    transition:
+      width var(--panel-dur, 280ms)
+        var(--panel-ease, cubic-bezier(0.23, 1, 0.32, 1)),
+      background-color 220ms ease,
+      background 220ms ease;
+  }
+}
+
+* {
+  box-sizing: border-box;
+  scrollbar-width: none;
+}
+
+*::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  /* No background here on purpose. This layer is shared with the Quick Access
+     window, which is an OS-transparent webview: an opaque fill painted before
+     JS can stamp data-window/data-platform flashes a solid rectangle over the
+     vibrancy every time that window is built. The main window's opaque paint
+     lives in App.css, which only it imports. */
+  color: var(--ink);
+  /* Native desktop feel: chrome isn't selectable like a webpage. */
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+  font-synthesis: none;
+  text-size-adjust: 100%;
+  -webkit-text-size-adjust: 100%;
+}
+
+::selection {
+  background: var(--accent-mid);
+  color: var(--ink);
+}
+
+body {
+  font-size: var(--text-md);
+  line-height: var(--leading-default);
+  font-feature-settings:
+    "kern" 1,
+    "liga" 1;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+img,
+svg,
+canvas {
+  -webkit-user-drag: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Allow selecting/editing only in real content surfaces. */
+input,
+textarea,
+select,
+[contenteditable="true"],
+.user-select-text,
+.output-modal-body,
+.memories-inspector-detail textarea,
+.memories-inspector-detail input,
+.wf-node-input,
+.run-console-detail pre,
+.run-output-card pre,
+.wf-node-output-preview {
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
+}
+
+button,
+[role="button"],
+.workflow-item,
+.workflow-tab,
+.titlebar-activity,
+.titlebar-icon-btn {
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+button:focus:not(:focus-visible),
+input:focus:not(:focus-visible),
+textarea:focus:not(:focus-visible),
+select:focus:not(:focus-visible) {
+  outline: none;
+}
+
+:where(button, input, textarea, select, [role="button"]):focus-visible {
+  outline: 2px solid var(--focus-ring-color);
+  outline-offset: 2px;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+:where(button, input:not([type="checkbox"]), textarea, select) {
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+button {
+  cursor: pointer;
+  border: 1px solid var(--control-border);
+  background: var(--control-background);
+  color: var(--ink);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-md);
+  font-weight: var(--font-weight-regular);
+  line-height: var(--leading-compact);
+  transition:
+    background var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard),
+    transform var(--duration-fast) var(--ease-standard);
+}
+
+button:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--ink) 18%, transparent);
+  background: var(--control-background-hover);
+}
+
+button:active:not(:disabled) {
+  background: var(--control-background-pressed);
+  transform: translateY(1px);
+}
+
+button.primary {
+  background: var(--btn-primary);
+  border-color: var(--accent-strong);
+  color: var(--accent-ink);
+  font-weight: var(--font-weight-semibold);
+}
+
+button.primary:hover:not(:disabled) {
+  background: var(--btn-primary-hover);
+}
+
+button.ghost {
+  background: transparent;
+}
+
+button:disabled {
+  opacity: var(--disabled-opacity);
+  cursor: not-allowed;
+}
+
+button:disabled svg {
+  color: var(--icon-disabled);
+}
+
+.ui-select {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+  color: var(--icon-disabled);
+}
+
+.ui-select-input {
+  width: 100%;
+  min-width: 0;
+  height: var(--control-height-comfortable);
+  padding: 0 var(--space-8) 0 var(--space-2-5);
+  overflow: hidden;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-md);
+  background: var(--control-surface);
+  color: var(--ink);
+  font-size: var(--text-md);
+  font-weight: var(--font-weight-regular);
+  line-height: var(--leading-compact);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: var(--elevation-raised);
+  transition:
+    background var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard);
+}
+
+.ui-select-chevron {
+  position: absolute;
+  top: 50%;
+  right: var(--space-2);
+  width: var(--icon-size-compact);
+  height: var(--icon-size-compact);
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
+.ui-select-chevron svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.ui-select:hover .ui-select-input:not(:disabled) {
+  border-color: var(--accent-border);
+  background: var(--control-background-hover);
+}
+
+.ui-select-input:focus-visible {
+  border-color: var(--accent-border-loud);
+}
+
+.ui-select:focus-within {
+  color: var(--accent);
+}
+
+.ui-select-input:disabled {
+  opacity: var(--disabled-opacity);
+  cursor: not-allowed;
+}
+
+.ui-select.is-compact .ui-select-input {
+  height: var(--control-height-default);
+  padding-left: var(--space-2-5);
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-semibold);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

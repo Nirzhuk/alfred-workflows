@@ -24,7 +24,7 @@ type MenuSubContextValue = {
   contentId: string;
   triggerRef: React.RefObject<HTMLButtonElement | null>;
   contentRef: React.RefObject<HTMLDivElement | null>;
-  side: "left" | "right";
+  placement: SubmenuPlacement;
 };
 
 const MenuSubContext = createContext<MenuSubContextValue | null>(null);
@@ -68,6 +68,48 @@ export function MenuSubGroup({ children }: { children: ReactNode }) {
 
 const OPEN_DELAY_MS = 100;
 const CLOSE_DELAY_MS = 150;
+
+type SubmenuPlacementInput = {
+  triggerRight: number;
+  contentWidth: number;
+  contentTop: number;
+  contentHeight: number;
+  viewportWidth: number;
+  viewportHeight: number;
+};
+
+type SubmenuPlacement = {
+  side: "left" | "right";
+  maxHeight: number | null;
+  verticalShift: number;
+};
+
+export function getSubmenuPlacement({
+  triggerRight,
+  contentWidth,
+  contentTop,
+  contentHeight,
+  viewportWidth,
+  viewportHeight,
+}: SubmenuPlacementInput): SubmenuPlacement {
+  const edgePadding = 8;
+  const maxHeight = Math.max(0, viewportHeight - edgePadding * 2);
+  const visibleHeight = Math.min(contentHeight, maxHeight);
+  const maxTop = Math.max(
+    edgePadding,
+    viewportHeight - visibleHeight - edgePadding,
+  );
+  const top = Math.min(Math.max(edgePadding, contentTop), maxTop);
+
+  return {
+    side:
+      viewportWidth - triggerRight - edgePadding >= contentWidth
+        ? "right"
+        : "left",
+    maxHeight,
+    verticalShift: top - contentTop,
+  };
+}
 
 type MenuSubProps = {
   children: ReactNode;
@@ -139,27 +181,55 @@ export function MenuSub({ children, className }: MenuSubProps) {
     return () => window.removeEventListener("keydown", onKey, true);
   }, [isOpen, setOpen]);
 
-  const [side, setSide] = useState<"left" | "right">("right");
+  const [placement, setPlacement] = useState<SubmenuPlacement>({
+    side: "right",
+    maxHeight: null,
+    verticalShift: 0,
+  });
+  const placementRef = useRef(placement);
 
   useLayoutEffect(() => {
     if (!isOpen) return;
-    const trigger = triggerRef.current;
-    const content = contentRef.current;
-    if (!trigger) return;
 
-    const triggerRect = trigger.getBoundingClientRect();
-    const contentWidth = content?.offsetWidth || 180;
-    const pad = 8;
-    const spaceRight = window.innerWidth - triggerRect.right - pad;
-    setSide(spaceRight >= contentWidth ? "right" : "left");
+    const updatePosition = () => {
+      const trigger = triggerRef.current;
+      const content = contentRef.current;
+      if (!trigger || !content) return;
 
-    // Remeasure after paint once content size is accurate.
-    const frame = requestAnimationFrame(() => {
-      const width = contentRef.current?.offsetWidth || contentWidth;
-      const right = window.innerWidth - trigger.getBoundingClientRect().right - pad;
-      setSide(right >= width ? "right" : "left");
-    });
-    return () => cancelAnimationFrame(frame);
+      const current = placementRef.current;
+      const triggerRect = trigger.getBoundingClientRect();
+      const contentRect = content.getBoundingClientRect();
+      const next = getSubmenuPlacement({
+        triggerRight: triggerRect.right,
+        contentWidth: content.offsetWidth || 180,
+        contentTop: contentRect.top - current.verticalShift,
+        contentHeight: content.scrollHeight,
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight,
+      });
+
+      placementRef.current = next;
+      setPlacement((previous) =>
+        previous.side === next.side &&
+        previous.maxHeight === next.maxHeight &&
+        previous.verticalShift === next.verticalShift
+          ? previous
+          : next,
+      );
+    };
+
+    updatePosition();
+    const frame = requestAnimationFrame(updatePosition);
+    const observer = new ResizeObserver(updatePosition);
+    observer.observe(contentRef.current!);
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
   }, [isOpen]);
 
   const value = useMemo(
@@ -170,9 +240,9 @@ export function MenuSub({ children, className }: MenuSubProps) {
       contentId,
       triggerRef,
       contentRef,
-      side,
+      placement,
     }),
-    [isOpen, setOpen, triggerId, contentId, side],
+    [isOpen, setOpen, triggerId, contentId, placement],
   );
 
   return (
@@ -180,7 +250,7 @@ export function MenuSub({ children, className }: MenuSubProps) {
       <div
         className={cx("ui-menu-sub", className)}
         data-state={isOpen ? "open" : "closed"}
-        data-side={side}
+        data-side={placement.side}
         onMouseEnter={scheduleOpen}
         onMouseLeave={scheduleClose}
       >
@@ -240,9 +310,10 @@ type SubContentProps = HTMLAttributes<HTMLDivElement>;
 export function MenuSubContent({
   className,
   children,
+  style,
   ...rest
 }: SubContentProps) {
-  const { open, contentId, triggerId, contentRef, side } = useMenuSub();
+  const { open, contentId, triggerId, contentRef, placement } = useMenuSub();
 
   if (!open) return null;
 
@@ -252,8 +323,13 @@ export function MenuSubContent({
       id={contentId}
       role="menu"
       aria-labelledby={triggerId}
-      data-side={side}
+      data-side={placement.side}
       className={cx("ui-menu", "ui-menu-sub-content", className)}
+      style={{
+        ...style,
+        maxHeight: placement.maxHeight ?? undefined,
+        transform: `translateY(${placement.verticalShift}px)`,
+      }}
       onMouseDown={(e) => e.stopPropagation()}
       {...rest}
     >

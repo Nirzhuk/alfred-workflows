@@ -156,23 +156,52 @@ fn configure_always_on_top(window: &WebviewWindow, enabled: bool) -> tauri::Resu
     window.set_always_on_top(enabled)
 }
 
-pub fn install(app: &AppHandle) -> tauri::Result<()> {
+fn initial_size(layout: QuickAccessLayout) -> (f64, f64) {
+    match layout {
+        QuickAccessLayout::Hover => (COLLAPSED_WIDTH, COLLAPSED_HEIGHT),
+        QuickAccessLayout::Compact => (COMPACT_WIDTH, COMPACT_HEIGHT),
+        QuickAccessLayout::Expanded => (EXPANDED_WIDTH, EXPANDED_HEIGHT),
+    }
+}
+
+/// The popover boots from its URL, so a window built already expanded does not
+/// need a `quick-access://open` event it could not yet be listening for.
+fn initial_url(layout: QuickAccessLayout) -> &'static str {
+    match layout {
+        QuickAccessLayout::Expanded => "index.html?window=quick-access&expanded=1",
+        _ => "index.html?window=quick-access",
+    }
+}
+
+/// Build the popover webview at `layout`.
+///
+/// This window is a second WebContent process, so it is built on demand — when
+/// the preference is switched on, or when the shortcut/tray asks for it — never
+/// at startup. Idempotent: an existing window always wins.
+fn install_layout(app: &AppHandle, layout: QuickAccessLayout) -> tauri::Result<()> {
     if app.get_webview_window(WINDOW_LABEL).is_some() {
         return Ok(());
     }
 
+    let (width, height) = initial_size(layout);
     let window = WebviewWindowBuilder::new(
         app,
         WINDOW_LABEL,
-        WebviewUrl::App("index.html?window=quick-access".into()),
+        WebviewUrl::App(initial_url(layout).into()),
     )
     .title("Alfred Quick Access")
-    .inner_size(COLLAPSED_WIDTH, COLLAPSED_HEIGHT)
+    .inner_size(width, height)
     .resizable(false)
     .minimizable(false)
     .maximizable(false)
     .closable(false)
     .decorations(false)
+    // Built hidden. `place_window` below runs AFTER `build()`, so a visible
+    // builder paints the window at its default position with no rounded
+    // material yet, then jumps to the screen edge — invisible when this ran at
+    // startup, a flicker now that the window is built on first use. The callers
+    // (`show_expanded`, `set_quick_access_enabled`) show it once it is placed.
+    .visible(false)
     .transparent(cfg!(target_os = "macos"))
     .shadow(false)
     .always_on_top(true)
@@ -190,19 +219,33 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
         eprintln!("native Quick Access material could not be applied: {error}");
     }
 
-    place_window(&window, QuickAccessLayout::Hover, None)?;
+    place_window(&window, layout, None)?;
     configure_fullscreen_companion(&window, true)?;
     configure_always_on_top(&window, true)?;
     Ok(())
 }
 
+fn ensure_window(app: &AppHandle, layout: QuickAccessLayout) -> tauri::Result<WebviewWindow> {
+    install_layout(app, layout)?;
+    app.get_webview_window(WINDOW_LABEL)
+        .ok_or(tauri::Error::WindowNotFound)
+}
+
 pub(crate) fn show_expanded(app: &AppHandle) -> tauri::Result<()> {
-    let window = app
-        .get_webview_window(WINDOW_LABEL)
-        .ok_or(tauri::Error::WindowNotFound)?;
-    let position = window
-        .outer_position()
-        .ok()
+    // Safety net for the global shortcut and the tray item: the window is built
+    // lazily now, so it can legitimately be missing — the preference may be off,
+    // or the main window may never have booted to sync it.
+    let existing = app.get_webview_window(WINDOW_LABEL);
+    let was_running = existing.is_some();
+    let window = match existing {
+        Some(window) => window,
+        None => ensure_window(app, QuickAccessLayout::Expanded)?,
+    };
+    // A window that just came up is already at the anchored default; only a
+    // window the user has moved has a position worth honoring.
+    let position = was_running
+        .then(|| window.outer_position().ok())
+        .flatten()
         .map(|position| QuickAccessPosition {
             x: position.x,
             y: position.y,
@@ -210,7 +253,11 @@ pub(crate) fn show_expanded(app: &AppHandle) -> tauri::Result<()> {
     place_window(&window, QuickAccessLayout::Expanded, position)?;
     window.show()?;
     window.set_focus()?;
-    window.emit("quick-access://open", ())?;
+    if was_running {
+        // A freshly built webview has no listeners yet, so this event would be
+        // dropped; it boots expanded from `?expanded=1` instead.
+        window.emit("quick-access://open", ())?;
+    }
     Ok(())
 }
 
@@ -226,9 +273,11 @@ pub fn set_quick_access_expanded(
     mode: String,
     position: Option<QuickAccessPosition>,
 ) -> Result<(), String> {
-    let window = app
-        .get_webview_window(WINDOW_LABEL)
-        .ok_or_else(|| "quick access window is unavailable".to_string())?;
+    // Only the popover itself calls this, so a missing window means it was torn
+    // down mid-gesture. There is nothing left to resize and nothing to report.
+    let Some(window) = app.get_webview_window(WINDOW_LABEL) else {
+        return Ok(());
+    };
     let layout = if expanded {
         QuickAccessLayout::Expanded
     } else {
@@ -245,20 +294,26 @@ pub fn set_quick_access_enabled(
     mode: String,
     position: Option<QuickAccessPosition>,
 ) -> Result<(), String> {
-    let window = app
-        .get_webview_window(WINDOW_LABEL)
-        .ok_or_else(|| "quick access window is unavailable".to_string())?;
-
-    if enabled {
-        let layout = collapsed_layout(&mode)?;
-        let position = if mode == "compact" { position } else { None };
-        place_window(&window, layout, position).map_err(|error| error.to_string())?;
-        window.show().map_err(|error| error.to_string())?;
-    } else {
+    if !enabled {
+        // Hiding left the webview's WebContent process resident for the whole
+        // session, so a user who never wanted Quick Access still paid for it.
+        // Destroying hands that memory back; switching it on rebuilds instead.
+        // `destroy` rather than `close`, because the app-wide CloseRequested
+        // handler prevents closes and merely hides the window.
+        let Some(window) = app.get_webview_window(WINDOW_LABEL) else {
+            return Ok(());
+        };
         let _ = window.emit("quick-access://reset", ());
-        window.hide().map_err(|error| error.to_string())?;
+        return window.destroy().map_err(|error| error.to_string());
     }
-    Ok(())
+
+    // Reject an unknown mode before building anything, so a bad call cannot
+    // leave a half-configured window behind.
+    let layout = collapsed_layout(&mode)?;
+    let position = if mode == "compact" { position } else { None };
+    let window = ensure_window(&app, layout).map_err(|error| error.to_string())?;
+    place_window(&window, layout, position).map_err(|error| error.to_string())?;
+    window.show().map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -267,10 +322,14 @@ pub fn set_quick_access_mode(
     mode: String,
     position: Option<QuickAccessPosition>,
 ) -> Result<(), String> {
-    let window = app
-        .get_webview_window(WINDOW_LABEL)
-        .ok_or_else(|| "quick access window is unavailable".to_string())?;
     let layout = collapsed_layout(&mode)?;
+    // The preference lives in the frontend and is pushed on boot before the
+    // window may exist. Staying quiet is correct: `set_quick_access_enabled`
+    // places the window for this mode when it builds it, and the popover reads
+    // the mode from storage on mount, so nothing is lost by skipping the emit.
+    let Some(window) = app.get_webview_window(WINDOW_LABEL) else {
+        return Ok(());
+    };
     let position = if mode == "compact" { position } else { None };
     place_window(&window, layout, position).map_err(|error| error.to_string())?;
     window
@@ -280,9 +339,11 @@ pub fn set_quick_access_mode(
 
 #[tauri::command]
 pub fn set_quick_access_always_on_top(app: AppHandle, enabled: bool) -> Result<(), String> {
-    let window = app
-        .get_webview_window(WINDOW_LABEL)
-        .ok_or_else(|| "quick access window is unavailable".to_string())?;
+    // Quiet no-op while Quick Access is off. The frontend re-applies this
+    // preference right after the window is built, so nothing drifts.
+    let Some(window) = app.get_webview_window(WINDOW_LABEL) else {
+        return Ok(());
+    };
     configure_always_on_top(&window, enabled).map_err(|error| error.to_string())?;
     window
         .emit("quick-access://pin", enabled)
@@ -291,9 +352,11 @@ pub fn set_quick_access_always_on_top(app: AppHandle, enabled: bool) -> Result<(
 
 #[tauri::command]
 pub fn set_quick_access_fullscreen(app: AppHandle, enabled: bool) -> Result<(), String> {
-    let window = app
-        .get_webview_window(WINDOW_LABEL)
-        .ok_or_else(|| "quick access window is unavailable".to_string())?;
+    // Quiet no-op while Quick Access is off, for the same reason as the pin
+    // above: there is no window to configure and the user asked for none.
+    let Some(window) = app.get_webview_window(WINDOW_LABEL) else {
+        return Ok(());
+    };
     window
         .set_visible_on_all_workspaces(enabled)
         .map_err(|error| error.to_string())?;
@@ -306,6 +369,8 @@ pub fn open_quick_access_target(
     target: String,
     workflow_id: Option<String>,
 ) -> Result<(), String> {
+    // Window-independent by construction: this only raises the main window and
+    // routes an app event, so lazy creation cannot reach it. Left as-is.
     crate::tray::show_main_window(&app);
     match target.as_str() {
         "app" => Ok(()),
@@ -326,6 +391,45 @@ pub fn open_quick_access_target(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn expanded_boot_carries_its_state_in_the_url() {
+        // The shortcut can build this window from cold. A `quick-access://open`
+        // emit would land before the webview has listeners, so the expanded
+        // state has to travel in the URL the webview loads.
+        assert_eq!(
+            initial_url(QuickAccessLayout::Expanded),
+            "index.html?window=quick-access&expanded=1"
+        );
+        for layout in [QuickAccessLayout::Hover, QuickAccessLayout::Compact] {
+            assert_eq!(initial_url(layout), "index.html?window=quick-access");
+        }
+    }
+
+    #[test]
+    fn a_lazily_built_window_opens_at_its_final_size() {
+        // Building at the collapsed size and resizing afterwards would flash a
+        // 24x72 sliver before the popover appeared.
+        assert_eq!(
+            initial_size(QuickAccessLayout::Expanded),
+            (EXPANDED_WIDTH, EXPANDED_HEIGHT)
+        );
+        assert_eq!(
+            initial_size(QuickAccessLayout::Compact),
+            (COMPACT_WIDTH, COMPACT_HEIGHT)
+        );
+        assert_eq!(
+            initial_size(QuickAccessLayout::Hover),
+            (COLLAPSED_WIDTH, COLLAPSED_HEIGHT)
+        );
+    }
+
+    #[test]
+    fn an_unknown_mode_is_rejected_before_a_window_is_built() {
+        assert!(collapsed_layout("nonsense").is_err());
+        assert_eq!(collapsed_layout("hover"), Ok(QuickAccessLayout::Hover));
+        assert_eq!(collapsed_layout("compact"), Ok(QuickAccessLayout::Compact));
+    }
 
     #[test]
     fn quick_access_sizes_scale_for_retina_displays() {

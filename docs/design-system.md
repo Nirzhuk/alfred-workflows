@@ -2,7 +2,27 @@
 
 This document is the source of truth for Alfred's visual language. It keeps the
 desktop app quiet, legible, and consistent. The canonical implementation lives
-in the semantic custom properties at the top of `src/App.css`.
+in the semantic custom properties in `src/styles/tokens.css`.
+
+## Where the stylesheet lives
+
+The design system is one system served from four files. The split exists so a
+second window does not have to parse the main window's component rules to use
+the tokens; nothing about the cascade changes, because `src/App.css` imports the
+first two before anything else.
+
+| File | Holds | Imported by |
+| --- | --- | --- |
+| `src/styles/tokens.css` | The bundled `@font-face` rules, the `:root` token block, and the `[data-theme="dark"]` overrides. Nothing here paints. | every window |
+| `src/styles/base.css` | The reset, the document surface, the focus ring, the shared `button` and `SelectControl` chrome, and the reduced-motion rules. Resolves tokens; never defines them. | every window |
+| `src/App.css` | Every component rule for the main window. | the main window |
+| `src/features/quick-access/quick-access.css` | Every rule for the Quick Access popover. | the Quick Access window |
+
+Add a new token to `:root` in `src/styles/tokens.css` and document it here. Add
+a shared reset or control primitive to `src/styles/base.css`. Feature rules stay
+with their feature or in `src/App.css` — do not put a component rule in the base
+layer to make it reachable from another window; give that window its own
+stylesheet that imports the tokens and the base, as Quick Access does.
 
 ## Principles
 
@@ -391,6 +411,11 @@ identified by the loud accent border and the accent dot, not by a heavier fill.
   dense desktop chrome such as the compact Quick Access window.
 - The caller owns layout width; the component owns height, padding, typography,
   border, focus, hover, and disabled states.
+- All field-style controls share one face: the `--control-surface` gradient
+  over `--control-border` and `--radius-md`, lifted by `--elevation-raised`.
+  Select-like popover triggers (such as the model picker trigger) reuse that
+  face, the comfortable control height, and the same hover/focus states as
+  `SelectControl`, so every select in the app reads as one physical control.
 
 ### Cards and dialogs
 
@@ -405,6 +430,10 @@ identified by the loud accent border and the accent dot, not by a heavier fill.
   workflow tools use a shared Phosphor icon tile.
 - Dialog titles use 24px/600. Header descriptions use 14px/400 and should
   explain the decision or task instead of repeating a category label.
+- Modal headers close with the shared X icon button: `ghost modal-close-button`
+  carrying the 16px Phosphor `x` icon and `aria-label="Close"`. Never use a
+  labeled Done/OK pill as a modal's close affordance; a decision that needs
+  explicit confirmation gets a real action button in the body instead.
 - Dialog headers use the raised surface and bodies use the card surface. Inputs
   and nested controls step up to the raised surface. Emerald is reserved for
   focus and the primary decision.
@@ -448,7 +477,8 @@ identified by the loud accent border and the accent dot, not by a heavier fill.
 ## Implementation and review
 
 1. Reuse an existing token or shared component before adding a literal.
-2. Add repeated decisions to `:root` and document them here.
+2. Add repeated decisions to `:root` in `src/styles/tokens.css` and document
+   them here.
 3. Do not duplicate a token under a feature-specific name.
 4. Compare related surfaces at the same viewport and theme.
 5. Run `bun test`, `bun run build:frontend`, and `git diff --check`.

@@ -1,7 +1,47 @@
 import { describe, expect, test } from "bun:test";
 
 const root = new URL("../", import.meta.url);
-const css = await Bun.file(new URL("src/App.css", root)).text();
+
+// The design system is one system served from four files, split so a second
+// window can take the tokens and the base without parsing the main window's
+// component rules. Every rule below still applies to all of them, so they are
+// read together and scanned together.
+const CSS_FILES = [
+  "src/styles/tokens.css",
+  "src/styles/base.css",
+  "src/App.css",
+  "src/features/quick-access/quick-access.css",
+] as const;
+
+const cssSources = await Promise.all(
+  CSS_FILES.map(async (path) => ({
+    path,
+    text: await Bun.file(new URL(path, root)).text(),
+  })),
+);
+const cssByPath = new Map(cssSources.map(({ path, text }) => [path, text]));
+// Prettier reflows long selector lists and declaration values across several
+// lines. Every contract below is about what a rule says, not where it wraps, so
+// each logical line is rejoined before matching — otherwise a pure reformat
+// fails a rule that is completely intact. The per-file scans that report line
+// numbers read `cssSources` directly and are unaffected.
+function unwrap(text: string): string {
+  const lines: string[] = [];
+  let buffer = "";
+  for (const line of text.split("\n")) {
+    const trimmed = line.trim();
+    buffer = buffer === "" ? line : `${buffer} ${trimmed}`;
+    if (trimmed === "" || /[{};]$/.test(trimmed) || trimmed.endsWith("*/")) {
+      lines.push(buffer);
+      buffer = "";
+    }
+  }
+  if (buffer !== "") lines.push(buffer);
+  return lines.join("\n");
+}
+
+const css = unwrap(cssSources.map(({ text }) => text).join("\n"));
+
 const designSystem = await Bun.file(new URL("docs/design-system.md", root)).text();
 const specs = await Bun.file(new URL("specs.md", root)).text();
 const claudeRule = await Bun.file(
@@ -30,9 +70,15 @@ const flowEditor = await Bun.file(
 ).text();
 
 function cssBlock(selector: string): string {
-  const marker = `${selector} {`;
-  const lineStart = css.indexOf(`\n${marker}`);
-  const start = lineStart >= 0 ? lineStart + 1 : css.startsWith(marker) ? 0 : -1;
+  // Callers may pass a wrapped selector list; match it the way `unwrap` joins.
+  const marker = `${selector.replace(/\s*\n\s*/g, " ")} {`;
+  // A selector opens a rule when it starts a line or follows a comma in a
+  // selector list. It must never match as the tail of a longer compound
+  // selector (`.a .sidebar-nav {` is not `.sidebar-nav {`), which is why this
+  // is anchored rather than a bare indexOf.
+  const escaped = marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const found = new RegExp(`(?:^|\\n|, )${escaped}`).exec(css);
+  const start = found ? found.index + found[0].length - marker.length : -1;
   expect(start).toBeGreaterThan(-1);
   return css.slice(start, css.indexOf("}", start));
 }
@@ -40,6 +86,17 @@ function cssBlock(selector: string): string {
 describe("design-system foundations", () => {
   test("prefers Infer and bundles its Geist fallbacks without a runtime font request", async () => {
     expect(css).not.toContain("@import url(");
+    // The split introduced @import. Keep every one of them a relative, local,
+    // build-time import — nothing that resolves over the network at runtime.
+    for (const { path, text } of cssSources) {
+      for (const [, target] of text.matchAll(/@import\s+"([^"]+)"/g)) {
+        expect([path, target, target.startsWith(".")]).toEqual([
+          path,
+          target,
+          true,
+        ]);
+      }
+    }
     expect(css).toContain('font-family: "Geist";');
     expect(css).toContain('font-family: "Geist Mono";');
     expect(css).toContain('--font-sans: "Infer", "Geist"');
@@ -159,15 +216,17 @@ describe("design-system foundations", () => {
     // and 0.45rem (7.2px) sit between steps, so the UI grows a private scale
     // that no token describes. Unique geometry stays literal but must say so
     // with a `geometry:` comment on the line above.
-    const lines = css.split("\n");
     const offenders = (label: string, pattern: RegExp) =>
-      lines
-        .map((line, index) => ({ line, index }))
-        .filter(
-          ({ line, index }) =>
-            pattern.test(line) && !/geometry:/.test(lines[index - 1] ?? ""),
-        )
-        .map(({ line, index }) => `${label} src/App.css:${index + 1}: ${line.trim()}`);
+      cssSources.flatMap(({ path, text }) => {
+        const lines = text.split("\n");
+        return lines
+          .map((line, index) => ({ line, index }))
+          .filter(
+            ({ line, index }) =>
+              pattern.test(line) && !/geometry:/.test(lines[index - 1] ?? ""),
+          )
+          .map(({ line, index }) => `${label} ${path}:${index + 1}: ${line.trim()}`);
+      });
 
     const found = [
       ...offenders("type", /^\s*font-size:\s*[0-9.]+(rem|px|em)/),
@@ -220,17 +279,19 @@ describe("design-system foundations", () => {
     // Raw color fills outside the token blocks. A fill that genuinely must not
     // follow the theme (a scannable QR plate, an always-white logo tile) says
     // so with a `theme-exempt:` comment, the same escape hatch as `geometry:`.
-    const lines = css.split("\n");
-    const rawFills = lines
-      .map((line, index) => ({ line, index }))
-      .filter(
-        ({ line, index }) =>
-          /^\s*background(-color)?:\s*(#|rgba?\()/.test(line) &&
-          !/theme-exempt:/.test(
-            lines.slice(Math.max(0, index - 4), index).join("\n"),
-          ),
-      )
-      .map(({ line, index }) => `src/App.css:${index + 1}: ${line.trim()}`);
+    const rawFills = cssSources.flatMap(({ path, text }) => {
+      const lines = text.split("\n");
+      return lines
+        .map((line, index) => ({ line, index }))
+        .filter(
+          ({ line, index }) =>
+            /^\s*background(-color)?:\s*(#|rgba?\()/.test(line) &&
+            !/theme-exempt:/.test(
+              lines.slice(Math.max(0, index - 4), index).join("\n"),
+            ),
+        )
+        .map(({ line, index }) => `${path}:${index + 1}: ${line.trim()}`);
+    });
     expect(rawFills).toEqual([]);
   });
 });
@@ -439,6 +500,43 @@ describe("shared component contracts", () => {
       expect(feature).toContain("<SelectControl");
       expect(feature).not.toContain("<select");
     }
+  });
+});
+
+describe("stylesheet split", () => {
+  const fileText = (path: (typeof CSS_FILES)[number]) =>
+    cssByPath.get(path) as string;
+
+  test("keeps the popover off the main window's stylesheet", () => {
+    // Quick Access runs in its own webview process. Importing App.css made it
+    // parse the entire design system to render about thirty class names, and
+    // that process is now built lazily precisely so it costs nothing when the
+    // feature is off — loading the whole sheet would undo half of that.
+    expect(quickAccessPopover).toContain('import "./quick-access.css"');
+    expect(quickAccessPopover).not.toContain("App.css");
+
+    const popoverCss = fileText("src/features/quick-access/quick-access.css");
+    expect(popoverCss).toContain('@import "../../styles/tokens.css"');
+    expect(popoverCss).toContain('@import "../../styles/base.css"');
+    expect(popoverCss).toContain(".quick-access-shell {");
+  });
+
+  test("gives the tokens one home that every window imports", () => {
+    // A second `:root` block is how two windows quietly drift apart.
+    const tokens = fileText("src/styles/tokens.css");
+    expect(tokens).toContain(":root {");
+    expect(tokens).toContain('[data-theme="dark"] {');
+
+    const app = fileText("src/App.css");
+    expect(app).toContain('@import "./styles/tokens.css"');
+    expect(app).toContain('@import "./styles/base.css"');
+    for (const path of CSS_FILES) {
+      if (path === "src/styles/tokens.css") continue;
+      expect([path, fileText(path).includes(":root {")]).toEqual([path, false]);
+    }
+
+    // The base layer resolves tokens; it must never define them.
+    expect(fileText("src/styles/base.css")).not.toMatch(/^\s*--[a-z-]+:/m);
   });
 });
 

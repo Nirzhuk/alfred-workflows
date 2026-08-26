@@ -26,7 +26,13 @@ import {
   saveQuickAccessPosition,
   type QuickAccessMode,
 } from "./preferences";
-import "../../App.css";
+import "./quick-access.css";
+
+// Rust can build this window already expanded (global shortcut or tray on a
+// cold start). A `quick-access://open` event would be emitted before this
+// webview has registered any listener, so the state travels in the URL instead.
+const BOOTED_EXPANDED =
+  new URLSearchParams(window.location.search).get("expanded") === "1";
 
 const CLOSE_DELAY_MS = 160;
 const EXIT_DURATION_MS = 160;
@@ -97,7 +103,7 @@ function GripIcon() {
 }
 
 export function QuickAccessPopover() {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(BOOTED_EXPANDED);
   const [mode, setMode] = useState<QuickAccessMode>(readQuickAccessMode);
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [schedules, setSchedules] = useState<ScheduleListItem[]>([]);
@@ -109,7 +115,7 @@ export function QuickAccessPopover() {
   const closeTimer = useRef<number | null>(null);
   const shrinkTimer = useRef<number | null>(null);
   const positionSaveTimer = useRef<number | null>(null);
-  const nativeExpanded = useRef(false);
+  const nativeExpanded = useRef(BOOTED_EXPANDED);
   const hideAfterCollapse = useRef(false);
 
   const clearTimers = useCallback(() => {
@@ -190,6 +196,15 @@ export function QuickAccessPopover() {
   }, [collapse]);
 
   useEffect(() => installThemeListeners(), []);
+
+  useEffect(() => {
+    if (!BOOTED_EXPANDED) return;
+    // Match what the `quick-access://open` listener does for a window that was
+    // already running: if the preference is off, this window was opened only
+    // for this shortcut press and should be torn down again on collapse.
+    hideAfterCollapse.current = !readQuickAccessEnabled();
+    void refresh();
+  }, [refresh]);
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;

@@ -144,9 +144,14 @@ export async function syncQuickAccessPreference(): Promise<void> {
     alwaysOnTop,
   });
   try {
-    await invoke("set_quick_access_mode", { mode, position });
+    // Enabled goes first and alone: the window is built lazily now, so this is
+    // the call that creates it. The rest are quiet no-ops until it exists, and
+    // racing them against creation would leave the new window on the defaults
+    // it was built with rather than the user's stored preferences.
+    await invoke("set_quick_access_enabled", { enabled, mode, position });
+    if (!enabled) return;
     await Promise.all([
-      invoke("set_quick_access_enabled", { enabled, mode, position }),
+      invoke("set_quick_access_mode", { mode, position }),
       invoke("set_quick_access_fullscreen", { enabled: showInFullscreen }),
       invoke("set_quick_access_always_on_top", { enabled: alwaysOnTop }),
     ]);
@@ -166,11 +171,25 @@ export const useQuickAccessPreferences = create<QuickAccessPreferences>(
       set({ enabled, busy: true });
       persistQuickAccessEnabled(enabled);
       try {
+        const state = useQuickAccessPreferences.getState();
         await invoke("set_quick_access_enabled", {
           enabled,
-          mode: useQuickAccessPreferences.getState().mode,
+          mode: state.mode,
           position: readQuickAccessPosition(),
         });
+        if (enabled) {
+          // Switching off destroys the window, so switching back on builds a
+          // brand-new one on Rust-side defaults. Re-apply the preferences the
+          // rebuilt window has no way to know about.
+          await Promise.all([
+            invoke("set_quick_access_fullscreen", {
+              enabled: state.showInFullscreen,
+            }),
+            invoke("set_quick_access_always_on_top", {
+              enabled: state.alwaysOnTop,
+            }),
+          ]);
+        }
       } catch (error) {
         console.warn("Failed to update screen-edge quick access", error);
       } finally {

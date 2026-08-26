@@ -2,7 +2,15 @@ import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { SidebarFolderContext } from "../src/features/workflow/components/sidebar-folder-context";
 
-const css = await Bun.file(new URL("../src/App.css", import.meta.url)).text();
+// Tokens live in src/styles/tokens.css and App.css imports them; the duration
+// this component mirrors is a token, so both files are read here.
+const css = (
+  await Promise.all(
+    ["../src/styles/tokens.css", "../src/App.css"].map((path) =>
+      Bun.file(new URL(path, import.meta.url)).text(),
+    ),
+  )
+).join("\n");
 const component = await Bun.file(
   new URL(
     "../src/features/workflow/components/sidebar-folder-context/sidebar-folder-context.tsx",

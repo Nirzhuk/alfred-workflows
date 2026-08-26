@@ -64,3 +64,11 @@ keyring-core = "1"
 objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSGraphics", "NSResponder", "NSView", "NSWindow", "objc2-core-foundation"] }
 objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSGeometry"] }
 window-vibrancy = "0.6"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
+# ponytail: panic stays "unwind" on purpose. runner/ and agents/ spawn worker
+# threads per agent process; today a panic there kills the thread and the run
+# recovers. panic = "abort" would take the whole app down with it.

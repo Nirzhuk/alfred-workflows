@@ -1,0 +1,518 @@
+/* Quick Access popover.
+
+   This popover lives in its own webview process and renders about thirty class
+   names, so it deliberately does not import App.css — it takes the tokens and
+   the shared base and nothing else. Rules that belong to the popover live here,
+   not in App.css. */
+
+@import "../../styles/tokens.css";
+@import "../../styles/base.css";
+
+html[data-window="quick-access"],
+html[data-window="quick-access"] body,
+html[data-window="quick-access"] #root {
+  background: var(--surface-panel-opaque) !important;
+  background-image: none !important;
+  overflow: hidden;
+}
+
+html[data-platform="macos"][data-window="quick-access"],
+html[data-platform="macos"][data-window="quick-access"] body,
+html[data-platform="macos"][data-window="quick-access"] #root {
+  background: transparent !important;
+  background-image: none !important;
+  overflow: hidden;
+}
+
+.quick-access-shell {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  color: var(--ink);
+}
+
+.quick-access-edge {
+  position: absolute;
+  z-index: var(--layer-raised);
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  /* theme-exempt: nonzero alpha is visually empty but keeps a transparent
+     webview hit-testable; a themed fill would make the overlay visible. */
+  background: rgba(0, 0, 0, 0.001);
+  box-shadow: none;
+}
+
+.quick-access-edge:hover:not(:disabled) {
+  border-color: transparent;
+  /* theme-exempt: nonzero alpha is visually empty but keeps a transparent
+     webview hit-testable; a themed fill would make the overlay visible. */
+  background: rgba(0, 0, 0, 0.001);
+}
+
+.quick-access-edge:active:not(:disabled) {
+  transform: none;
+}
+
+.quick-access-shell[data-expanded="true"] .quick-access-edge {
+  pointer-events: none;
+}
+
+.quick-access-compact {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) 32px 28px;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: var(--space-1) var(--space-1);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xl);
+  background: var(--surface-panel-opaque);
+  box-shadow: none;
+}
+
+.quick-access-compact button {
+  margin: 0;
+}
+
+.quick-access-compact-drag {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: var(--space-0-5) var(--space-1);
+  color: var(--ink);
+  text-align: left;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.quick-access-compact-drag:active {
+  cursor: grabbing;
+}
+
+.quick-access-compact-grip {
+  width: 7px;
+  flex: 0 0 7px;
+  color: var(--muted);
+  opacity: 0.58;
+}
+
+.quick-access-compact-grip svg {
+  display: block;
+  width: 7px;
+  height: 14px;
+}
+
+.quick-access-compact-drag > span:last-child {
+  display: grid;
+  gap: var(--space-0-5);
+}
+
+.quick-access-compact-drag strong,
+.quick-access-compact-drag small {
+  white-space: nowrap;
+}
+
+.quick-access-compact-drag strong {
+  font-size: var(--text-sm);
+  line-height: 1.1;
+}
+
+.quick-access-compact-drag small {
+  color: var(--muted);
+  font-size: var(--text-xs);
+  line-height: 1.1;
+}
+
+.quick-access-compact-picker {
+  min-width: 0;
+}
+
+.quick-access-compact-picker .ui-select {
+  width: 100%;
+}
+
+.quick-access-compact-run,
+.quick-access-compact-expand {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 32px;
+  padding: 0;
+  border-radius: var(--radius-md);
+}
+
+.quick-access-compact-run {
+  border-color: var(--accent-border);
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.quick-access-compact-run:hover:not(:disabled) {
+  border-color: var(--accent-strong);
+  background: var(--accent-strong);
+}
+
+.quick-access-compact-expand {
+  background: var(--surface);
+  color: var(--muted);
+}
+
+.quick-access-compact-run svg,
+.quick-access-compact-expand svg {
+  width: 15px;
+  height: 15px;
+}
+
+.quick-access-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.quick-access-panel {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xl);
+  background: var(--surface-panel-opaque);
+  /* Large shadows clip into a dark rectangle at transparent webview bounds. */
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateX(calc(100% + 12px));
+  transform-origin: top right;
+  transition:
+    opacity 150ms ease,
+    transform 150ms cubic-bezier(0.19, 1, 0.22, 1),
+    visibility 0s linear 150ms;
+}
+
+html[data-platform="macos"] .quick-access-compact,
+html[data-platform="macos"] .quick-access-panel {
+  background: color-mix(in srgb, var(--surface-panel) 60%, transparent);
+  -webkit-backdrop-filter: blur(32px) saturate(1.16);
+  backdrop-filter: blur(32px) saturate(1.16);
+}
+
+.quick-access-shell[data-expanded="true"] .quick-access-panel {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: translateX(0);
+  transition:
+    opacity 220ms ease,
+    transform 220ms cubic-bezier(0.19, 1, 0.22, 1),
+    visibility 0s;
+}
+
+.quick-access-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-4) var(--space-3);
+  border-bottom: 1px solid var(--line);
+}
+
+.quick-access-kicker {
+  margin: 0 0 var(--space-0-5);
+  color: var(--accent);
+  font-size: var(--text-xs);
+  font-family: var(--font-mono);
+  font-weight: var(--font-weight-bold);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.quick-access-header h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: -0.02em;
+}
+
+.quick-access-open-app {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 40px;
+  padding: var(--space-1-5) var(--space-2) var(--space-1-5) var(--space-3);
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-semibold);
+}
+
+.quick-access-open-app svg,
+.quick-access-schedule-row > svg,
+.quick-access-run svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.quick-access-content {
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+  padding: var(--space-3);
+}
+
+.quick-access-section + .quick-access-section {
+  margin-top: var(--space-4);
+}
+
+.quick-access-section-heading {
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-1-5);
+  padding: 0 var(--space-0-5);
+}
+
+.quick-access-section-heading h2 {
+  margin: 0;
+  font-size: var(--text-xs);
+  font-weight: var(--font-weight-bold);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.quick-access-section-heading > span {
+  color: var(--muted);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.quick-access-section-heading button {
+  min-height: 28px;
+  padding: var(--space-1) var(--space-1-5);
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font-size: var(--text-xs);
+  font-weight: var(--font-weight-semibold);
+}
+
+.quick-access-schedule-list,
+.quick-access-workflow-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.quick-access-schedule-row,
+.quick-access-workflow-row {
+  width: 100%;
+  min-height: 52px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface-card);
+}
+
+.quick-access-schedule-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2-5);
+  padding: var(--space-2);
+  text-align: left;
+}
+
+.quick-access-schedule-icon {
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.quick-access-schedule-icon svg {
+  width: 17px;
+  height: 17px;
+}
+
+.quick-access-row-copy {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-0-5);
+}
+
+.quick-access-row-copy strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-semibold);
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quick-access-row-copy span {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: var(--text-xs);
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quick-access-workflow-row {
+  display: flex;
+  align-items: stretch;
+  overflow: hidden;
+}
+
+.quick-access-workflow-open {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  padding: var(--space-2) var(--space-2-5);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  text-align: left;
+}
+
+.quick-access-run {
+  width: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  border-left: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  color: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.quick-access-workflow-open:hover:not(:disabled),
+.quick-access-run:hover:not(:disabled),
+.quick-access-section-heading button:hover:not(:disabled),
+.quick-access-open-app:hover:not(:disabled) {
+  border-color: transparent;
+  background: var(--surface-card);
+}
+
+.quick-access-running-dot,
+.quick-access-presence-dot {
+  display: inline-block;
+  border-radius: var(--radius-pill);
+  background: var(--success);
+}
+
+.quick-access-running-dot {
+  width: 8px;
+  height: 8px;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--success) 14%, transparent);
+}
+
+.quick-access-empty {
+  margin: 0;
+  padding: var(--space-3) var(--space-2-5);
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-lg);
+  color: var(--muted);
+  font-size: var(--text-sm);
+  text-align: center;
+}
+
+.quick-access-footer {
+  min-height: 42px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: var(--text-xs);
+  line-height: 1.25;
+}
+
+.quick-access-presence-dot {
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .quick-access-schedule-row:hover:not(:disabled),
+  .quick-access-workflow-row:hover {
+    border-color: var(--accent-border);
+    background: var(--surface-raised);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .quick-access-panel,
+  .quick-access-shell[data-expanded="true"] .quick-access-panel {
+    transform: none;
+    transition:
+      opacity 140ms ease,
+      visibility 0s linear 140ms;
+  }
+
+  .quick-access-shell[data-expanded="true"] .quick-access-panel {
+    transition:
+      opacity 140ms ease,
+      visibility 0s;
+  }
+
+  .quick-access-panel button:active:not(:disabled) {
+    transform: none;
+  }
+}
+
+/* The main window gets this from the block at the end of src/App.css, which
+   this webview never loads. Same declarations, popover selectors only. */
+@media (prefers-reduced-transparency: reduce) {
+  .quick-access-compact,
+  .quick-access-panel,
+  html[data-platform="macos"] .quick-access-compact,
+  html[data-platform="macos"] .quick-access-panel {
+    background: var(--surface-panel-opaque);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}

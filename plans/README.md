@@ -234,6 +234,26 @@ and existing CSS motion/reduced-motion rules.
 
 ---
 
+## Track J — Stylesheet weight
+
+| Plan | Title | Priority | Effort | Depends on | Status |
+|------|-------|----------|--------|------------|--------|
+| 041 | Split `src/App.css` into per-window and per-feature stylesheets | P3 | M | — | IN PROGRESS |
+
+### Dependency notes
+
+- 041 is a mechanical refactor with no visual intent: no rule may change its
+  declarations, ordering, or specificity. It is independent of every other
+  track and each of its four steps ships on its own.
+- Steps 1 and 2 (token/base extraction and the Quick Access stylesheet) landed
+  with the Quick Access memory work, which needed the popover to stop importing
+  the whole design system. Steps 3 and 4 are still TODO.
+- The blocker for the remaining steps is the CSS-contract test suite: six test
+  files read `src/App.css` as a single string, so moving rules out of it fails
+  those tests until they are taught about the new layer files.
+
+---
+
 ## Track H — Agent model picker
 
 | Plan | Title | Priority | Effort | Depends on | Status |

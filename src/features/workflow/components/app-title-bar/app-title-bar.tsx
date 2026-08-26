@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { Icon } from "../../../../components/icon";
 import { LicenseBadge } from "../../../licensing";
 
 type Tab = {
@@ -203,7 +204,7 @@ export function AppTitlebar({
                     onCloseTab(tab.id);
                   }}
                 >
-                  ×
+                  <Icon name="x" size={14} />
                 </button>
               </div>
             );

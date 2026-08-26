@@ -252,9 +252,11 @@ pub fn run() {
             if let Err(e) = tray::install(app.handle()) {
                 eprintln!("tray icon not started: {e}");
             }
-            if let Err(e) = quick_access::install(app.handle()) {
-                eprintln!("quick access not started: {e}");
-            }
+            // Quick Access is NOT built here. Its webview is a second
+            // WebContent process (~48 MB), and most of that was paid by users
+            // who keep the feature off. `set_quick_access_enabled`, pushed by
+            // the frontend moments after the main window boots, builds it when
+            // the preference is on; the shortcut and tray build it on demand.
 
             // Return the cached snapshot through `get_license_status` without
             // a startup network dependency, then refresh stale grants in the

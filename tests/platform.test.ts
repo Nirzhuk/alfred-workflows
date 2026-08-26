@@ -5,7 +5,21 @@ import {
 } from "../src/platform";
 
 const root = new URL("../", import.meta.url);
-const css = await Bun.file(new URL("src/App.css", root)).text();
+
+// The stylesheet is split so the Quick Access webview can take the tokens and
+// the shared base without the main window's component rules. The contracts
+// below are about the design system, not about which file holds a rule, so
+// they read the whole thing. Quick Access sits before App.css so the main
+// window's reduced-transparency block stays last, as it is in its own file.
+const quickAccessCss = await Bun.file(
+  new URL("src/features/quick-access/quick-access.css", root),
+).text();
+const css = [
+  await Bun.file(new URL("src/styles/tokens.css", root)).text(),
+  await Bun.file(new URL("src/styles/base.css", root)).text(),
+  quickAccessCss,
+  await Bun.file(new URL("src/App.css", root)).text(),
+].join("\n");
 const tauriConfig = await Bun.file(
   new URL("src-tauri/tauri.conf.json", root),
 ).json();
@@ -132,10 +146,13 @@ describe("desktop platform contract", () => {
       /\.quick-access-compact-run \{[\s\S]*?color: var\(--accent-ink\);/,
     );
 
-    const reducedTransparency = css.lastIndexOf(
-      "@media (prefers-reduced-transparency: reduce)",
+    // The popover never loads App.css, so the main window's fallback cannot
+    // reach it. It carries its own copy of the same declarations.
+    const fallback = quickAccessCss.slice(
+      quickAccessCss.lastIndexOf(
+        "@media (prefers-reduced-transparency: reduce)",
+      ),
     );
-    const fallback = css.slice(reducedTransparency);
     expect(fallback).toContain(".quick-access-compact");
     expect(fallback).toContain(".quick-access-panel");
   });

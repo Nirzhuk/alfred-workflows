@@ -13,7 +13,7 @@ const DEFAULT_TEST_MESSAGE =
 
 /** How often the modal re-reads pairing state. The QR itself arrives by event;
  * this only tracks the state machine's own transitions. */
-const POLL_INTERVAL_MS = 700;
+const POLL_INTERVAL_MS = 2_000;
 
 /** Failures that end the attempt. The user must start over. */
 const TERMINAL_FAILURES = new Set([

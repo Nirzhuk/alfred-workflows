@@ -154,8 +154,13 @@ export function NodeSettingsModal({ nodeId, onClose }: Props) {
         description="Configure how this node behaves when the workflow runs."
         descriptionId="node-settings-description"
         actions={
-          <button type="button" className="ghost" onClick={onClose}>
-            Done
+          <button
+            type="button"
+            className="ghost modal-close-button"
+            aria-label="Close"
+            onClick={onClose}
+          >
+            <Icon name="x" size={16} />
           </button>
         }
       />

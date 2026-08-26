@@ -7,10 +7,10 @@ For user-interface work, read and follow `docs/design-system.md`.
 - Use Infer as the preferred interface family with bundled Geist as the local
   fallback. Use Geist Mono for utility accents through `--font-sans`,
   `--font-display`, and `--font-mono`. Do not add remote font imports.
-- Reuse semantic CSS custom properties from `src/App.css`; do not duplicate a
-  shared visual decision with feature-local literals.
-- When a repeated visual rule does not have a token, add one to `:root` and
-  document it in `docs/design-system.md`.
+- Reuse semantic CSS custom properties from `src/styles/tokens.css`; do not
+  duplicate a shared visual decision with feature-local literals.
+- When a repeated visual rule does not have a token, add one to `:root` in
+  `src/styles/tokens.css` and document it in `docs/design-system.md`.
 - Related surfaces must share typography, icon sizing, spacing, and interaction
   states unless the product hierarchy explicitly requires a difference.
 - Keep navigation quiet and flat. Selection may use the shared two-pixel

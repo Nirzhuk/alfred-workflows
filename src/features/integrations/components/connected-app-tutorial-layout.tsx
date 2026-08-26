@@ -57,7 +57,7 @@ export function ConnectedAppTutorialLayout({
             <span className="connection-tutorial-badge">{badge}</span>
             <button
               type="button"
-              className="connection-tutorial-close"
+              className="ghost modal-close-button"
               aria-label="Close"
               onClick={onClose}
             >
