@@ -33,6 +33,7 @@ uuid = { version = "1.24.0", features = ["v4", "serde"] }
 thiserror = "2.0.20"
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "sync", "time"] }
 sha2 = "0.10.9"
+ed25519-dalek = { version = "2.1", features = ["std", "rand_core"] }
 url = "2.5.8"
 zeroize = "1.8.2"
 directories = "6.0.0"

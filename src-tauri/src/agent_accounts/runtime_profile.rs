@@ -399,6 +399,9 @@ impl RuntimeProfileStore {
                         create_environment_roots(&root, binding.runtime_id)?;
                         create_private_dir_all(&root.join(PROFILE_HOME_DIR))?;
                         create_private_dir_all(&root.join(PROFILE_TEMP_DIR))?;
+                        if binding.runtime_id == ManagedRuntimeId::ClaudeCodeManaged {
+                            link_host_keychain_dir(&root.join(PROFILE_HOME_DIR))?;
+                        }
                         let record = RuntimeProfileRecord {
                             schema_version: RUNTIME_PROFILE_SCHEMA_VERSION,
                             generation: 1,
@@ -769,6 +772,38 @@ fn open_environment_roots(
         entries.push((variable, path));
     }
     Ok(RuntimeEnvironmentRoots { entries })
+}
+
+/// Claude Code persists its subscription token by shelling out to
+/// `/usr/bin/security`, which resolves the default keychain under
+/// `$HOME/Library/Keychains`. An account-scoped home has no keychain, so the
+/// token write fails immediately after an otherwise successful login.
+///
+/// This is a deliberate, narrowly-scoped hole in the isolated home: exactly
+/// one directory is exposed, by name, and only for the Claude runtime. Nothing
+/// else in the host home becomes reachable, and no other runtime gets this.
+/// Claude Code names its own keychain item, so accounts still share one
+/// credential — the caller enforces a single Claude account for that reason.
+#[cfg(target_os = "macos")]
+fn link_host_keychain_dir(home_root: &Path) -> ProfileResult<()> {
+    let Some(host_home) = std::env::var_os("HOME").map(PathBuf::from) else {
+        return Err(profile_error(RuntimeProfileErrorCode::StorageUnavailable));
+    };
+    let host_keychains = host_home.join("Library").join("Keychains");
+    let metadata = fs::symlink_metadata(&host_keychains)
+        .map_err(|_| profile_error(RuntimeProfileErrorCode::StorageUnavailable))?;
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        return Err(profile_error(RuntimeProfileErrorCode::StorageUnavailable));
+    }
+    let library = home_root.join("Library");
+    create_private_dir_all(&library)?;
+    std::os::unix::fs::symlink(&host_keychains, library.join("Keychains"))
+        .map_err(|_| profile_error(RuntimeProfileErrorCode::StorageUnavailable))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn link_host_keychain_dir(_home_root: &Path) -> ProfileResult<()> {
+    Ok(())
 }
 
 fn open_profile_launch_roots(root: &Path) -> ProfileResult<(PathBuf, PathBuf)> {
@@ -1151,6 +1186,42 @@ mod tests {
     }
 
     #[cfg(unix)]
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_claude_profile_exposes_only_the_host_keychain_directory() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let (root, store) = fixture_store();
+        let account = account("account_keychain_probe_0001");
+        let binding = binding(
+            &account,
+            AgentProductId::ClaudeCodeSubscription,
+            ManagedRuntimeId::ClaudeCodeManaged,
+            "2.1.246",
+        );
+        let profile = store.create(&binding).unwrap();
+        let home = profile.launch_home_root();
+
+        // Claude Code shells out to `security`, which resolves the default
+        // keychain under $HOME/Library/Keychains.
+        let link = home.join("Library").join("Keychains");
+        let metadata = fs::symlink_metadata(&link).expect("keychain link exists");
+        assert!(metadata.file_type().is_symlink());
+        assert!(link.join("login.keychain-db").exists() || link.is_dir());
+
+        // Nothing else from the host home leaks in.
+        let library: Vec<_> = fs::read_dir(home.join("Library"))
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect();
+        assert_eq!(library, vec![std::ffi::OsString::from("Keychains")]);
+        assert!(!home.join("Library").join("Preferences").exists());
+        assert!(!home.join(".ssh").exists());
+
+        let _ = PermissionsExt::mode(&fs::metadata(home).unwrap().permissions());
+        fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn profile_symlink_escape_fails_closed() {
         use std::os::unix::fs::symlink;

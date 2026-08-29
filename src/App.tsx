@@ -11,6 +11,7 @@ import {
   useShortcutPreferences,
 } from "./features/settings/shortcuts";
 import { WorkflowCanvas } from "./features/workflow/components/workflow-canvas";
+import { NativeHostApproval } from "./features/agent-accounts/components/native-host-approval";
 import {
   installRunEventBridge,
   useWorkflowStore,
@@ -168,6 +169,7 @@ function App() {
   return (
     <>
       <WorkflowCanvas />
+      <NativeHostApproval />
       <ToastViewport />
     </>
   );

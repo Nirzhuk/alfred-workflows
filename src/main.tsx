@@ -19,8 +19,18 @@ document.documentElement.dataset.window = isQuickAccessWindow
 
 async function revealMainWindow() {
   if (!isTauri() || isQuickAccessWindow) return;
-  await document.fonts.ready;
+  try {
+    await document.fonts.ready;
+  } catch {
+    // Showing the window still beats a hidden shell if font loading fails.
+  }
   await getCurrentWindow().show();
+}
+
+if (!isQuickAccessWindow) {
+  window.setTimeout(() => {
+    void revealMainWindow();
+  }, 1200);
 }
 
 const WindowRoot = isQuickAccessWindow

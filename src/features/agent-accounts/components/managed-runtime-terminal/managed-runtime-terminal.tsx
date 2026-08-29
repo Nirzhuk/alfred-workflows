@@ -28,7 +28,6 @@ export function ManagedRuntimeTerminal({
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const cursorRef = useRef(0);
   const closedRef = useRef(false);
-  const readingRef = useRef(false);
   const [closed, setClosed] = useState(false);
   const [error, setError] = useState(false);
 
@@ -40,10 +39,14 @@ export function ManagedRuntimeTerminal({
   }, []);
 
   useEffect(() => {
+    // Each effect run owns its own sequential read chain. A ref-based in-flight
+    // guard deadlocks under StrictMode's double mount: the remount sees the
+    // first run's in-flight read, returns without scheduling, and the cancelled
+    // first run never reschedules either, so the terminal stays blank forever.
     let cancelled = false;
+    let timer = 0;
     const read = async () => {
-      if (cancelled || closedRef.current || readingRef.current) return;
-      readingRef.current = true;
+      if (cancelled || closedRef.current) return;
       try {
         const chunk = await api.readTerminal(sessionId, cursorRef.current);
         if (cancelled) return;
@@ -56,16 +59,15 @@ export function ManagedRuntimeTerminal({
         }
       } catch {
         if (!cancelled) setError(true);
-      } finally {
-        readingRef.current = false;
       }
       if (!cancelled && !closedRef.current) {
-        window.setTimeout(() => void read(), 160);
+        timer = window.setTimeout(() => void read(), 160);
       }
     };
     void read();
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
     };
   }, [api, appendOutput, sessionId]);
 
@@ -114,7 +116,7 @@ export function ManagedRuntimeTerminal({
       <ModalHeader
         title={`${productName} sign-in`}
         titleId={titleId}
-        description="This is the provider's own terminal. Alfred relays it without reading or interpreting authentication text."
+        description="Finish Claude sign-in in this window. You do not install a CLI."
         descriptionId={descriptionId}
         actions={
           <button

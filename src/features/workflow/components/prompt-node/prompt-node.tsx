@@ -6,6 +6,7 @@ import {
   type NodeProps,
 } from "@xyflow/react";
 import { useRef } from "react";
+import { Icon } from "../../../../components/icon";
 import {
   mergeAttachments,
   pickFileAttachments,
@@ -127,7 +128,10 @@ export function PromptNode({ id, data, selected }: NodeProps<InputFlowNode>) {
         <ResizeGripIcon />
       </NodeResizeControl>
 
-      <div className="wf-node-title-row">
+      <div className="wf-node-header">
+        <span className="wf-node-title-icon">
+          <Icon name="chat-text" size={16} />
+        </span>
         <div className="wf-node-title">{title}</div>
         <button
           type="button"
@@ -151,7 +155,8 @@ export function PromptNode({ id, data, selected }: NodeProps<InputFlowNode>) {
           <BlockIcon blocked={blocked} />
         </button>
       </div>
-      <textarea
+      <div className="wf-node-content">
+        <textarea
         className="wf-node-input nodrag nopan nowheel"
         value={data.prompt}
         placeholder="Describe the task… attach files or folders below"
@@ -215,7 +220,8 @@ export function PromptNode({ id, data, selected }: NodeProps<InputFlowNode>) {
         ) : null}
       </div>
 
-      <NodeOutputPreview nodeId={id} title={title} />
+        <NodeOutputPreview nodeId={id} title={title} />
+      </div>
       <Handle
         className="wf-handle"
         type="source"

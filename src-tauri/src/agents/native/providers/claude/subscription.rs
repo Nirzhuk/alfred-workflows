@@ -56,7 +56,7 @@ pub fn subscription_release_gates() -> Vec<ClaudeSubscriptionReleaseGate> {
         ClaudeSubscriptionReleaseGate {
             gate: "profile_contract",
             status: CapabilityReportStatus::Supported,
-            evidence: "account-scoped CLAUDE_CONFIG_DIR and isolated HOME/TEMP roots; Alfred has no credential/profile-file/keychain reader",
+            evidence: "account-scoped CLAUDE_CONFIG_DIR and isolated HOME/TEMP roots, except $HOME/Library/Keychains which is symlinked to the host so Claude Code can persist its own token via /usr/bin/security; Alfred still has no credential/profile-file/keychain reader, and one shared Keychain item means one Claude account",
         },
         ClaudeSubscriptionReleaseGate {
             gate: "commercial_terms",

@@ -578,6 +578,41 @@ impl NativeExecutionRouter {
     }
 }
 
+pub(crate) fn native_turn_tool_policy(
+    descriptor: &NativeRuntimeDescriptor,
+    fallback_profile: &NativePermissionProfile,
+    fallback_capabilities: &NativeToolCapabilitySet,
+) -> (NativePermissionProfile, NativeToolCapabilitySet) {
+    match descriptor.tool_execution_owner {
+        NativeToolExecutionOwner::RuntimeExecutedWithHostApproval => (
+            NativePermissionProfile {
+                filesystem: NativeApprovalPolicy::Ask,
+                shell: NativeApprovalPolicy::Ask,
+                mcp: if descriptor.capabilities.supports_mcp {
+                    NativeApprovalPolicy::Ask
+                } else {
+                    NativeApprovalPolicy::Deny
+                },
+                subagents: if descriptor.capabilities.supports_subagents {
+                    NativeApprovalPolicy::Ask
+                } else {
+                    NativeApprovalPolicy::Deny
+                },
+            },
+            NativeToolCapabilitySet {
+                filesystem: descriptor.capabilities.supports_native_filesystem,
+                shell: descriptor.capabilities.supports_native_shell,
+                patch: descriptor.capabilities.supports_patch,
+                mcp: descriptor.capabilities.supports_mcp,
+                subagents: descriptor.capabilities.supports_subagents,
+            },
+        ),
+        NativeToolExecutionOwner::AlfredExecuted | NativeToolExecutionOwner::NoTools => {
+            (fallback_profile.clone(), fallback_capabilities.clone())
+        }
+    }
+}
+
 impl AgentNativeRuntime for NativeExecutionRouter {
     fn run(
         &self,
@@ -589,12 +624,17 @@ impl AgentNativeRuntime for NativeExecutionRouter {
             .registry
             .descriptor(target.provider)
             .map_err(native_agent_error)?;
+        let (permission_profile, tool_capabilities) = native_turn_tool_policy(
+            &descriptor,
+            &self.permission_profile,
+            &self.tool_capabilities,
+        );
         let request = prepare_native_request(
             target,
             &request,
             &descriptor,
-            self.permission_profile.clone(),
-            self.tool_capabilities.clone(),
+            permission_profile,
+            tool_capabilities,
             self.event_limits.clone(),
             &self.context_policy,
         )

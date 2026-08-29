@@ -15,6 +15,7 @@ pub mod native;
 pub mod omp;
 pub mod opencode;
 pub mod pi;
+pub mod publisher_trust;
 pub(crate) mod process;
 pub mod runtime_package;
 pub mod usage;

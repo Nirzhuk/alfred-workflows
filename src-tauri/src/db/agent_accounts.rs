@@ -310,6 +310,143 @@ impl Db {
             .ok_or_else(|| DbError::Other("saved agent account could not be loaded".into()))
     }
 
+    pub fn upsert_runtime_managed_account(
+        &self,
+        id: &str,
+        mut input: AuthorizedAgentAccount,
+    ) -> Result<AgentAccount, DbError> {
+        validate_authorized_agent_account(&input).map_err(DbError::Other)?;
+        if input.product.requires_credential() {
+            return Err(DbError::Other(
+                "runtime-managed accounts must not use a secret credential reference".into(),
+            ));
+        }
+        if input.external_account_id.trim().is_empty() {
+            return Err(DbError::Other(
+                "validated account identity is required".into(),
+            ));
+        }
+        input.scopes.sort();
+        input.scopes.dedup();
+        let identity_key = input.identity_key();
+        let scopes_json = serde_json::to_string(&input.scopes)
+            .map_err(|error| DbError::Other(error.to_string()))?;
+        let updated_at = now();
+
+        self.with_conn(|conn| {
+            let existing_identity: Option<String> = conn
+                .query_row(
+                    "SELECT id FROM agent_accounts
+                     WHERE provider_id = ?1 AND product_id = ?2
+                       AND harness = ?3 AND identity_key = ?4",
+                    params![
+                        input.provider.as_str(),
+                        input.product.as_str(),
+                        input.harness.as_str(),
+                        identity_key
+                    ],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            if existing_identity
+                .as_ref()
+                .is_some_and(|existing| existing != id)
+            {
+                return Err(DbError::Other(
+                    "agent account identity is already bound to a different account".into(),
+                ));
+            }
+
+            let existing_row: Option<(String, Option<String>)> = conn
+                .query_row(
+                    "SELECT id, credential_ref FROM agent_accounts WHERE id = ?1",
+                    params![id],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .optional()?;
+
+            if let Some((_, credential_ref)) = existing_row {
+                if credential_ref.is_some() {
+                    return Err(DbError::Other(
+                        "managed subscription accounts must not use a secret credential reference"
+                            .into(),
+                    ));
+                }
+                conn.execute(
+                    "UPDATE agent_accounts SET
+                       display_name = ?1, external_account_id = ?2,
+                       external_workspace_id = ?3, auth_method = ?4,
+                       custody_mode = ?5, managed_runtime_id = ?6,
+                       managed_runtime_version = ?7, runtime_profile_ref = ?8,
+                       scopes_json = ?9, billing_source = ?10, billing_owner = ?11,
+                       entitlement_state = ?12, entitlement_source = ?13,
+                       entitlement_observed_at = ?14, status = 'error', expires_at = ?15,
+                       last_error_code = 'account_access_pending', updated_at = ?16
+                     WHERE id = ?17",
+                    params![
+                        input.display_name,
+                        input.external_account_id,
+                        input.external_workspace_id,
+                        input.auth_method.as_str(),
+                        input.custody_mode.as_str(),
+                        input.managed_runtime_id.map(ManagedRuntimeId::as_str),
+                        input.managed_runtime_version,
+                        input.runtime_profile_ref,
+                        scopes_json,
+                        input.billing_source,
+                        input.billing_owner,
+                        input.entitlement_state.as_str(),
+                        input.entitlement_source,
+                        input.entitlement_observed_at,
+                        input.expires_at,
+                        updated_at,
+                        id,
+                    ],
+                )?;
+            } else {
+                conn.execute(
+                    "INSERT INTO agent_accounts (
+                       id, provider_id, product_id, harness, identity_key, display_name,
+                       external_account_id, external_workspace_id, auth_method, custody_mode,
+                       managed_runtime_id, managed_runtime_version, runtime_profile_ref,
+                       scopes_json, billing_source, billing_owner, entitlement_state,
+                       entitlement_source, entitlement_observed_at, status, expires_at,
+                       last_error_code, credential_ref, created_at, updated_at
+                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10,
+                               ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19,
+                               'error', ?20, 'account_access_pending', NULL, ?21, ?21)",
+                    params![
+                        id,
+                        input.provider.as_str(),
+                        input.product.as_str(),
+                        input.harness.as_str(),
+                        identity_key,
+                        input.display_name,
+                        input.external_account_id,
+                        input.external_workspace_id,
+                        input.auth_method.as_str(),
+                        input.custody_mode.as_str(),
+                        input.managed_runtime_id.map(ManagedRuntimeId::as_str),
+                        input.managed_runtime_version,
+                        input.runtime_profile_ref,
+                        scopes_json,
+                        input.billing_source,
+                        input.billing_owner,
+                        input.entitlement_state.as_str(),
+                        input.entitlement_source,
+                        input.entitlement_observed_at,
+                        input.expires_at,
+                        updated_at,
+                    ],
+                )?;
+            }
+            Ok(())
+        })?;
+
+        self.get_agent_account(id)?
+            .ok_or_else(|| DbError::Other("saved agent account could not be loaded".into()))
+    }
+
     pub fn set_agent_account_state(
         &self,
         id: &str,

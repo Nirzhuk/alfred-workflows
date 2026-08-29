@@ -1,11 +1,19 @@
 //! Deterministic HTTP/SSE fixture for the pinned OpenCode V1 surface.
 
+use super::{
+    HttpOpenCodeApi, OpenCodeApi, OpenCodeServerPassword, OpenCodeServerProvider,
+    OpenCodeServerSession, OpenCodeServerState,
+};
+use crate::agent_accounts::runtime_profile::RuntimeProfileRef;
+use crate::agents::native::{NativeCancellation, NativeRuntimeError};
+use crate::agents::OpaqueAgentAccountRef;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::path::Path;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
@@ -352,4 +360,124 @@ fn write_response(
         body.len()
     )?;
     stream.write_all(body)
+}
+
+
+pub fn fixture_go_catalog() -> Value {
+    json!({
+        "all": [
+            {
+                "id": "opencode-go",
+                "name": "OpenCode Go",
+                "models": {
+                    "model-a": {
+                        "id": "model-a",
+                        "providerID": "opencode-go",
+                        "name": "Go Model A"
+                    }
+                }
+            },
+            {
+                "id": "zen",
+                "name": "OpenCode Zen",
+                "models": {
+                    "zen-model": {
+                        "id": "zen-model",
+                        "providerID": "zen",
+                        "name": "Must Never Escape"
+                    }
+                }
+            }
+        ],
+        "connected": ["opencode-go", "zen"]
+    })
+}
+
+struct FixtureSession {
+    api: HttpOpenCodeApi,
+    state: Arc<Mutex<OpenCodeServerState>>,
+    stopped: Arc<AtomicBool>,
+}
+
+impl OpenCodeServerSession for FixtureSession {
+    fn api(&self) -> &dyn OpenCodeApi {
+        &self.api
+    }
+
+    fn state(&self) -> OpenCodeServerState {
+        *self.state.lock().expect("state")
+    }
+
+    fn stop(&self) -> Result<(), NativeRuntimeError> {
+        self.stopped.store(true, Ordering::SeqCst);
+        Ok(())
+    }
+}
+
+pub struct FixtureOpenCodeProvider {
+    address: SocketAddr,
+    profile_ref: RuntimeProfileRef,
+    state: Arc<Mutex<OpenCodeServerState>>,
+    stopped: Arc<AtomicBool>,
+    purges: AtomicUsize,
+}
+
+impl FixtureOpenCodeProvider {
+    pub fn new(sidecar: &FakeOpenCodeSidecar) -> Self {
+        Self {
+            address: sidecar.address(),
+            profile_ref: RuntimeProfileRef::parse(
+                "runtime_profile_0123456789abcdef0123456789abcdef",
+            )
+            .expect("fixture profile"),
+            state: Arc::new(Mutex::new(OpenCodeServerState::Active)),
+            stopped: Arc::new(AtomicBool::new(false)),
+            purges: AtomicUsize::new(0),
+        }
+    }
+
+    pub fn purges(&self) -> usize {
+        self.purges.load(Ordering::SeqCst)
+    }
+
+    fn session(&self) -> Result<Box<dyn OpenCodeServerSession>, NativeRuntimeError> {
+        Ok(Box::new(FixtureSession {
+            api: HttpOpenCodeApi::new(
+                self.address,
+                OpenCodeServerPassword::new(FIXTURE_PASSWORD.into())?,
+            )?,
+            state: Arc::clone(&self.state),
+            stopped: Arc::clone(&self.stopped),
+        }))
+    }
+}
+
+impl OpenCodeServerProvider for FixtureOpenCodeProvider {
+    fn create_and_launch(
+        &self,
+        _account_ref: &OpaqueAgentAccountRef,
+        _repository: &Path,
+        _cancellation: &NativeCancellation,
+    ) -> Result<(RuntimeProfileRef, Box<dyn OpenCodeServerSession>), NativeRuntimeError> {
+        Ok((self.profile_ref.clone(), self.session()?))
+    }
+
+    fn launch_existing(
+        &self,
+        _account_ref: &OpaqueAgentAccountRef,
+        _profile_ref: &RuntimeProfileRef,
+        _repository: &Path,
+        _cancellation: &NativeCancellation,
+    ) -> Result<Box<dyn OpenCodeServerSession>, NativeRuntimeError> {
+        self.session()
+    }
+
+    fn purge_profile(
+        &self,
+        _account_ref: &OpaqueAgentAccountRef,
+        _profile_ref: &RuntimeProfileRef,
+    ) -> Result<(), NativeRuntimeError> {
+        self.purges.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
 }

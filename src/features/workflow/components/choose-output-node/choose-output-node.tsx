@@ -1,4 +1,5 @@
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
+import { Icon } from "../../../../components/icon";
 import type { OutputNodeData } from "../../types";
 import { NodeOutputPreview } from "../node-output-preview";
 
@@ -20,24 +21,31 @@ export function ChooseOutputNode({ id, data }: NodeProps<OutputFlowNode>) {
         position={Position.Left}
         isConnectable
       />
-      <div className="wf-node-title">{title}</div>
-      <p className="wf-node-body">
-        {chips.length > 0
-          ? "Dispose agent result"
-          : "Pass through — no save"}
-      </p>
-      {chips.length > 0 ? (
-        <div className="wf-node-disposition" aria-label="Disposition">
-          {chips.map((chip) => (
-            <span key={chip} className="wf-node-disposition-chip">
-              {chip}
-            </span>
-          ))}
-        </div>
-      ) : (
-        <p className="wf-node-skill muted">Preview only</p>
-      )}
-      <NodeOutputPreview nodeId={id} title={title} />
+      <div className="wf-node-header">
+        <span className="wf-node-title-icon">
+          <Icon name="arrow-square-out" size={16} />
+        </span>
+        <div className="wf-node-title">{title}</div>
+      </div>
+      <div className="wf-node-content">
+        <p className="wf-node-body">
+          {chips.length > 0
+            ? "Dispose agent result"
+            : "Pass through — no save"}
+        </p>
+        {chips.length > 0 ? (
+          <div className="wf-node-disposition" aria-label="Disposition">
+            {chips.map((chip) => (
+              <span key={chip} className="wf-node-disposition-chip">
+                {chip}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <p className="wf-node-skill muted">Preview only</p>
+        )}
+        <NodeOutputPreview nodeId={id} title={title} />
+      </div>
       <Handle
         className="wf-handle"
         type="source"

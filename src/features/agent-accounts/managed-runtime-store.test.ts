@@ -103,3 +103,15 @@ test("maps unknown managed-runtime failures to stable safe copy", () => {
   });
   expect(JSON.stringify(mapped)).not.toContain(secret);
 });
+
+test("maps catalog state failures to retryable copy instead of unknown internals", () => {
+  expect(mapManagedRuntimeError({ code: "managed_runtime_state_unavailable" })).toEqual({
+    code: "managed_runtime_state_unavailable",
+    message:
+      "Managed subscription state is not ready yet. Retry after the app finishes starting.",
+    recoverable: false,
+  });
+  expect(
+    mapManagedRuntimeError({ error: { code: "managed_runtime_storage_unavailable" } }).code,
+  ).toBe("managed_runtime_storage_unavailable");
+});

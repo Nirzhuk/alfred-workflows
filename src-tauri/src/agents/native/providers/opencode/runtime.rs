@@ -388,3 +388,28 @@ fn session_unavailable() -> NativeRuntimeError {
         false,
     )
 }
+
+impl OpenCodePermissionBroker for crate::agents::native::HostApprovalBroker {
+    fn decide(
+        &self,
+        request: &OpenCodePermissionRequest,
+        cancellation: &crate::agents::native::NativeCancellation,
+    ) -> Result<OpenCodePermissionReply, NativeRuntimeError> {
+        let decision = self.decide_host(
+            crate::agents::native::HostApprovalPrompt {
+                request_id: request.request_id.clone(),
+                session_id: Some(request.session_id.clone()),
+                permission: request.permission.clone(),
+                patterns: request.patterns.clone(),
+                always_patterns: request.always_patterns.clone(),
+                tool_call_id: request.tool_call_id.clone(),
+            },
+            cancellation,
+        )?;
+        Ok(match decision {
+            crate::agents::native::HostApprovalDecision::Once => OpenCodePermissionReply::Once,
+            crate::agents::native::HostApprovalDecision::Always => OpenCodePermissionReply::Always,
+            crate::agents::native::HostApprovalDecision::Reject => OpenCodePermissionReply::Reject,
+        })
+    }
+}

@@ -21,17 +21,15 @@ export function SimpleStepNode({ id, className, title, body, meta, icon }: Props
         position={Position.Left}
         isConnectable
       />
-      {icon ? (
-        <div className="wf-node-title-row">
-          <span className="wf-node-title-icon">{icon}</span>
-          <div className="wf-node-title">{title}</div>
-        </div>
-      ) : (
+      <div className="wf-node-header">
+        {icon ? <span className="wf-node-title-icon">{icon}</span> : null}
         <div className="wf-node-title">{title}</div>
-      )}
-      <p className="wf-node-body">{body}</p>
-      {meta ? <p className="wf-node-skill muted">{meta}</p> : null}
-      <NodeOutputPreview nodeId={id} title={title} />
+      </div>
+      <div className="wf-node-content">
+        <p className="wf-node-body">{body}</p>
+        {meta ? <p className="wf-node-skill muted">{meta}</p> : null}
+        <NodeOutputPreview nodeId={id} title={title} />
+      </div>
       <Handle
         className="wf-handle"
         type="source"

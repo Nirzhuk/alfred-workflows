@@ -937,7 +937,7 @@ fn code_owned_environment(
     path_entries.extend(path_extensions.iter().map(PathBuf::as_path));
     let path = std::env::join_paths(path_entries)
         .map_err(|_| terminal_error(ClaudeTerminalErrorCode::InvalidLaunch))?;
-    Ok(vec![
+    let mut environment = vec![
         ("HOME".into(), profile.launch_home_root().as_os_str().into()),
         (
             "TMPDIR".into(),
@@ -952,7 +952,20 @@ fn code_owned_environment(
         ("COLORTERM".into(), OsString::from("truecolor")),
         ("DISABLE_AUTOUPDATER".into(), OsString::from("1")),
         ("DISABLE_UPDATES".into(), OsString::from("1")),
-    ])
+    ];
+    #[cfg(target_os = "macos")]
+    environment.push(("BROWSER".into(), OsString::from("/usr/bin/open")));
+    #[cfg(target_os = "linux")]
+    if Path::new("/usr/bin/xdg-open").is_file() {
+        environment.push(("BROWSER".into(), OsString::from("/usr/bin/xdg-open")));
+    }
+    #[cfg(target_os = "macos")]
+    if let Ok(encoding) = std::env::var("__CF_USER_TEXT_ENCODING") {
+        if !encoding.is_empty() && encoding.len() < 128 {
+            environment.push(("__CF_USER_TEXT_ENCODING".into(), encoding.into()));
+        }
+    }
+    Ok(environment)
 }
 
 #[cfg(windows)]

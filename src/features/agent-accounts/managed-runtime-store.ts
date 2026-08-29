@@ -15,8 +15,14 @@ const ERROR_MESSAGES: Record<string, string> = {
     "This managed runtime selection is not valid for the product.",
   managed_runtime_not_available:
     "This managed runtime is not available in the current build.",
+  managed_runtime_state_unavailable:
+    "Managed subscription state is not ready yet. Retry after the app finishes starting.",
+  managed_runtime_storage_unavailable:
+    "Managed subscription storage is not available in this session.",
+  managed_runtime_operation_failed:
+    "The managed runtime operation could not be completed. Try again.",
   managed_runtime_package_missing:
-    "The managed runtime package is not installed yet.",
+    "Couldn't start sign-in. This copy of Alfred doesn't include it yet.",
   managed_runtime_package_unverified:
     "The managed runtime package could not be verified.",
   managed_runtime_connection_failed:
@@ -27,10 +33,28 @@ const ERROR_MESSAGES: Record<string, string> = {
     "A managed API key can only be entered for OpenCode Go.",
   managed_runtime_api_key_invalid:
     "That OpenCode Go key could not be accepted. Check it and try again.",
+  opencode_native_commercial_approval_missing:
+    "OpenCode Go support is waiting for commercial distribution approval.",
+  opencode_native_package_unverified:
+    "The verified OpenCode Go package is not available in this build.",
+  opencode_native_packaged_live_smoke_missing:
+    "OpenCode Go packaged sign-in has not passed its no-installed-CLI smoke gate.",
   managed_runtime_terminal_not_found:
     "The provider terminal is no longer available. Start again.",
   managed_runtime_terminal_io_failed:
     "The provider terminal could not be reached. Start again.",
+  claude_managed_package_integration_missing:
+    "Alfred still needs to set up Claude sign-in in this app. You do not install a CLI.",
+  claude_publisher_verification_integration_missing:
+    "Claude Code publisher verification is not complete for this build.",
+  claude_single_account_required:
+    "Claude allows one connected subscription account. Disconnect the current one first.",
+  claude_commercial_terms_unconfirmed:
+    "Claude Code subscription support is waiting for commercial distribution approval.",
+  codex_python_sdk_sealed_package_unverified:
+    "Alfred still needs to set up ChatGPT sign-in in this app. You do not install a CLI.",
+  codex_python_sdk_timed_out:
+    "ChatGPT sign-in did not finish in time. Start again.",
 };
 
 export type ManagedRuntimeError = {
@@ -79,11 +103,36 @@ function safeCode(value: string | null): string | null {
   return value && isSafeCode(value) ? value : value ? "managed_runtime_operation_failed" : null;
 }
 
+function unwrapManagedRuntimeError(error: unknown): {
+  code?: unknown;
+  recoverable?: unknown;
+} {
+  if (typeof error === "string") {
+    return { code: error };
+  }
+  if (typeof error !== "object" || error === null) {
+    return {};
+  }
+  const candidate = error as {
+    code?: unknown;
+    error?: unknown;
+    message?: unknown;
+    recoverable?: unknown;
+  };
+  if (typeof candidate.code === "string") {
+    return candidate;
+  }
+  if (candidate.error !== undefined) {
+    return unwrapManagedRuntimeError(candidate.error);
+  }
+  if (typeof candidate.message === "string") {
+    return { code: candidate.message, recoverable: candidate.recoverable };
+  }
+  return candidate;
+}
+
 export function mapManagedRuntimeError(error: unknown): ManagedRuntimeError {
-  const candidate =
-    typeof error === "object" && error !== null
-      ? (error as { code?: unknown; recoverable?: unknown })
-      : {};
+  const candidate = unwrapManagedRuntimeError(error);
   const candidateCode =
     typeof candidate.code === "string" ? candidate.code : "";
   const code = Object.prototype.hasOwnProperty.call(

@@ -145,6 +145,9 @@ async function verifyPublisherEvidence(
       await requireRegularFile(join(evidenceRoot, name), `Claude publisher evidence ${name}`);
     }
   }
+  if (manifest.runtimeId === "opencode_server") {
+    await requireRegularFile(join(evidenceRoot, "publisher.sig"), "OpenCode publisher evidence publisher.sig");
+  }
   if (manifest.runtimeId === "codex_python_sdk") {
     for (const name of ["python.sigstore.json", "cli-wheel.sigstore.json", "pydantic-core.sigstore.json", "sdk-wheel.sigstore.json"]) {
       await requireRegularFile(join(evidenceRoot, name), `Codex publisher evidence ${name}`);

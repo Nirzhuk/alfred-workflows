@@ -10,17 +10,17 @@ import type { AgentAccount, AgentProviderRegistration } from "./types";
 test("shows gated providers and safe lifecycle actions separately from Connected Apps", () => {
   const providers: AgentProviderRegistration[] = [
       {
-        providerId: "codex",
-        providerName: "Codex",
-        productId: "chatgpt_codex",
-        productName: "ChatGPT Codex",
+        providerId: "gemini",
+        providerName: "Gemini",
+        productId: "gemini_api",
+        productName: "Gemini API",
         harness: "alfred",
-        authMethods: ["oauth_pkce", "device_code"],
-        billingSource: "provider_subscription",
-        billingOwner: "subscription_account",
-        credentialCustody: "runtime_managed",
-        managedRuntimeId: "codex_python_sdk",
-        managedRuntimeVersion: "0.147.0",
+        authMethods: ["api_key"],
+        billingSource: "provider_api",
+        billingOwner: "credential_owner",
+        credentialCustody: "alfred_managed",
+        managedRuntimeId: null,
+        managedRuntimeVersion: null,
         connectAvailable: false,
         gateCode: "native_provider_not_available",
       },
@@ -28,21 +28,21 @@ test("shows gated providers and safe lifecycle actions separately from Connected
   const accounts: AgentAccount[] = [
       {
         id: "account_opaque",
-        providerId: "codex",
-        providerName: "Codex",
-        productId: "chatgpt_codex",
-        productName: "ChatGPT Codex",
+        providerId: "gemini",
+        providerName: "Gemini",
+        productId: "gemini_api",
+        productName: "Gemini API",
         harness: "alfred",
         displayName: "Work account",
         externalAccountId: null,
         externalWorkspaceId: null,
-        authMethod: "oauth_pkce",
-        custodyMode: "runtime_managed",
-        managedRuntimeId: "codex_python_sdk",
-        managedRuntimeVersion: "0.147.0",
+        authMethod: "api_key",
+        custodyMode: "alfred_managed",
+        managedRuntimeId: null,
+        managedRuntimeVersion: null,
         scopes: [],
-        billingSource: "provider_subscription",
-        billingOwner: "subscription_account",
+        billingSource: "provider_api",
+        billingOwner: "credential_owner",
         entitlementState: "unknown",
         entitlementSource: "provider_unobserved",
         entitlementObservedAt: null,
@@ -59,15 +59,47 @@ test("shows gated providers and safe lifecycle actions separately from Connected
     <NativeAgentSettings snapshot={{ providers: [...providers], accounts: [...accounts] }} />,
   );
   expect(markup).toContain("Native agent accounts");
-  expect(markup).toContain("Alfred harness");
+  expect(markup).toContain("Sign in with Claude or ChatGPT here");
+  expect(markup).toContain("API keys");
   expect(markup).toContain("Native account support is gated");
-  expect(markup).toContain("agent-mark-codex");
+  expect(markup).toContain("agent-mark-gemini");
   expect(markup).toContain("agent-mark-glyph");
   expect(markup).not.toContain("Reconnect");
   expect(markup).not.toContain("Refresh");
   expect(markup).toContain("Disconnect");
   expect(markup).not.toContain("credentialRef");
   expect(markup).not.toContain("token");
+});
+
+test("keeps ChatGPT Codex in managed subscriptions instead of the native Connect list", () => {
+  const markup = renderToStaticMarkup(
+    <NativeAgentSettings
+      snapshot={{
+        providers: [
+          {
+            providerId: "codex",
+            providerName: "Codex",
+            productId: "chatgpt_codex",
+            productName: "ChatGPT Codex",
+            harness: "alfred",
+            authMethods: ["oauth_pkce", "device_code"],
+            billingSource: "provider_subscription",
+            billingOwner: "subscription_account",
+            credentialCustody: "runtime_managed",
+            managedRuntimeId: "codex_python_sdk",
+            managedRuntimeVersion: "0.147.0",
+            connectAvailable: false,
+            gateCode: "codex_cross_platform_signing_and_packaged_smoke_missing",
+          },
+        ],
+        accounts: [],
+      }}
+    />,
+  );
+  expect(markup).toContain("managed-runtime-settings");
+  expect(markup).not.toContain("codex cross platform signing");
+  expect(markup).not.toContain(">Sign in<");
+  expect(markup).not.toContain(">Connect<");
 });
 
 test("shows truthful Cursor cloud disclosure without the frozen runtime labels", () => {
@@ -124,7 +156,7 @@ test("shows truthful Cursor cloud disclosure without the frozen runtime labels",
   expect(markup).toContain("Cursor API key");
   expect(markup).toContain("Cursor Cloud");
   expect(markup).toContain("remote repository");
-  expect(markup).toContain("alfred managed");
+  expect(markup).toContain("API keys");
   expect(markup).not.toContain("Provider runtime");
   expect(markup).not.toContain("Isolated runtime credential");
   expect(markup).not.toContain("Reconnect");

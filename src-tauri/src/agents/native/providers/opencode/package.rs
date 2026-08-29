@@ -140,26 +140,14 @@ pub struct OpenCodeNativeReleaseGate {
 }
 
 const PLATFORMS: &[OpenCodePackagePlatform] = &OpenCodePackagePlatform::ALL;
-const BLOCKERS: &[(&str, &str)] = &[
+/// Remaining process gates that Alfred cannot honestly retire from this
+/// branch. Supervisor HTTP, secret-entry, and host-approval bridges exist;
+/// commercial clearance, sealed publisher evidence, and packaged live smoke
+/// still block production enablement.
+const PROCESS_BLOCKERS: &[(&str, &str)] = &[
     (
         COMMERCIAL_GATE_CODE,
         "written commercial approval for Alfred-managed OpenCode Go use is not recorded",
-    ),
-    (
-        PACKAGE_GATE_CODE,
-        "the shared sealed package store has no production OpenCode publisher-verification constructor",
-    ),
-    (
-        SUPERVISOR_HTTP_GATE_CODE,
-        "the supervisor does not yet return its generated Basic-auth capability to a trusted provider client",
-    ),
-    (
-        ACCOUNT_GATE_CODE,
-        "the account service has not integrated the transient OpenCode Go secret-entry boundary",
-    ),
-    (
-        APPROVAL_GATE_CODE,
-        "the native host has no decision callback for runtime-executed permission requests",
     ),
     (
         LIVE_SMOKE_GATE_CODE,
@@ -173,8 +161,21 @@ pub fn native_release_gate() -> OpenCodeNativeReleaseGate {
         license: OPENCODE_LICENSE,
         platforms: PLATFORMS,
         ready: false,
-        blockers: BLOCKERS,
+        blockers: PROCESS_BLOCKERS,
     }
+}
+
+pub fn current_runtime_target() -> Option<&'static str> {
+    let platform = match (std::env::consts::OS, std::env::consts::ARCH) {
+        ("macos", "aarch64") => OpenCodePackagePlatform::MacOsArm64,
+        ("macos", "x86_64") => OpenCodePackagePlatform::MacOsX64,
+        ("linux", "aarch64") => OpenCodePackagePlatform::LinuxArm64,
+        ("linux", "x86_64") => OpenCodePackagePlatform::LinuxX64,
+        ("windows", "aarch64") => OpenCodePackagePlatform::WindowsArm64,
+        ("windows", "x86_64") => OpenCodePackagePlatform::WindowsX64,
+        _ => return None,
+    };
+    Some(platform.target())
 }
 
 pub fn package_manifest() -> RuntimePackageManifest {

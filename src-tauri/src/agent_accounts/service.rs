@@ -768,6 +768,36 @@ impl AgentAccountsState {
             .ok_or_else(account_not_found)
     }
 
+    pub fn persist_runtime_managed_account(
+        &self,
+        db: &Db,
+        id: &str,
+        metadata: AuthorizedAgentAccount,
+    ) -> Result<AgentAccountDto, AgentAccountCommandError> {
+        if metadata.product.requires_credential()
+            || metadata.custody_mode != CredentialCustodyMode::RuntimeManaged
+            || metadata.runtime_profile_ref.is_none()
+        {
+            return Err(command_error(
+                "account_access_mismatch",
+                "The provider returned account access for a different product route.",
+                false,
+            ));
+        }
+        let account = db
+            .upsert_runtime_managed_account(id, metadata)
+            .map_err(|_| metadata_error())?;
+        db.set_agent_account_state(
+            &account.id,
+            AgentAccountStatus::Connected,
+            account.expires_at.as_deref(),
+            None,
+        )
+        .map_err(|_| metadata_error())?;
+        self.get_account(db, &account.id)?
+            .ok_or_else(account_not_found)
+    }
+
     pub async fn disconnect_account(
         &self,
         db: &Db,

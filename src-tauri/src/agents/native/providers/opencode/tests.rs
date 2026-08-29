@@ -333,8 +333,20 @@ fn release_manifest_descriptor_and_registration_are_exact_and_fail_closed() {
     assert_eq!(gate.runtime_version, "1.18.23");
     assert_eq!(gate.license, "MIT");
     assert_eq!(gate.platforms.len(), 6);
-    assert_eq!(gate.blockers.len(), 6);
+    assert_eq!(gate.blockers.len(), 2);
     assert!(!gate.ready);
+    let blocker_codes = gate
+        .blockers
+        .iter()
+        .map(|(code, _)| *code)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        blocker_codes,
+        vec![COMMERCIAL_GATE_CODE, LIVE_SMOKE_GATE_CODE]
+    );
+    assert!(!blocker_codes.contains(&SUPERVISOR_HTTP_GATE_CODE));
+    assert!(!blocker_codes.contains(&ACCOUNT_GATE_CODE));
+    assert!(!blocker_codes.contains(&APPROVAL_GATE_CODE));
 
     let manifest = package_manifest();
     manifest.validate().expect("package manifest");
@@ -357,15 +369,18 @@ fn release_manifest_descriptor_and_registration_are_exact_and_fail_closed() {
     let registry = NativeRuntimeRegistry::default();
     let error = register(&registry).expect_err("release must remain blocked");
     assert_eq!(error.code, NativeErrorCode::ProviderUnavailable);
+    for code in [COMMERCIAL_GATE_CODE, PACKAGE_GATE_CODE, LIVE_SMOKE_GATE_CODE] {
+        assert!(error.message.contains(code));
+    }
     for code in [
-        COMMERCIAL_GATE_CODE,
-        PACKAGE_GATE_CODE,
         SUPERVISOR_HTTP_GATE_CODE,
         ACCOUNT_GATE_CODE,
         APPROVAL_GATE_CODE,
-        LIVE_SMOKE_GATE_CODE,
     ] {
-        assert!(error.message.contains(code));
+        assert!(
+            !error.message.contains(code),
+            "{code} should not block registration once implemented"
+        );
     }
 }
 

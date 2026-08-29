@@ -4,10 +4,13 @@
 //! conformance tests. Production registration remains fail-closed until every
 //! release gate below is cleared in shared release engineering.
 
+use super::sdk_protocol::{
+    empty_params, login_id_params, login_start_params, CodexSdkAccount, CodexSdkInbound,
+    CodexSdkLoginKind, CodexSdkLoginKindDto, CodexSdkLoginPrompt, CodexSdkLoginWait, CodexSdkLogout,
+    CodexSdkMethod, CodexSdkProtocol, CodexSdkProtocolError, CodexSdkResponse, CodexSdkStreamEvent,
+};
 use super::{
-    validate_codex_sdk_selection, CodexSdkInbound, CodexSdkLogout, CodexSdkMethod,
-    CodexSdkProtocol, CodexSdkProtocolError, CODEX_SDK_HOST_APPROVAL_BLOCKER,
-    CODEX_SDK_RUNTIME_VERSION,
+    validate_codex_sdk_selection, CODEX_SDK_HOST_APPROVAL_BLOCKER, CODEX_SDK_RUNTIME_VERSION,
 };
 use crate::agent_accounts::models::{AgentProductId, CredentialCustodyMode, ManagedRuntimeId};
 use crate::agent_accounts::resolver::NativeAgentCredential;
@@ -29,9 +32,14 @@ use crate::agents::AgentProvider;
 use serde::Serialize;
 use serde_json::Value;
 use std::fmt;
+use std::io::{self, ErrorKind};
+use std::net::{Shutdown, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use std::thread;
 use std::time::{Duration, Instant};
+use url::Url;
 
 pub const PUBLIC_CAPABILITY_AUDIT_BLOCKER: &str =
     "codex_python_sdk_public_capability_audit_blocked";
@@ -284,6 +292,35 @@ pub(crate) fn launch_codex_sdk_candidate(
     cancellation: ManagedRuntimeCancellation,
 ) -> RuntimeResult<CodexSdkConnection> {
     validate_codex_sdk_account(account, profile)?;
+    launch_codex_sdk_process(supervisor, package, profile, working_directory, cancellation)
+}
+
+/// First-login launch. ChatGPT OAuth has to start before any persisted
+/// account exists, so this path authenticates the sealed package and an
+/// isolated profile without requiring a resolved credential.
+pub(crate) fn launch_codex_sdk_login(
+    supervisor: &ManagedRuntimeSupervisor,
+    package: &RuntimePackageSelection,
+    profile: &RuntimeProfile,
+    working_directory: &Path,
+    cancellation: ManagedRuntimeCancellation,
+) -> RuntimeResult<CodexSdkConnection> {
+    if profile.binding().product() != AgentProductId::ChatgptCodex
+        || profile.lifecycle() != RuntimeProfileLifecycle::Active
+        || package.expectation().product() != AgentProductId::ChatgptCodex
+    {
+        return Err(runtime_error(CodexSdkRuntimeErrorCode::ProfileMismatch));
+    }
+    launch_codex_sdk_process(supervisor, package, profile, working_directory, cancellation)
+}
+
+fn launch_codex_sdk_process(
+    supervisor: &ManagedRuntimeSupervisor,
+    package: &RuntimePackageSelection,
+    profile: &RuntimeProfile,
+    working_directory: &Path,
+    cancellation: ManagedRuntimeCancellation,
+) -> RuntimeResult<CodexSdkConnection> {
     validate_codex_sdk_selection(package)
         .map_err(|_| runtime_error(CodexSdkRuntimeErrorCode::PackageRejected))?;
     if package.expectation().runtime_id() != profile.binding().runtime_id()
@@ -307,10 +344,19 @@ pub(crate) fn launch_codex_sdk_candidate(
     .with_shutdown_timeout(SHUTDOWN_TIMEOUT);
     let handle = supervisor
         .launch(package, profile, spec, cancellation)
-        .map_err(|_| runtime_error(CodexSdkRuntimeErrorCode::LaunchRejected))?;
+        .map_err(|error| {
+            // The public code stays opaque; the supervisor's reason is the only
+            // way to tell a readiness timeout from a rejected environment.
+            #[cfg(debug_assertions)]
+            eprintln!("codex sidecar launch rejected: {:?}", error.code());
+            #[cfg(not(debug_assertions))]
+            let _ = &error;
+            runtime_error(CodexSdkRuntimeErrorCode::LaunchRejected)
+        })?;
     Ok(CodexSdkConnection {
         handle,
         protocol: Mutex::new(CodexSdkProtocol::default()),
+        loopback_v6: Mutex::new(None),
     })
 }
 
@@ -329,6 +375,7 @@ fn canonical_working_directory(path: &Path) -> RuntimeResult<PathBuf> {
 pub(crate) struct CodexSdkConnection {
     handle: ManagedRuntimeHandle,
     protocol: Mutex<CodexSdkProtocol>,
+    loopback_v6: Mutex<Option<LoopbackV6Bridge>>,
 }
 
 impl fmt::Debug for CodexSdkConnection {
@@ -406,6 +453,162 @@ impl CodexSdkConnection {
         }
     }
 
+    /// Starts public ChatGPT browser login and returns only the allow-listed
+    /// authorization URL plus opaque login id. Tokens never cross this boundary.
+    pub(crate) fn start_chatgpt_login(
+        &self,
+        timeout: Duration,
+    ) -> RuntimeResult<CodexSdkLoginPrompt> {
+        self.send(
+            "login_start_1",
+            CodexSdkMethod::LoginStart,
+            login_start_params(CodexSdkLoginKind::Browser),
+        )?;
+        let response = self.wait_for_response("login_start_1", CodexSdkMethod::LoginStart, timeout)?;
+        let prompt: CodexSdkLoginPrompt = super::sdk_protocol::parse_result(&response)
+            .map_err(map_protocol_error)?;
+        prompt
+            .validate()
+            .map_err(|_| runtime_error(CodexSdkRuntimeErrorCode::ProtocolRejected))?;
+        if prompt.kind != CodexSdkLoginKindDto::Browser {
+            return Err(runtime_error(CodexSdkRuntimeErrorCode::ProtocolRejected));
+        }
+        self.track_login_operation(&prompt.login_id)?;
+        self.send(
+            "login_wait_1",
+            CodexSdkMethod::LoginWait,
+            login_id_params(&prompt.login_id).map_err(map_protocol_error)?,
+        )?;
+        let wait_response = self.wait_for_response(
+            "login_wait_1",
+            CodexSdkMethod::LoginWait,
+            Duration::from_secs(5),
+        )?;
+        let wait: CodexSdkLoginWait =
+            super::sdk_protocol::parse_result(&wait_response).map_err(map_protocol_error)?;
+        wait.validate()
+            .map_err(|_| runtime_error(CodexSdkRuntimeErrorCode::ProtocolRejected))?;
+        if wait.login_id != prompt.login_id {
+            return Err(runtime_error(CodexSdkRuntimeErrorCode::ProtocolRejected));
+        }
+        self.bridge_chatgpt_localhost_ipv6(&prompt.authorization_url);
+        Ok(prompt)
+    }
+
+    /// Drains login completion and, once ChatGPT auth is acknowledged, reads
+    /// the public account document. Returns `Ok(None)` while the browser
+    /// ceremony is still outstanding.
+    pub(crate) fn poll_chatgpt_account(
+        &self,
+        login_id: &str,
+        timeout: Duration,
+    ) -> RuntimeResult<Option<CodexSdkAccount>> {
+        let deadline = Instant::now()
+            .checked_add(timeout)
+            .ok_or_else(|| runtime_error(CodexSdkRuntimeErrorCode::TimedOut))?;
+        let mut completed = false;
+        while Instant::now() < deadline {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            match self.receive(remaining.min(Duration::from_millis(50)))? {
+                Some(CodexSdkInbound::Response(response))
+                    if response.method == CodexSdkMethod::LoginWait.as_str() =>
+                {
+                    let wait: CodexSdkLoginWait = super::sdk_protocol::parse_result(&response)
+                        .map_err(map_protocol_error)?;
+                    wait.validate()
+                        .map_err(|_| runtime_error(CodexSdkRuntimeErrorCode::ProtocolRejected))?;
+                    if wait.login_id != login_id {
+                        return Err(runtime_error(CodexSdkRuntimeErrorCode::ProtocolRejected));
+                    }
+                }
+                Some(CodexSdkInbound::Event {
+                    event: CodexSdkStreamEvent::LoginCompleted {
+                        login_id: completed_id,
+                        success,
+                    },
+                    ..
+                }) => {
+                    if success && completed_id == login_id {
+                        completed = true;
+                    } else if completed_id == login_id {
+                        return Err(runtime_error(CodexSdkRuntimeErrorCode::ProtocolRejected));
+                    }
+                }
+                Some(CodexSdkInbound::Error(_)) => {
+                    return Err(runtime_error(CodexSdkRuntimeErrorCode::ProtocolRejected));
+                }
+                Some(CodexSdkInbound::Response(response))
+                    if response.method == CodexSdkMethod::Account.as_str() =>
+                {
+                    let account: CodexSdkAccount = super::sdk_protocol::parse_result(&response)
+                        .map_err(map_protocol_error)?;
+                    account
+                        .validate()
+                        .map_err(|_| runtime_error(CodexSdkRuntimeErrorCode::ProtocolRejected))?;
+                    if account.authenticated {
+                        return Ok(Some(account));
+                    }
+                    return Ok(None);
+                }
+                Some(_) | None => {}
+            }
+            if completed {
+                break;
+            }
+        }
+        if !completed {
+            return Ok(None);
+        }
+        self.send("account_1", CodexSdkMethod::Account, empty_params())?;
+        let response = self.wait_for_response(
+            "account_1",
+            CodexSdkMethod::Account,
+            Duration::from_secs(5),
+        )?;
+        let account: CodexSdkAccount = super::sdk_protocol::parse_result(&response)
+            .map_err(map_protocol_error)?;
+        account
+            .validate()
+            .map_err(|_| runtime_error(CodexSdkRuntimeErrorCode::ProtocolRejected))?;
+        if account.authenticated {
+            Ok(Some(account))
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn wait_for_response(
+        &self,
+        request_id: &str,
+        method: CodexSdkMethod,
+        timeout: Duration,
+    ) -> RuntimeResult<super::CodexSdkResponse> {
+        let deadline = Instant::now()
+            .checked_add(timeout)
+            .ok_or_else(|| runtime_error(CodexSdkRuntimeErrorCode::TimedOut))?;
+        loop {
+            let now = Instant::now();
+            if now >= deadline {
+                return Err(runtime_error(CodexSdkRuntimeErrorCode::TimedOut));
+            }
+            match self.receive(deadline.saturating_duration_since(now))? {
+                Some(CodexSdkInbound::Response(response))
+                    if response.request_id == request_id && response.method == method.as_str() =>
+                {
+                    return Ok(response);
+                }
+                Some(CodexSdkInbound::Error(error))
+                    if error.request_id.as_deref() == Some(request_id) =>
+                {
+                    return Err(runtime_error(CodexSdkRuntimeErrorCode::ProtocolRejected));
+                }
+                Some(CodexSdkInbound::Event { .. }) | Some(CodexSdkInbound::Ready(_)) => continue,
+                Some(_) => return Err(runtime_error(CodexSdkRuntimeErrorCode::ProtocolRejected)),
+                None => continue,
+            }
+        }
+    }
+
     /// Logs the SDK out, waits for the token-free acknowledgement, stops the
     /// supervised process, and only then returns a receipt that authorizes a
     /// matching profile purge.
@@ -465,6 +668,115 @@ fn map_protocol_error(_error: CodexSdkProtocolError) -> CodexSdkRuntimeError {
     runtime_error(CodexSdkRuntimeErrorCode::ProtocolRejected)
 }
 
+struct LoopbackV6Bridge {
+    stop: Arc<AtomicBool>,
+}
+
+impl Drop for LoopbackV6Bridge {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::SeqCst);
+    }
+}
+
+impl CodexSdkConnection {
+    fn bridge_chatgpt_localhost_ipv6(&self, authorization_url: &str) {
+        let Some(port) = chatgpt_localhost_redirect_port(authorization_url) else {
+            return;
+        };
+        let Ok(mut slot) = self.loopback_v6.lock() else {
+            return;
+        };
+        *slot = spawn_ipv6_loopback_bridge(port);
+    }
+}
+
+pub(crate) fn open_chatgpt_sign_in_url(authorization_url: &str) {
+    if !is_chatgpt_sign_in_url(authorization_url) {
+        return;
+    }
+    let _ = tauri_plugin_opener::open_url(authorization_url, None::<&str>);
+}
+
+pub(crate) fn is_chatgpt_sign_in_url(authorization_url: &str) -> bool {
+    let Ok(parsed) = Url::parse(authorization_url) else {
+        return false;
+    };
+    parsed.scheme() == "https"
+        && parsed.port_or_known_default() == Some(443)
+        && parsed.username().is_empty()
+        && parsed.password().is_none()
+        && matches!(parsed.host_str(), Some("chatgpt.com" | "auth.openai.com"))
+}
+
+fn chatgpt_localhost_redirect_port(authorization_url: &str) -> Option<u16> {
+    let parsed = Url::parse(authorization_url).ok()?;
+    if parsed.scheme() != "https" {
+        return None;
+    }
+    let host = parsed.host_str()?;
+    if host != "chatgpt.com" && host != "auth.openai.com" {
+        return None;
+    }
+    let redirect = parsed
+        .query_pairs()
+        .find(|(key, _)| key == "redirect_uri")
+        .map(|(_, value)| value.into_owned())?;
+    let redirect_url = Url::parse(&redirect).ok()?;
+    if redirect_url.scheme() != "http" || redirect_url.host_str() != Some("localhost") {
+        return None;
+    }
+    redirect_url.port()
+}
+
+fn spawn_ipv6_loopback_bridge(port: u16) -> Option<LoopbackV6Bridge> {
+    if port == 0 {
+        return None;
+    }
+    let listener = TcpListener::bind(("::1", port)).ok()?;
+    listener.set_nonblocking(true).ok()?;
+    let stop = Arc::new(AtomicBool::new(false));
+    let stop_thread = stop.clone();
+    thread::Builder::new()
+        .name("codex-login-v6-bridge".into())
+        .spawn(move || loop {
+            if stop_thread.load(Ordering::Relaxed) {
+                break;
+            }
+            match listener.accept() {
+                Ok((incoming, _)) => match TcpStream::connect(("127.0.0.1", port)) {
+                    Ok(outgoing) => proxy_tcp(incoming, outgoing),
+                    Err(_) => {}
+                },
+                Err(error) if error.kind() == ErrorKind::WouldBlock => {
+                    thread::sleep(Duration::from_millis(25));
+                }
+                Err(_) => break,
+            }
+        })
+        .ok()?;
+    Some(LoopbackV6Bridge { stop })
+}
+
+fn proxy_tcp(left: TcpStream, right: TcpStream) {
+    let Ok(mut left_reader) = left.try_clone() else {
+        return;
+    };
+    let Ok(mut right_reader) = right.try_clone() else {
+        return;
+    };
+    let mut left_writer = left;
+    let mut right_writer = right;
+    thread::spawn(move || {
+        let _ = io::copy(&mut left_reader, &mut right_writer);
+        let _ = right_writer.shutdown(Shutdown::Write);
+    });
+    thread::spawn(move || {
+        let _ = io::copy(&mut right_reader, &mut left_writer);
+        let _ = left_writer.shutdown(Shutdown::Write);
+    });
+}
+
+
 pub struct CodexSdkLogoutReceipt {
     profile_ref: RuntimeProfileRef,
     binding: RuntimeProfileBinding,
@@ -485,4 +797,68 @@ pub fn purge_logged_out_codex_profile(
     store
         .purge(&receipt.profile_ref, &receipt.binding)
         .map_err(|_| runtime_error(CodexSdkRuntimeErrorCode::ProfilePurgeRejected))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        chatgpt_localhost_redirect_port, is_chatgpt_sign_in_url, spawn_ipv6_loopback_bridge,
+    };
+    use std::io::{Read, Write};
+    use std::net::{TcpListener, TcpStream};
+    use std::thread;
+    use std::time::Duration;
+
+    #[test]
+    fn chatgpt_localhost_redirect_port_reads_the_callback_port() {
+        let url = "https://auth.openai.com/oauth/authorize?client_id=codex&redirect_uri=http%3A%2F%2Flocalhost%3A1455%2Fauth%2Fcallback&response_type=code";
+        assert_eq!(chatgpt_localhost_redirect_port(url), Some(1455));
+        assert_eq!(
+            chatgpt_localhost_redirect_port("https://chatgpt.com/auth/codex"),
+            None
+        );
+        assert_eq!(
+            chatgpt_localhost_redirect_port(
+                "https://auth.openai.com/oauth/authorize?redirect_uri=http://127.0.0.1:1455/auth/callback"
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn chatgpt_sign_in_url_accepts_only_provider_https_hosts() {
+        assert!(is_chatgpt_sign_in_url(
+            "https://auth.openai.com/oauth/authorize?client_id=example"
+        ));
+        assert!(is_chatgpt_sign_in_url("https://chatgpt.com/auth/codex"));
+        assert!(!is_chatgpt_sign_in_url(
+            "http://auth.openai.com/oauth/authorize"
+        ));
+        assert!(!is_chatgpt_sign_in_url("https://evil.example/oauth"));
+        assert!(!is_chatgpt_sign_in_url(
+            "https://auth.openai.com.evil/oauth"
+        ));
+    }
+
+    #[test]
+    fn ipv6_localhost_bridge_forwards_to_ipv4_loopback() {
+        let server = TcpListener::bind(("127.0.0.1", 0)).expect("ipv4 listener");
+        let port = server.local_addr().expect("server addr").port();
+        let accepted = thread::spawn(move || {
+            let (mut stream, _) = server.accept().expect("accept ipv4");
+            let mut buffer = [0_u8; 4];
+            stream.read_exact(&mut buffer).expect("read probe");
+            stream.write_all(b"pong").expect("write probe");
+            buffer
+        });
+        let bridge = spawn_ipv6_loopback_bridge(port).expect("listen on ::1");
+        thread::sleep(Duration::from_millis(50));
+        let mut client = TcpStream::connect(("::1", port)).expect("connect via localhost ipv6");
+        client.write_all(b"ping").expect("write via bridge");
+        let mut reply = [0_u8; 4];
+        client.read_exact(&mut reply).expect("read via bridge");
+        assert_eq!(&reply, b"pong");
+        assert_eq!(&accepted.join().expect("server thread"), b"ping");
+        drop(bridge);
+    }
 }

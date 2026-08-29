@@ -163,7 +163,7 @@ function normalizeProduct(
     runtimeId: product.runtimeId,
     installState: normalizeInstallState(product.installState),
     connectionKind: normalizeConnectionKind(product.connectionKind, product.productId),
-    gateCodes: [...product.gateCodes],
+    gateCodes: [...(product.gateCodes ?? [])],
   };
 }
 

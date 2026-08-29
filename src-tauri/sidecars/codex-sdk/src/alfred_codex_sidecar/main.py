@@ -11,7 +11,7 @@ from typing import Any, NoReturn
 
 from openai_codex import ApprovalMode, Codex, CodexConfig, Sandbox, __version__
 
-from . import SIDECAR_PROTOCOL_VERSION
+from alfred_codex_sidecar import SIDECAR_PROTOCOL_VERSION
 
 SDK_VERSION = "0.147.0"
 MAX_FRAME_BYTES = 256 * 1024
@@ -223,9 +223,20 @@ def _validate_profile_environment() -> Path:
     return resolved
 
 
+def _installed_sdk_version() -> str:
+    if __version__ == SDK_VERSION:
+        return __version__
+    try:
+        from importlib.metadata import version as distribution_version
+
+        return distribution_version("openai-codex")
+    except Exception:
+        return __version__
+
+
 class Sidecar:
     def __init__(self, codex_bin: Path, writer: Writer) -> None:
-        if __version__ != SDK_VERSION:
+        if _installed_sdk_version() != SDK_VERSION:
             raise ProtocolFailure("codex_sidecar_sdk_version_mismatch")
         self._profile_home = _validate_profile_environment()
         cwd = _absolute_directory(os.getcwd())

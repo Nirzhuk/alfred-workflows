@@ -1,4 +1,5 @@
 import type { Node, NodeProps } from "@xyflow/react";
+import { Icon } from "../../../../components/icon";
 import type {
   CustomAgentNodeData,
   FileInjectNodeData,
@@ -21,6 +22,7 @@ export function CustomAgentNode({
     <SimpleStepNode
       id={id}
       className="wf-node-custom-agent"
+      icon={<Icon name="terminal-window" size={16} />}
       title={data.label || "Custom agent"}
       body={previewLine(data.command, "Set a command")}
       meta={data.promptMode === "stdin" ? "Prompt on stdin" : "{{prompt}} in command"}
@@ -36,6 +38,7 @@ export function TemplateNode({
     <SimpleStepNode
       id={id}
       className="wf-node-template"
+      icon={<Icon name="note-pencil" size={16} />}
       title={data.label || "Template"}
       body={previewLine(data.template, "Empty template")}
       meta={data.mode === "replace" ? "Replace context" : "Append to context"}
@@ -52,6 +55,7 @@ export function FileInjectNode({
     <SimpleStepNode
       id={id}
       className="wf-node-file-inject"
+      icon={<Icon name="file" size={16} />}
       title={data.label || "File inject"}
       body={n > 0 ? `${n} path${n === 1 ? "" : "s"}` : "No paths"}
       meta="Inject into context"
@@ -67,6 +71,7 @@ export function GitStatusNode({
     <SimpleStepNode
       id={id}
       className="wf-node-git-status"
+      icon={<Icon name="git-branch" size={16} />}
       title={data.label || "Git status"}
       body={data.includeDiff ? "Status + diff" : "Status only"}
       meta="Snapshot into context"
@@ -82,6 +87,7 @@ export function ShellNode({
     <SimpleStepNode
       id={id}
       className="wf-node-shell"
+      icon={<Icon name="terminal-window" size={16} />}
       title={data.label || "Shell"}
       body={previewLine(data.command, "No command")}
       meta={data.appendOutput ? "Append stdout to context" : "Run only"}
@@ -101,6 +107,7 @@ export function ScriptNode({
     <SimpleStepNode
       id={id}
       className="wf-node-script"
+      icon={<Icon name="code" size={16} />}
       title={data.label || "Script"}
       body={body}
       meta={data.appendOutput ? "Append stdout to context" : "Run only"}
@@ -113,6 +120,7 @@ export function HttpNode({ id, data }: NodeProps<Node<HttpNodeData, "http">>) {
     <SimpleStepNode
       id={id}
       className="wf-node-http"
+      icon={<Icon name="globe" size={16} />}
       title={data.label || "HTTP"}
       body={previewLine(
         data.url ? `${data.method} ${data.url}` : "",
@@ -134,6 +142,7 @@ export function NotifyNode({
     <SimpleStepNode
       id={id}
       className="wf-node-notify"
+      icon={<Icon name="bell" size={16} />}
       title={data.label || "Notify"}
       body={previewLine(data.title || data.body, "Notification")}
       meta={parts.length > 0 ? parts.join(" · ") : "Disabled"}
@@ -149,6 +158,7 @@ export function WriteFileNode({
     <SimpleStepNode
       id={id}
       className="wf-node-write-file"
+      icon={<Icon name="file-plus" size={16} />}
       title={data.label || "Write file"}
       body={previewLine(data.path, "No path")}
       meta="Persist to disk"
@@ -164,6 +174,7 @@ export function GitHostNode({
     <SimpleStepNode
       id={id}
       className="wf-node-git-host"
+      icon={<Icon name="git-pull-request" size={16} />}
       title={data.label || (data.action === "issue" ? "Open issue" : "Create PR")}
       body={previewLine(data.title, data.action === "issue" ? "New issue" : "New pull request")}
       meta={data.action === "issue" ? "via gh issue" : "via gh pr"}

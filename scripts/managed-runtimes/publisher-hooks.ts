@@ -33,8 +33,8 @@ export function publisherHookPlan(scheme: VerificationScheme, hook: string): Pub
       return {
         scheme,
         tool: hook === "signed_release_manifest" ? "gpg" : "external",
-        requiredEvidence: ["publisher-verification.json"],
-        description: `${hook}: require independently supplied publisher attestation; release archive SHA-256 alone is not publisher proof`,
+        requiredEvidence: ["publisher-verification.json", "publisher.sig"],
+        description: `${hook}: require independently supplied Ed25519 package signature plus evidence digest; release archive SHA-256 alone is not publisher proof`,
       };
     case "sigstore_bundle":
       return {

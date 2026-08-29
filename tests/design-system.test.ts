@@ -159,19 +159,21 @@ describe("design-system foundations", () => {
     }
 
     for (const role of [
-      "--prompt",
-      "--agent",
-      "--choose",
-      "--memory",
-      "--template",
-      "--file-inject",
-      "--git-status",
-      "--shell",
-      "--http",
-      "--notify",
-      "--write-file",
-      "--git-host",
-      "--custom-agent",
+      "--node-accent-input",
+      "--node-accent-agent",
+      "--node-accent-custom-agent",
+      "--node-accent-app-action",
+      "--node-accent-output",
+      "--node-accent-memory",
+      "--node-accent-template",
+      "--node-accent-file-inject",
+      "--node-accent-git-status",
+      "--node-accent-shell",
+      "--node-accent-script",
+      "--node-accent-http",
+      "--node-accent-notify",
+      "--node-accent-write-file",
+      "--node-accent-git-host",
     ]) {
       expect(dark).toMatch(new RegExp(`${role}: #[0-9a-f]{6};`));
     }

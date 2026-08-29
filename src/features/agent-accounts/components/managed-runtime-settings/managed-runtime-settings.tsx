@@ -29,9 +29,9 @@ const GATE_MESSAGES: Record<string, string> = {
   claude_commercial_terms_unconfirmed:
     "Claude Code subscription support is waiting for commercial distribution approval.",
   claude_managed_package_integration_missing:
-    "The verified Claude Code package is not connected to the desktop installer yet.",
+    "Alfred still needs to set up Claude sign-in in this app. You do not install a CLI.",
   claude_publisher_verification_integration_missing:
-    "Claude Code publisher verification is not complete for this build.",
+    "Alfred still needs to set up Claude sign-in in this app. You do not install a CLI.",
   claude_packaged_no_cli_smoke_missing:
     "Claude Code packaged sign-in has not passed its no-installed-CLI smoke gate.",
   claude_native_workflow_renderer_approval_missing:
@@ -45,7 +45,7 @@ const GATE_MESSAGES: Record<string, string> = {
   codex_python_sdk_known_client_enterprise_clearance_missing:
     "Codex's Alfred client and enterprise-account behavior are awaiting provider clearance.",
   codex_python_sdk_sealed_package_unverified:
-    "The verified Codex runtime package is not available in this build.",
+    "Alfred still needs to set up ChatGPT sign-in in this app. You do not install a CLI.",
   codex_python_sdk_packaged_smoke_missing:
     "Codex packaged sign-in has not passed its no-installed-CLI smoke gate.",
   opencode_commercial_terms_unconfirmed:
@@ -55,7 +55,7 @@ const GATE_MESSAGES: Record<string, string> = {
   opencode_package_account_and_tool_bridge_unverified:
     "OpenCode Go's verified runtime, account bridge, and tool approval are not complete.",
   opencode_native_package_unverified:
-    "The verified OpenCode Go package is not available in this build.",
+    "Alfred still needs to set up OpenCode in this app. You do not install a CLI.",
   opencode_native_supervisor_http_unavailable:
     "OpenCode Go's managed server handoff is not available in this build.",
   opencode_native_supervisor_http_capability_unavailable:
@@ -184,49 +184,51 @@ export function ManagedRuntimeSettings({
     if (isBlocked(product)) return;
     clearError();
     setLocalError(null);
-    if (product.installState !== "ready") return;
-    if (product.connectionKind === "api_key") {
-      if (product.productId !== "opencode_go") {
+    let current = product;
+    if (current.installState === "missing" || current.installState === "failed") {
+      const prepared = await prepare(current.providerId, current.productId);
+      if (prepared === null) return;
+      current = prepared;
+    }
+    if (current.installState !== "ready") {
+      setLocalError(
+        "Couldn't start sign-in. This copy of Alfred doesn't include it yet.",
+      );
+      return;
+    }
+    if (current.connectionKind === "api_key") {
+      if (current.productId !== "opencode_go") {
         setLocalError("This managed product's key flow is unavailable.");
         return;
       }
-      setApiKeyProduct(product);
+      setApiKeyProduct(current);
       return;
     }
-    const started = await start(product.providerId, product.productId);
-    if (!started) return;
-    void refreshStatus(product.providerId, product.productId);
+    const started = await start(current.providerId, current.productId);
+    if (started === null) return;
+    void refreshStatus(current.providerId, current.productId);
     if (started.kind === "terminal") {
       if (
-        product.productId !== "claude_code_subscription" ||
-        !started.terminalSessionId
+        current.productId !== "claude_code_subscription" ||
+        started.terminalSessionId === undefined ||
+        started.terminalSessionId === null
       ) {
         setLocalError("The provider terminal could not be started for this product.");
         return;
       }
-      setTerminalProduct({ product, sessionId: started.terminalSessionId });
+      setTerminalProduct({ product: current, sessionId: started.terminalSessionId });
       return;
     }
     if (started.kind !== "browser" && started.kind !== "device_code") {
       setLocalError("The provider returned an unsupported sign-in flow.");
       return;
     }
+    setCeremony({ product: current, started });
     if (started.authorizationUrl && isSafeAuthorizationUrl(started.authorizationUrl)) {
-      try {
-        await openUrl(started.authorizationUrl);
-      } catch {
+      void openUrl(started.authorizationUrl).catch(() => {
         setLocalError("The provider sign-in page could not be opened.");
-      }
+      });
     }
-    setCeremony({ product, started });
-  };
-
-  const install = async (product: ManagedRuntimeProduct) => {
-    if (isBlocked(product)) return;
-    clearError();
-    setLocalError(null);
-    await prepare(product.providerId, product.productId);
-    void refreshStatus(product.providerId, product.productId);
   };
 
   const refreshProduct = (product: ManagedRuntimeProduct) => {
@@ -262,34 +264,45 @@ export function ManagedRuntimeSettings({
   return (
     <section
       className="managed-runtime-settings"
-      aria-labelledby="managed-runtime-settings-heading"
+      aria-label="Subscription sign-in"
     >
-      <div className="settings-section-heading">
-        <div>
-          <h2 id="managed-runtime-settings-heading">Managed subscriptions</h2>
-          <p className="settings-section-copy">
-            Alfred supplies an isolated provider runtime for each subscription.
-            Subscription billing and sign-in stay with the provider; API keys
-            below remain separate products.
-          </p>
-        </div>
-      </div>
-
       {error || localError || accountError ? (
         <div className="integrations-error" role="alert">
           <span>{error?.message ?? localError ?? accountError?.message}</span>
-          <button
-            type="button"
-            className="settings-link"
-            onClick={() => {
-              clearError();
-              setLocalError(null);
-            }}
-          >
-            Dismiss
-          </button>
+          {error ? (
+            <button
+              type="button"
+              className="settings-link"
+              onClick={() => {
+                clearError();
+                void load();
+              }}
+            >
+              Retry
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="settings-link"
+              onClick={() => {
+                clearError();
+                setLocalError(null);
+              }}
+            >
+              Dismiss
+            </button>
+          )}
         </div>
       ) : null}
+
+      <div className="settings-section-heading">
+        <div>
+          <h2>Sign in with a subscription</h2>
+          <p className="settings-section-copy">
+            Alfred opens Claude or ChatGPT sign-in. API keys stay optional below.
+          </p>
+        </div>
+      </div>
 
       <div className="settings-card managed-runtime-card">
         {products.length === 0 && loading ? (
@@ -297,10 +310,17 @@ export function ManagedRuntimeSettings({
             <p className="settings-value">Loading managed subscription products…</p>
           </div>
         ) : null}
-        {products.length === 0 && !loading && !snapshot ? (
+        {products.length === 0 && !loading && !snapshot && error ? (
           <div className="settings-row">
             <p className="settings-value">
-              Managed subscription runtimes are not declared by this build.
+              Could not load Claude and ChatGPT sign-in. Retry.
+            </p>
+          </div>
+        ) : null}
+        {products.length === 0 && !loading && !snapshot && !error ? (
+          <div className="settings-row">
+            <p className="settings-value">
+              Subscription sign-in is not available in this copy of the app.
             </p>
           </div>
         ) : null}
@@ -335,7 +355,6 @@ export function ManagedRuntimeSettings({
                 busy ||
                 (status.accountId !== null && busyAccountId === status.accountId)
               }
-              onInstall={() => void install(product)}
               onConnect={() => void begin(product)}
               onRefresh={() => refreshProduct(product)}
               onLogout={() =>
@@ -422,7 +441,6 @@ type ProductRowProps = {
   status: ManagedRuntimeConnectionStatus;
   account: AgentAccount | null;
   busy: boolean;
-  onInstall: () => void;
   onConnect: () => void;
   onRefresh: () => void;
   onLogout: () => void;
@@ -434,7 +452,6 @@ function ManagedRuntimeProductRow({
   status,
   account,
   busy,
-  onInstall,
   onConnect,
   onRefresh,
   onLogout,
@@ -445,24 +462,27 @@ function ManagedRuntimeProductRow({
     status.connectionState === "connected" ||
     status.connectionState === "limited" ||
     Boolean(account);
+  const displayName = productDisplayName(product);
   const actionLabel = blocked
     ? "Unavailable"
-    : product.installState === "missing" || product.installState === "failed"
-      ? "Install"
-      : status.connectionState === "connecting"
-        ? "Connecting…"
-        : connected
-          ? "Reconnect"
-          : "Connect";
+    : status.connectionState === "connecting"
+      ? "Signing in…"
+      : connected
+        ? "Sign in again"
+        : product.connectionKind === "api_key"
+          ? "Add key"
+          : "Sign in";
   const actionDisabled =
     blocked ||
-    !product.connectAvailable ||
     busy ||
     product.installState === "preparing" ||
-    product.installState !== "ready" ||
     status.connectionState === "connecting";
   const statusLabel = managedStatusLabel(product, status, connected);
   const statusClass = managedStatusClass(product, status, connected);
+  const gateMessages = uniqueGateMessages(
+    product,
+    blocked ? status.lastErrorCode : null,
+  );
 
   return (
     <div className="settings-row managed-runtime-product-row">
@@ -470,14 +490,14 @@ function ManagedRuntimeProductRow({
         <span className="native-agent-provider-mark" aria-hidden>
           <AgentMark
             provider={product.providerId}
-            label={product.productName}
+            label={displayName}
             size={20}
           />
         </span>
         <div className="managed-runtime-product-text">
-          <p className="settings-label">{product.productName}</p>
+          <p className="settings-label">{displayName}</p>
           <p className="settings-value">
-            {billingLabel(product.billingSource)} · {custodyLabel(product.custodyMode)} · runtime {product.runtimeVersion}
+            {productSignInHint(product)}
           </p>
           <div className="managed-runtime-state-line">
             <span className={`integration-status ${statusClass}`}>
@@ -489,18 +509,18 @@ function ManagedRuntimeProductRow({
               </span>
             ) : null}
           </div>
-          {blocked || !product.connectAvailable ? (
+          {blocked && gateMessages.length > 0 ? (
             <div className="managed-runtime-gates">
-              {(product.gateCodes.length > 0 ? product.gateCodes : [undefined]).map(
-                (code, index) => (
-                  <p className="settings-value native-agent-gate" key={`${code ?? "managed-runtime-blocked"}-${index}`}>
-                    {gateMessageFor(code)}
-                  </p>
-                ),
-              )}
+              {gateMessages.map((message) => (
+                <p className="settings-value native-agent-gate" key={message}>
+                  {message}
+                </p>
+              ))}
             </div>
           ) : null}
-          {!blocked && status.lastErrorCode ? (
+          {blocked === false &&
+          status.lastErrorCode &&
+          product.installState === "ready" ? (
             <p className="settings-value native-agent-gate">
               {gateMessageFor(status.lastErrorCode)}
             </p>
@@ -516,27 +536,16 @@ function ManagedRuntimeProductRow({
       <div className="integration-actions managed-runtime-actions">
         {product.installState === "preparing" ? (
           <span className="managed-runtime-preparing" role="status">
-            Preparing…
+            Signing in…
           </span>
-        ) : !blocked &&
-          (product.installState === "missing" || product.installState === "failed") ? (
-          <button
-            type="button"
-            className="integration-action integration-connect"
-            disabled={blocked || busy}
-            onClick={onInstall}
-          >
-            {busy ? "Installing…" : actionLabel}
-          </button>
-        ) : null}
-        {!blocked && product.installState === "ready" && !connected ? (
+        ) : blocked === false && connected === false ? (
           <button
             type="button"
             className="integration-action integration-connect"
             disabled={actionDisabled}
             onClick={onConnect}
           >
-            {actionLabel}
+            {busy ? "Signing in…" : actionLabel}
           </button>
         ) : null}
         {connected ? (
@@ -623,9 +632,9 @@ function ManagedRuntimeCeremony({ product, started, onClose }: CeremonyProps) {
             <AgentMark provider={product.providerId} label={product.productName} size={20} />
           </span>
         }
-        title="Authentication required"
+        title={`Sign in with ${productDisplayName(product)}`}
         titleId={titleId}
-        description={`Complete sign-in with ${product.productName}. Alfred receives only the provider's safe connection result.`}
+        description="Finish sign-in in your browser, and keep Alfred open. If the browser then shows a localhost page that will not load, close that tab and click Sign in again. Do not paste that localhost address."
         descriptionId={descriptionId}
         actions={
           <button type="button" className="ghost integration-action" onClick={onClose}>
@@ -635,9 +644,25 @@ function ManagedRuntimeCeremony({ product, started, onClose }: CeremonyProps) {
       />
       <div className="managed-runtime-ceremony-body">
         {safeUrl ? (
-          <a className="managed-runtime-safe-url" href={safeUrl} target="_blank" rel="noreferrer">
+          <a
+            className="managed-runtime-safe-url"
+            href={safeUrl}
+            target="_blank"
+            rel="noreferrer"
+            onClick={(event) => {
+              event.preventDefault();
+              void openUrl(safeUrl).catch(() => {
+                // begin() already reports a failed open; this retry uses the same opener.
+              });
+            }}
+          >
             Open provider sign-in
           </a>
+        ) : null}
+        {product.productId === "chatgpt_codex" ? (
+          <p className="settings-value">
+            Keep this Alfred window open until ChatGPT finishes. A localhost tab after ChatGPT is Alfred collecting the result — if it will not load, start Sign in again.
+          </p>
         ) : null}
         {started.userCode ? (
           <code className="native-agent-user-code">{started.userCode}</code>
@@ -684,10 +709,40 @@ function findAccount(
   );
 }
 
+function productDisplayName(product: ManagedRuntimeProduct): string {
+  if (product.productId === "claude_code_subscription") return "Claude";
+  if (product.productId === "chatgpt_codex") return "ChatGPT";
+  if (product.productId === "opencode_go") return "OpenCode";
+  return product.productName;
+}
+
+function uniqueGateMessages(
+  product: ManagedRuntimeProduct,
+  lastErrorCode: string | null,
+): string[] {
+  const codes = [
+    ...product.gateCodes,
+    ...(lastErrorCode ? [lastErrorCode] : []),
+  ];
+  return [...new Set(codes.map((code) => gateMessageFor(code)))];
+}
+
+function productSignInHint(product: ManagedRuntimeProduct): string {
+  if (product.productId === "claude_code_subscription") {
+    return "Sign in with your Claude account. Nothing extra to install.";
+  }
+  if (product.productId === "chatgpt_codex") {
+    return "Sign in with ChatGPT in your browser.";
+  }
+  if (product.productId === "opencode_go") {
+    return "Paste your OpenCode Go key. Nothing extra to install.";
+  }
+  return "Sign in with the provider. Nothing extra to install.";
+}
+
 function isBlocked(product: ManagedRuntimeProduct): boolean {
   return (
     product.installState === "blocked" ||
-    product.gateCodes.length > 0 ||
     product.connectionKind === "unsupported"
   );
 }
@@ -698,15 +753,17 @@ function managedStatusLabel(
   connected: boolean,
 ): string {
   if (isBlocked(product)) return "Blocked";
-  if (!product.connectAvailable) return "Unavailable";
   if (product.installState === "preparing") return "Preparing";
-  if (product.installState === "missing") return "Install required";
-  if (product.installState === "failed") return "Install failed";
-  if (status.connectionState === "connecting") return "Authentication required";
+  if (product.installState === "missing") return "Not signed in";
+  if (product.installState === "failed") return "Needs attention";
+  if (product.connectAvailable === false && product.installState === "blocked") {
+    return "Unavailable";
+  }
+  if (status.connectionState === "connecting") return "Signing in";
   if (status.connectionState === "limited") return "Limited";
   if (status.connectionState === "error") return "Needs attention";
-  if (connected) return "Connected";
-  return "Not connected";
+  if (connected) return "Signed in";
+  return "Not signed in";
 }
 
 function managedStatusClass(
@@ -715,12 +772,10 @@ function managedStatusClass(
   connected: boolean,
 ): string {
   if (isBlocked(product)) return "is-error";
-  if (!product.connectAvailable) return "is-error";
+  if (product.installState === "failed") return "is-error";
   if (status.connectionState === "connecting") return "is-connecting";
   if (status.connectionState === "limited") return "is-limited";
-  if (status.connectionState === "error" || product.installState === "failed") {
-    return "is-error";
-  }
+  if (status.connectionState === "error") return "is-error";
   if (connected) return "is-connected";
   return "is-disconnected";
 }
@@ -731,19 +786,6 @@ function gateMessageFor(code: string | undefined): string {
     GATE_MESSAGES[code] ??
     "This managed runtime is blocked by the current build's release gates."
   );
-}
-
-function billingLabel(source: string): string {
-  if (source === "provider_subscription") return "Billed to provider subscription";
-  if (source === "provider_api") return "Billed to provider API account";
-  if (source === "provider_payg") return "Billed as provider usage";
-  return "Billing stays with the provider";
-}
-
-function custodyLabel(custody: string): string {
-  if (custody === "runtime_managed") return "Sign-in stays in isolated runtime";
-  if (custody === "alfred_managed") return "Key stored in OS credential store";
-  return "Credential custody stays with provider runtime";
 }
 
 function entitlementLabel(state: ManagedRuntimeConnectionStatus["entitlementState"]): string {

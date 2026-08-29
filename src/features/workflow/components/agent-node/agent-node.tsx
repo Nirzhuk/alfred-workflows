@@ -22,26 +22,31 @@ export function AgentNode({ id, data }: NodeProps<AlfredNode>) {
         position={Position.Left}
         isConnectable
       />
-      <div className="wf-node-title-row">
-        <AgentMark
-          provider={data.provider}
-          size={16}
-          running={running}
-        />
+      <div className="wf-node-header">
+        <span className="wf-node-title-icon">
+          <AgentMark
+            provider={data.provider}
+            size={16}
+            running={running}
+          />
+        </span>
         <div className="wf-node-title">{data.label || "Agent"}</div>
       </div>
-      <p className="wf-node-body">
-        {agentLabel(data.provider)} · {agentHarness(data) === "cli" ? "CLI" : "Alfred"}
-      </p>
-      <p className="wf-node-model">{data.model || "default model"}</p>
-      {skills.length > 0 ? (
-        <p className="wf-node-skill">
-          {skills.map((s) => `/${s}`).join(" ")}
+      <div className="wf-node-content">
+        <p className="wf-node-body">
+          {agentLabel(data.provider)} ·{" "}
+          {agentHarness(data) === "cli" ? "CLI" : "Alfred"}
         </p>
-      ) : (
-        <p className="wf-node-skill muted">No skills</p>
-      )}
-      <NodeOutputPreview nodeId={id} title={title} />
+        <p className="wf-node-model">{data.model || "default model"}</p>
+        {skills.length > 0 ? (
+          <p className="wf-node-skill">
+            {skills.map((s) => `/${s}`).join(" ")}
+          </p>
+        ) : (
+          <p className="wf-node-skill muted">No skills</p>
+        )}
+        <NodeOutputPreview nodeId={id} title={title} />
+      </div>
       <Handle
         className="wf-handle"
         type="source"

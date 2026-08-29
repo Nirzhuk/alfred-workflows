@@ -15,3 +15,12 @@ test("states Cursor cloud billing, remote execution, and the blocked credential 
   expect(markup).toContain("secure API-key intake");
   expect(markup).not.toContain("credentialRef");
 });
+
+test("allows Alfred to open Cursor sign-in and dashboard URLs in the system browser", async () => {
+  const capability = await Bun.file(
+    new URL("../../../src-tauri/capabilities/default.json", import.meta.url),
+  ).text();
+  expect(capability).toContain('"https://cursor.com/*"');
+  expect(capability).toContain('"https://www.cursor.com/*"');
+  expect(capability).toContain('"https://authenticator.cursor.sh/*"');
+});

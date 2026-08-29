@@ -1299,6 +1299,13 @@ fn copy_artifact(
     executable: bool,
 ) -> PackageResult<()> {
     let source = resolve_regular_file(source_root, &artifact.relative_path)?;
+    // A declared resource can itself be an executable the runtime must exec
+    // (Codex ships the codex CLI as `libexec/codex`). Staging every resource
+    // 0o600 silently breaks those runtimes at startup. Carrying the source mode
+    // bit over is safe: the source root is publisher-verified, and
+    // `inspect_installed` re-checks every staged digest after the copy, so only
+    // the mode of already-pinned content is preserved.
+    let executable = executable || source_is_executable(&source);
     let destination = destination_root.join(&artifact.relative_path);
     let parent = destination
         .parent()
@@ -1619,6 +1626,19 @@ fn set_private_dir_permissions(path: &Path) -> PackageResult<()> {
 #[cfg(not(unix))]
 fn set_private_dir_permissions(_path: &Path) -> PackageResult<()> {
     Ok(())
+}
+
+#[cfg(unix)]
+fn source_is_executable(path: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    fs::metadata(path)
+        .map(|metadata| metadata.permissions().mode() & 0o111 != 0)
+        .unwrap_or(false)
+}
+
+#[cfg(not(unix))]
+fn source_is_executable(_path: &Path) -> bool {
+    false
 }
 
 #[cfg(unix)]
@@ -2072,6 +2092,50 @@ mod tests {
         );
         fs::remove_dir_all(source).unwrap();
         fs::remove_dir_all(app_data).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_executable_declared_resource_stays_executable_after_staging() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let (source, mut verification) = package_fixture(CODEX_VERSION, b"runtime v1");
+        // Codex ships the codex CLI as a declared resource under libexec/, not
+        // as the package executable. Staging it 0o600 breaks the sidecar.
+        fs::create_dir_all(source.join("libexec")).unwrap();
+        fs::write(source.join("libexec/tool"), b"#!/bin/sh\nexit 0\n").unwrap();
+        fs::set_permissions(source.join("libexec/tool"), fs::Permissions::from_mode(0o755)).unwrap();
+        verification.manifest.targets[0]
+            .resources
+            .push(RuntimeArtifactManifest {
+                relative_path: "libexec/tool".into(),
+                sha256: sha256_file(&source.join("libexec/tool")).unwrap(),
+            });
+
+        let app_data = std::env::temp_dir().join(format!(
+            "alfred-runtime-execbit-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        let store = RuntimePackageStore::open(&app_data).unwrap();
+        store
+            .stage_and_activate(&source, &verification, None)
+            .unwrap();
+        let installed = store.installed_root(verification.expectation()).unwrap();
+
+        let staged_tool = fs::metadata(installed.join("libexec/tool")).unwrap();
+        assert!(
+            staged_tool.permissions().mode() & 0o100 != 0,
+            "executable resource lost its exec bit during staging"
+        );
+        let staged_license = fs::metadata(installed.join("legal/LICENSE.txt")).unwrap();
+        assert_eq!(
+            staged_license.permissions().mode() & 0o111,
+            0,
+            "a non-executable resource must not gain an exec bit"
+        );
+
+        fs::remove_dir_all(&source).ok();
+        fs::remove_dir_all(&app_data).ok();
     }
 
     #[test]

@@ -87,6 +87,7 @@ export function NativeAgentSettings({ snapshot }: NativeAgentSettingsProps = {})
     productId: AgentProductId;
     accountId?: string;
   } | null>(null);
+  const [apiKeysOpen, setApiKeysOpen] = useState(false);
 
   useEffect(() => {
     void load();
@@ -94,18 +95,13 @@ export function NativeAgentSettings({ snapshot }: NativeAgentSettingsProps = {})
 
   const rows = useMemo(
     () => {
-      const managedSourceAvailable =
-        snapshot === undefined || snapshot.managedRuntime !== undefined;
       return (snapshot?.providers ?? providers)
-        .filter(
-          (provider) =>
-            !managedSourceAvailable || !isManagedProductId(provider.productId),
-        )
+        .filter((provider) => isManagedProductId(provider.productId) === false)
         .map((provider) => ({
           provider,
           accounts: (snapshot?.accounts ?? accounts).filter(
             (account) =>
-              (!managedSourceAvailable || !isManagedProductId(account.productId)) &&
+              isManagedProductId(account.productId) === false &&
               account.providerId === provider.providerId &&
               account.productId === provider.productId,
           ),
@@ -140,8 +136,7 @@ export function NativeAgentSettings({ snapshot }: NativeAgentSettingsProps = {})
   return (
     <section className="settings-section" aria-label="Native agent accounts">
       <p className="settings-value native-agent-intro">
-        Accounts here belong only to Alfred's native agent harness. Connected
-        Apps and command-line tool sign-ins stay separate.
+        Sign in with Claude or ChatGPT here. Alfred opens the provider sign-in.
       </p>
 
       <ManagedRuntimeSettings
@@ -158,10 +153,28 @@ export function NativeAgentSettings({ snapshot }: NativeAgentSettingsProps = {})
         </div>
       ) : null}
 
-      <div className="settings-card">
+      {rows.length > 0 || loading ? (
+      <section className="native-agent-api-keys" aria-labelledby="native-agent-api-keys-heading">
+        <div className="settings-section-heading">
+          <div>
+            <h2 id="native-agent-api-keys-heading">API keys</h2>
+            <p className="settings-section-copy">
+              Optional developer keys. Claude and ChatGPT above do not need these.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="ghost settings-header-action"
+            aria-expanded={apiKeysOpen}
+            onClick={() => setApiKeysOpen(apiKeysOpen === false)}
+          >
+            {apiKeysOpen ? "Hide" : "Show"}
+          </button>
+        </div>
+        <div className="settings-card" hidden={apiKeysOpen === false}>
         {rows.length === 0 && loading ? (
           <div className="settings-row">
-            <p className="settings-value">Loading native agent providers...</p>
+            <p className="settings-value">Loading API key providers...</p>
           </div>
         ) : null}
 
@@ -184,10 +197,7 @@ export function NativeAgentSettings({ snapshot }: NativeAgentSettingsProps = {})
                 <div className="integration-provider-text">
                   <p className="settings-label">{provider.productName}</p>
                   <p className="settings-value">
-                    Alfred harness ·{" "}
-                    {providerAuthLabel(provider)}{" "}
-                    ·{" "}
-                    {providerCustodyLabel(provider)} · {providerBillingLabel(provider)}
+                    {providerAuthLabel(provider)}
                   </p>
                   {provider.providerId === "cursor" ? (
                     <CursorNativeDisclosure
@@ -204,12 +214,9 @@ export function NativeAgentSettings({ snapshot }: NativeAgentSettingsProps = {})
                       connectAvailable={provider.connectAvailable}
                     />
                   ) : null}
-                  {provider.gateCode ? (
+                  {GATE_MESSAGES[provider.gateCode ?? ""] ? (
                     <p className="settings-value native-agent-gate">
-                      {GATE_MESSAGES[
-                        provider.gateCode ?? "native_provider_not_available"
-                      ] ??
-                        `${(provider.gateCode ?? "native capability blocked").split("_").join(" ")}.`}
+                      {GATE_MESSAGES[provider.gateCode ?? ""]}
                     </p>
                   ) : null}
                 </div>
@@ -239,11 +246,11 @@ export function NativeAgentSettings({ snapshot }: NativeAgentSettingsProps = {})
                       Cancel
                     </button>
                   </div>
-                ) : (
+                ) : provider.connectAvailable ? (
                   <button
                     type="button"
                     className="integration-action integration-connect"
-                    disabled={!provider.connectAvailable || providerBusy}
+                    disabled={providerBusy}
                     onClick={() => {
                       if (
                         usesAlfredManagedApiKey(
@@ -262,9 +269,16 @@ export function NativeAgentSettings({ snapshot }: NativeAgentSettingsProps = {})
                       }
                     }}
                   >
-                    {providerBusy ? "Starting..." : "Connect"}
+                    {providerBusy
+                      ? "Starting..."
+                      : usesAlfredManagedApiKey(
+                            provider.authMethods,
+                            provider.credentialCustody,
+                          )
+                        ? "Add key"
+                        : "Connect"}
                   </button>
-                )
+                ) : null
               ) : (
                 <div className="integration-connections">
                   {providerAccounts.map((account) => (
@@ -301,7 +315,9 @@ export function NativeAgentSettings({ snapshot }: NativeAgentSettingsProps = {})
             </div>
           );
         })}
-      </div>
+        </div>
+      </section>
+      ) : null}
 
       {pendingDisconnect ? (
         <ConfirmDialog
@@ -448,14 +464,6 @@ function providerAuthLabel(provider: AgentProviderRegistration): string {
   return provider.authMethods
     .map((method) => manifestAuthLabel(provider.providerId, method))
     .join(" or ");
-}
-
-function providerCustodyLabel(provider: AgentProviderRegistration): string {
-  return readableManifestValue(provider.credentialCustody);
-}
-
-function providerBillingLabel(provider: AgentProviderRegistration): string {
-  return `billing: ${readableManifestValue(provider.billingSource)}`;
 }
 
 function readableManifestValue(value: string): string {

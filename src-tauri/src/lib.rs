@@ -20,7 +20,7 @@ mod triggers;
 
 use agent_accounts::{AgentAccountResolver, AgentAccountsState};
 use agents::native::{
-    DenyAllApprovalHandler, DenyAllToolExecutor, NativeExecutionRouter, NativeRuntimeRegistry,
+    DenyAllToolExecutor, HostApprovalBroker, NativeExecutionRouter, NativeRuntimeRegistry,
 };
 use commands::managed_runtime::ManagedRuntimeControlPlane;
 use db::Db;
@@ -118,15 +118,17 @@ pub fn run() {
         let _ = agent_accounts.register(handler);
     }
     let native_registry = Arc::new(NativeRuntimeRegistry::default());
+    let host_broker = Arc::new(HostApprovalBroker::new());
     // The resolver needs its own handle because the managed `Db` is owned by
     // Tauri state; SQLite is safe to open twice against the same file.
     let resolver_db = Arc::new(Db::open().expect("failed to open sqlite database"));
     let native_router = NativeExecutionRouter::new(
         Arc::clone(&native_registry),
         Arc::new(AgentAccountResolver::new(resolver_db, &agent_accounts)),
-        // Deny-by-default: no Alfred tool executor or approver ships yet.
+        // Alfred-executed tools stay deny-all. OpenCode decides via the host
+        // broker and executes inside the isolated runtime.
         Arc::new(DenyAllToolExecutor),
-        Arc::new(DenyAllApprovalHandler),
+        Arc::clone(&host_broker) as Arc<dyn agents::native::AlfredApprovalHandler>,
     );
 
     let mut builder = tauri::Builder::default()
@@ -136,7 +138,8 @@ pub fn run() {
         .manage(database)
         .manage(agent_accounts)
         .manage(Arc::clone(&managed_runtime))
-        .manage(native_registry)
+        .manage(Arc::clone(&native_registry))
+        .manage(Arc::clone(&host_broker))
         .manage(native_router)
         .manage(IntegrationsState::default())
         .manage(LicensingState::default())
@@ -186,13 +189,23 @@ pub fn run() {
         .setup(|app| {
             if let Some(root) = app.path().app_data_dir().ok() {
                 let resource_root = app.path().resource_dir().ok();
-                if let Err(error) = app
-                    .state::<Arc<ManagedRuntimeControlPlane>>()
-                    .initialize(&root, resource_root.as_deref())
-                {
+                let plane = app.state::<Arc<ManagedRuntimeControlPlane>>();
+                if let Err(error) = plane.initialize(&root, resource_root.as_deref()) {
                     eprintln!("managed runtime state unavailable: {error}");
                 }
+                if let Err(error) = plane.bind_native_collaborators(
+                    Arc::clone(app.state::<Arc<NativeRuntimeRegistry>>().inner()),
+                    Arc::clone(app.state::<Arc<HostApprovalBroker>>().inner()),
+                ) {
+                    eprintln!("managed runtime collaborators unavailable: {error}");
+                }
             }
+            let approval_handle = app.handle().clone();
+            app.state::<Arc<HostApprovalBroker>>().set_listener(Arc::new(
+                move |prompt: agents::native::HostApprovalPrompt| {
+                    let _ = approval_handle.emit("native://approval-requested", prompt);
+                },
+            ));
             let resource_root = app.path().resource_dir().ok();
             let capability_manifest = agents::capability_manifest::manifest_for_resource_root(
                 agents::capability_manifest::current_platform(),
@@ -252,6 +265,16 @@ pub fn run() {
             if let Err(e) = tray::install(app.handle()) {
                 eprintln!("tray icon not started: {e}");
             }
+            // The window starts hidden to avoid a font flash. If the webview
+            // never boots (Vite not up, import error), bun dev would otherwise
+            // look like a terminal with no app. Reveal once after a short wait.
+            let reveal_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(Duration::from_millis(1500)).await;
+                if let Some(window) = reveal_handle.get_webview_window("main") {
+                    let _ = window.show();
+                }
+            });
             // Quick Access is NOT built here. Its webview is a second
             // WebContent process (~48 MB), and most of that was paid by users
             // who keep the feature off. `set_quick_access_enabled`, pushed by
@@ -421,6 +444,7 @@ pub fn run() {
             commands::managed_runtime::write_managed_runtime_terminal,
             commands::managed_runtime::resize_managed_runtime_terminal,
             commands::managed_runtime::close_managed_runtime_terminal,
+            commands::managed_runtime::resolve_native_approval,
             commands::list_agent_models,
             commands::get_agent_usage,
             commands::list_skills,

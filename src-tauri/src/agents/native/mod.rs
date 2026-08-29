@@ -6,6 +6,7 @@
 mod context;
 mod contract;
 mod events;
+mod host_approval;
 pub mod providers;
 mod redaction;
 mod registry;
@@ -19,6 +20,7 @@ mod fake;
 pub use context::{prepare_native_request, NativeContextPolicy};
 pub use contract::*;
 pub use events::*;
+pub use host_approval::*;
 pub(crate) use redaction::contains_diagnostic_secret;
 pub use redaction::{
     canonical_key, contains_cli_permission_flag, contains_secret_marker, is_secret_key, redact_text,

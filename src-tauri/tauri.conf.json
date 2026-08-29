@@ -5,7 +5,7 @@
   "identifier": "com.nirzhuk.alfred",
   "build": {
     "beforeDevCommand": "bun run dev:frontend",
-    "devUrl": "http://localhost:1420",
+    "devUrl": "http://127.0.0.1:1420",
     "beforeBuildCommand": "bun run build:frontend",
     "frontendDist": "../dist"
   },

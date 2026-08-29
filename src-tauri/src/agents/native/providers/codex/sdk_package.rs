@@ -6,7 +6,11 @@
 
 use crate::agent_accounts::models::{AgentProductId, ManagedRuntimeId};
 use crate::agents::runtime_package::{
-    RuntimePackageExpectation, RuntimePackageSelection, RuntimePackageVerification,
+    PublisherVerificationScheme, RuntimeArtifactManifest, RuntimeLicenseNoticeRequirements,
+    RuntimePackageExpectation, RuntimePackageManifest, RuntimePackageSelection,
+    RuntimePackageVerification, RuntimePublisherRequirement, RuntimeRollbackMetadata,
+    RuntimeTargetManifest, RuntimeUpdatePolicy, RUNTIME_PACKAGE_CONTRACT_VERSION,
+    RUNTIME_PACKAGE_MANIFEST_SCHEMA_VERSION,
 };
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -28,6 +32,15 @@ pub const CODEX_SDK_LICENSE_SHA256: &str =
     "d17f227e4df5da1600391338865ce0f3055211760a36688f816941d58232d8dc";
 pub const CODEX_SDK_NOTICE_SHA256: &str =
     "9d71575ecfd9a843fc1677b0efb08053c6ba9fd686a0de1a6f5382fd3c220915";
+pub const CODEX_SDK_SIDECAR_RESOURCE: &str = "bin/alfred-codex-sdk-sidecar";
+pub const CODEX_SDK_CLI_RESOURCE: &str = "libexec/codex";
+pub const CODEX_SDK_PUBLISHER: &str = "OpenAI OpCo, LLC";
+pub const CODEX_SDK_SIDECAR_SHA256: &str =
+    "da2c0047682756a85a219b24b75232304a0b2effccd4500c506c10f7c1e31a72";
+pub const CODEX_SDK_SBOM_SHA256: &str =
+    "7d7687c04d3ff16c2a1d3a882761e6f625524bd7be27e6a8cd798fbb32ec95b9";
+pub const CODEX_CLI_NATIVE_SHA256_AARCH64_APPLE_DARWIN: &str =
+    "19c4f144c5226a9f17c58e6f0fa854843b0f77a6eb420f40e2745a12f10f5d37";
 
 pub const SEALED_PACKAGE_BLOCKER: &str = "codex_python_sdk_sealed_package_unverified";
 
@@ -82,6 +95,64 @@ pub fn codex_cli_wheel_for_target(target: &str) -> Result<CodexCliWheel, CodexSd
         .copied()
         .find(|wheel| wheel.target == target)
         .ok_or(CodexSdkPackageError::UnsupportedTarget)
+}
+
+/// Code-owned sealed package manifest for the host-prepared Codex runtime.
+///
+/// Targets without a prepared sidecar executable are omitted rather than
+/// invented. The Apple verifier authenticates OpenAI's Developer ID signature
+/// on `libexec/codex`; the sidecar digest is pinned separately.
+pub fn package_manifest() -> RuntimePackageManifest {
+    RuntimePackageManifest {
+        schema_version: RUNTIME_PACKAGE_MANIFEST_SCHEMA_VERSION,
+        contract_version: RUNTIME_PACKAGE_CONTRACT_VERSION,
+        runtime_id: ManagedRuntimeId::CodexPythonSdk,
+        runtime_version: CODEX_SDK_RUNTIME_VERSION.into(),
+        update_policy: RuntimeUpdatePolicy {
+            alfred_managed: true,
+            self_update_allowed: false,
+            path_lookup_allowed: false,
+        },
+        targets: vec![RuntimeTargetManifest {
+            target: "aarch64-apple-darwin".into(),
+            executable: RuntimeArtifactManifest {
+                relative_path: CODEX_SDK_SIDECAR_RESOURCE.into(),
+                sha256: CODEX_SDK_SIDECAR_SHA256.into(),
+            },
+            resources: vec![
+                RuntimeArtifactManifest {
+                    relative_path: CODEX_SDK_CLI_RESOURCE.into(),
+                    sha256: CODEX_CLI_NATIVE_SHA256_AARCH64_APPLE_DARWIN.into(),
+                },
+                RuntimeArtifactManifest {
+                    relative_path: CODEX_SDK_LICENSE_RESOURCE.into(),
+                    sha256: CODEX_SDK_LICENSE_SHA256.into(),
+                },
+                RuntimeArtifactManifest {
+                    relative_path: CODEX_SDK_NOTICE_RESOURCE.into(),
+                    sha256: CODEX_SDK_NOTICE_SHA256.into(),
+                },
+                RuntimeArtifactManifest {
+                    relative_path: CODEX_SDK_SBOM_RESOURCE.into(),
+                    sha256: CODEX_SDK_SBOM_SHA256.into(),
+                },
+            ],
+            publisher_verification: RuntimePublisherRequirement {
+                scheme: PublisherVerificationScheme::AppleDeveloperId,
+                publisher: CODEX_SDK_PUBLISHER.into(),
+                required: true,
+            },
+            license_notice: RuntimeLicenseNoticeRequirements {
+                license_expression: CODEX_SDK_LICENSE_EXPRESSION.into(),
+                license_resource_path: CODEX_SDK_LICENSE_RESOURCE.into(),
+                notice_resource_path: CODEX_SDK_NOTICE_RESOURCE.into(),
+            },
+            rollback: RuntimeRollbackMetadata {
+                retain_previous_verified: true,
+                automatic_fallback: false,
+            },
+        }],
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -204,4 +275,16 @@ pub fn validate_codex_sdk_selection(
         return Err(CodexSdkPackageError::SelectionMismatch);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn host_package_manifest_is_valid() {
+        package_manifest()
+            .validate()
+            .expect("codex package manifest");
+    }
 }
